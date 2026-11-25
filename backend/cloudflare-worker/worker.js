@@ -9,9 +9,9 @@
 
 const GOOGLE_JWKS_URL =
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
-const DEFAULT_FIREBASE_PROJECT_ID = "gen-lang-client-0410091917";
+const DEFAULT_FIREBASE_PROJECT_ID = "gen-lang-client-0137668580";
 const DEFAULT_FIRESTORE_DB_ID =
-  "ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a";
+  "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed";
 
 function hasSupabaseConfig(env) {
   return Boolean(
@@ -171,6 +171,11 @@ export default {
         return await handleR2Download(url, uid, idToken, projectId, firestoreDbId, env, cors);
       }
 
+      // Cloud storage quota & file usage listing (Cloudflare R2 or Supabase Storage)
+      if (request.method === "GET" && url.pathname === "/v1/storage/usage") {
+        return await handleStorageUsage(url, uid, idToken, projectId, firestoreDbId, env, cors);
+      }
+
       // Authenticated Delete (Cloudflare R2 primary, Supabase Storage fallback)
       if (request.method === "DELETE" && url.pathname === "/v1/storage/object") {
         const body = await request.json().catch(() => ({}));
@@ -192,6 +197,9 @@ export default {
       }
       if (url.pathname === "/v1/storage/sign-download") {
         return await handleSupabaseSignDownload(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors);
+      }
+      if (url.pathname === "/v1/storage/delete-batch") {
+        return await handleStorageDeleteBatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors);
       }
       if (url.pathname === "/v1/notifications/dispatch") {
         return await handlePushDispatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors);
@@ -866,15 +874,288 @@ async function handleR2Delete(uid, idToken, body, projectId, firestoreDbId, env,
   return jsonResponse({ deleted: true, storagePath }, 200, cors);
 }
 
+function classifyStoragePath(companyId, storagePath) {
+  const rest = storagePath.replace(`companies/${companyId}/`, "");
+  const parts = rest.split("/");
+  const folder = parts[0] || "other";
+  const subId = parts[1] || "";
+  const fileName = parts[parts.length - 1] || "file";
+  const category =
+    folder === "chats" ? "chats" :
+    folder === "statuses" ? "statuses" :
+    folder === "avatars" ? "avatars" :
+    folder === "group-photos" ? "groups" : "other";
+  return {
+    category,
+    chatId: folder === "chats" || folder === "group-photos" ? subId : "",
+    uploaderUid: folder === "statuses" || folder === "avatars" ? subId : "",
+    fileName,
+  };
+}
+
+async function handleStorageUsage(url, uid, idToken, projectId, firestoreDbId, env, cors) {
+  const companyId = sanitizeId(url.searchParams.get("companyId") || "xmax");
+  if (!companyId) return jsonResponse({ error: "Missing companyId" }, 400, cors);
+
+  const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
+  assertApprovedNotSuspended(member);
+  const isSuperOrAdmin =
+    member.accessLevel === "SUPER_ADMIN" ||
+    member.accessLevel === "ADMIN" ||
+    member.role === "SUPER_ADMIN" ||
+    member.role === "ADMIN";
+
+  const provider = resolveStorageProvider(env);
+  if (provider === "UNCONFIGURED") {
+    return jsonResponse(
+      {
+        ok: true,
+        provider: "UNCONFIGURED",
+        quotaBytes: 1024 * 1024 * 1024,
+        totalBytes: 0,
+        objectCount: 0,
+        truncated: false,
+        byCategory: {},
+        objects: [],
+      },
+      200,
+      cors
+    );
+  }
+
+  const byCategory = {
+    chats: { bytes: 0, count: 0 },
+    statuses: { bytes: 0, count: 0 },
+    avatars: { bytes: 0, count: 0 },
+    groups: { bytes: 0, count: 0 },
+    other: { bytes: 0, count: 0 },
+  };
+  const objects = [];
+  let totalBytes = 0;
+  let objectCount = 0;
+  let truncated = false;
+
+  if (env.CHAT_BUCKET) {
+    const quotaBytes = 10 * 1024 * 1024 * 1024; // 10 GB Cloudflare R2 Free Tier
+    let cursor = undefined;
+    for (let page = 0; page < 5; page++) {
+      const listed = await env.CHAT_BUCKET.list({
+        prefix: `companies/${companyId}/`,
+        limit: 500,
+        cursor,
+        include: ["customMetadata"],
+      });
+      for (const obj of listed.objects || []) {
+        const size = Number(obj.size || 0);
+        const meta = classifyStoragePath(companyId, obj.key);
+        const uploaderUid = obj.customMetadata?.uploadedBy || meta.uploaderUid || "";
+        const bucket = obj.customMetadata?.bucket || inferSupabaseBucketFromPath(obj.key);
+        totalBytes += size;
+        objectCount += 1;
+        byCategory[meta.category].bytes += size;
+        byCategory[meta.category].count += 1;
+        if (objects.length < 250) {
+          objects.push({
+            bucket,
+            storagePath: obj.key,
+            fileName: obj.customMetadata?.originalName || meta.fileName,
+            byteSize: size,
+            category: meta.category,
+            chatId: obj.customMetadata?.chatId || meta.chatId,
+            uploaderUid,
+            updatedAtMillis: obj.uploaded ? new Date(obj.uploaded).getTime() : 0,
+            canDelete: isSuperOrAdmin || uploaderUid === uid,
+          });
+        }
+      }
+      if (!listed.truncated || !listed.cursor) break;
+      cursor = listed.cursor;
+      if (page === 4) truncated = true;
+    }
+    objects.sort((a, b) => b.byteSize - a.byteSize);
+    return jsonResponse(
+      {
+        ok: true,
+        provider: "CLOUDFLARE_R2",
+        quotaBytes,
+        totalBytes,
+        objectCount,
+        truncated,
+        byCategory,
+        objects,
+      },
+      200,
+      cors
+    );
+  }
+
+  // Supabase Storage Free Tier (1 GB)
+  const quotaBytes = 1024 * 1024 * 1024;
+  const supabaseBase = getSupabaseBaseUrl(env);
+  const bucketNames = Object.keys(ALLOWED_BUCKETS);
+  let subrequestBudget = 36; // stay comfortably inside Cloudflare Free 50-subrequest limit
+
+  for (const bucket of bucketNames) {
+    if (subrequestBudget <= 0) {
+      truncated = true;
+      break;
+    }
+    const queue = [`companies/${companyId}`];
+    while (queue.length > 0 && subrequestBudget > 0) {
+      const prefix = queue.shift();
+      subrequestBudget -= 1;
+      const listRes = await fetch(`${supabaseBase}/storage/v1/object/list/${encodeURIComponent(bucket)}`, {
+        method: "POST",
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prefix,
+          limit: 200,
+          offset: 0,
+          sortBy: { column: "updated_at", order: "desc" },
+        }),
+      });
+      if (!listRes.ok) continue;
+      const entries = await listRes.json().catch(() => []);
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (!entry || !entry.name) continue;
+        const fullPath = `${prefix}/${entry.name}`;
+        if (!entry.id) {
+          // Folder node
+          if (queue.length < 25) queue.push(fullPath);
+          continue;
+        }
+        const size = Number(entry.metadata?.size || 0);
+        const meta = classifyStoragePath(companyId, fullPath);
+        totalBytes += size;
+        objectCount += 1;
+        byCategory[meta.category].bytes += size;
+        byCategory[meta.category].count += 1;
+        if (objects.length < 250) {
+          objects.push({
+            bucket,
+            storagePath: fullPath,
+            fileName: meta.fileName,
+            byteSize: size,
+            category: meta.category,
+            chatId: meta.chatId,
+            uploaderUid: meta.uploaderUid,
+            updatedAtMillis: entry.updated_at ? new Date(entry.updated_at).getTime() : 0,
+            canDelete: isSuperOrAdmin || meta.uploaderUid === uid || meta.category === "chats",
+          });
+        }
+      }
+      if (queue.length > 0 && subrequestBudget <= 0) {
+        truncated = true;
+      }
+    }
+  }
+
+  objects.sort((a, b) => b.byteSize - a.byteSize);
+  return jsonResponse(
+    {
+      ok: true,
+      provider: "SUPABASE_STORAGE",
+      quotaBytes,
+      totalBytes,
+      objectCount,
+      truncated,
+      byCategory,
+      objects,
+    },
+    200,
+    cors
+  );
+}
+
+async function handleStorageDeleteBatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {
+  if (!env.CHAT_BUCKET && !hasSupabaseConfig(env)) {
+    return jsonResponse({ error: "Storage backend not configured" }, 500, cors);
+  }
+  const items = Array.isArray(body.items) ? body.items.slice(0, 60) : [];
+  if (items.length === 0) return jsonResponse({ deletedCount: 0 }, 200, cors);
+
+  const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
+  assertApprovedNotSuspended(member);
+  const isSuperOrAdmin =
+    member.accessLevel === "SUPER_ADMIN" ||
+    member.accessLevel === "ADMIN" ||
+    member.role === "SUPER_ADMIN" ||
+    member.role === "ADMIN";
+
+  const validItems = [];
+  for (const item of items) {
+    const storagePath = String(item?.storagePath || "").replace(/^\/+/, "");
+    if (!isSafeStoragePath(storagePath) || !storagePath.startsWith(`companies/${companyId}/`)) {
+      continue;
+    }
+    const meta = classifyStoragePath(companyId, storagePath);
+    if (!isSuperOrAdmin && meta.uploaderUid !== uid) {
+      if (meta.category === "chats" && meta.chatId) {
+        try {
+          await assertChatParticipant(companyId, meta.chatId, uid, member, idToken, projectId, firestoreDbId);
+        } catch {
+          continue;
+        }
+      } else {
+        continue;
+      }
+    }
+    validItems.push({
+      storagePath,
+      bucket: sanitizeId(item?.bucket || inferSupabaseBucketFromPath(storagePath)),
+    });
+  }
+
+  if (validItems.length === 0) {
+    return jsonResponse({ error: "No authorized files to delete" }, 403, cors);
+  }
+
+  let deletedCount = 0;
+  if (env.CHAT_BUCKET) {
+    const keys = validItems.map((i) => i.storagePath);
+    await env.CHAT_BUCKET.delete(keys);
+    deletedCount = keys.length;
+    return jsonResponse({ ok: true, deletedCount }, 200, cors);
+  }
+
+  const supabaseBase = getSupabaseBaseUrl(env);
+  const grouped = new Map();
+  for (const item of validItems) {
+    if (!grouped.has(item.bucket)) grouped.set(item.bucket, []);
+    grouped.get(item.bucket).push(item.storagePath);
+  }
+  for (const [bucket, paths] of grouped.entries()) {
+    const delRes = await fetch(`${supabaseBase}/storage/v1/object/${encodeURIComponent(bucket)}`, {
+      method: "DELETE",
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prefixes: paths }),
+    });
+    if (delRes.ok) {
+      deletedCount += paths.length;
+    }
+  }
+  return jsonResponse({ ok: true, deletedCount }, 200, cors);
+}
+
 async function handleSupabaseSignUpload(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {
   if (!hasSupabaseConfig(env)) {
     return jsonResponse({ error: "Supabase Storage is not configured" }, 500, cors);
   }
   const bucket = String(body.bucket || "");
-  const storagePath = String(body.storagePath || "").replace(/^\/+/, "");
   const mimeType = String(body.mimeType || "").toLowerCase();
   const byteSize = Number(body.byteSize || 0);
   const chatId = sanitizeId(body.chatId || "");
+  const scope = sanitizeId(body.scope || "");
+  const sha256 = String(body.sha256 || "").slice(0, 128);
   const policy = ALLOWED_BUCKETS[bucket];
   if (!policy) return jsonResponse({ error: "Unsupported bucket" }, 400, cors);
   if (byteSize <= 0 || byteSize > policy.maxBytes) {
@@ -883,14 +1164,35 @@ async function handleSupabaseSignUpload(uid, idToken, companyId, body, projectId
   if (!policy.mimes.includes(mimeType)) {
     return jsonResponse({ error: `Unsupported MIME type: ${mimeType || "unknown"}` }, 415, cors);
   }
-  if (!isSafeStoragePath(storagePath)) {
-    return jsonResponse({ error: "Invalid storagePath" }, 400, cors);
-  }
 
   const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
   assertApprovedNotSuspended(member);
-  if (bucket !== "avatars" && chatId) {
+
+  let prefix = "";
+  if (bucket === "avatars") {
+    prefix = `companies/${companyId}/avatars/${uid}/`;
+  } else if (scope === "status" || chatId === "status_feed") {
+    if (!["chat-media", "chat-videos", "chat-voice"].includes(bucket)) {
+      return jsonResponse({ error: "Unsupported status media bucket" }, 400, cors);
+    }
+    prefix = `companies/${companyId}/statuses/${uid}/`;
+  } else if (bucket === "group-photos") {
+    if (!chatId) return jsonResponse({ error: "Missing chatId for group photo" }, 400, cors);
     await assertChatParticipant(companyId, chatId, uid, member, idToken, projectId, firestoreDbId);
+    prefix = `companies/${companyId}/group-photos/${chatId}/`;
+  } else {
+    if (!chatId) return jsonResponse({ error: "Missing chatId for chat attachment" }, 400, cors);
+    await assertChatParticipant(companyId, chatId, uid, member, idToken, projectId, firestoreDbId);
+    prefix = `companies/${companyId}/chats/${chatId}/`;
+  }
+
+  const rawRequestedPath = String(body.storagePath || "").replace(/^\/+/, "");
+  const safeName = sanitizeFileName(body.fileName || rawRequestedPath.split("/").pop() || "upload");
+  const storagePath = rawRequestedPath && rawRequestedPath.startsWith(prefix)
+    ? rawRequestedPath
+    : `${prefix}${crypto.randomUUID()}_${safeName}`;
+  if (!isSafeStoragePath(storagePath)) {
+    return jsonResponse({ error: "Invalid storagePath" }, 400, cors);
   }
 
   const supabaseBase = getSupabaseBaseUrl(env);
@@ -903,7 +1205,7 @@ async function handleSupabaseSignUpload(uid, idToken, companyId, body, projectId
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ expiresIn: 60 }),
+      body: JSON.stringify({ expiresIn: 120 }),
     }
   );
   const signData = await signRes.json().catch(() => ({}));
@@ -913,23 +1215,74 @@ async function handleSupabaseSignUpload(uid, idToken, companyId, body, projectId
   const signedUrl = signData.url.startsWith("http")
     ? signData.url
     : `${supabaseBase}/storage/v1${signData.url}`;
-  return jsonResponse({ signedUrl, bucket, storagePath, expiresInSec: 60 }, 200, cors);
+  return jsonResponse(
+    {
+      ok: true,
+      provider: "SUPABASE_STORAGE",
+      signedUrl,
+      method: "PUT",
+      bucket,
+      storagePath,
+      byteSize,
+      mimeType,
+      sha256,
+      expiresInSec: 120,
+    },
+    200,
+    cors
+  );
 }
 
 async function handleSupabaseSignDownload(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {
   if (!hasSupabaseConfig(env)) {
     return jsonResponse({ error: "Supabase Storage is not configured" }, 500, cors);
   }
-  const bucket = String(body.bucket || "");
   const storagePath = String(body.storagePath || "").replace(/^\/+/, "");
+  const bucket = sanitizeId(body.bucket || inferSupabaseBucketFromPath(storagePath));
   const chatId = sanitizeId(body.chatId || "");
+  const statusId = sanitizeId(body.statusId || "");
   if (!ALLOWED_BUCKETS[bucket] || !isSafeStoragePath(storagePath)) {
     return jsonResponse({ error: "Invalid download target" }, 400, cors);
   }
 
   const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
   assertApprovedNotSuspended(member);
-  if (bucket !== "avatars" && chatId) {
+
+  const isStatusMedia = storagePath.startsWith(`companies/${companyId}/statuses/`);
+  const isAvatarOrGroup =
+    storagePath.startsWith(`companies/${companyId}/avatars/`) ||
+    storagePath.startsWith(`companies/${companyId}/group-photos/`);
+
+  if (isStatusMedia) {
+    if (statusId) {
+      const stUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/chat_statuses/${statusId}`;
+      const stRes = await fetch(stUrl, { headers: { Authorization: `Bearer ${idToken}` } });
+      if (!stRes.ok) {
+        return jsonResponse({ error: "Status access denied or unavailable" }, stRes.status === 404 ? 404 : 403, cors);
+      }
+      const stDoc = parseFirestoreDoc(await stRes.json());
+      if (stDoc.ownerUid && stDoc.ownerUid !== uid) {
+        const blocked = Array.isArray(stDoc.ownerBlockedUids) ? stDoc.ownerBlockedUids : [];
+        if (blocked.includes(uid)) {
+          return jsonResponse({ error: "Blocked user cannot view status media" }, 403, cors);
+        }
+        const mode = stDoc.privacyMode || "ALL_APPROVED";
+        const allowed = Array.isArray(stDoc.allowedUids) ? stDoc.allowedUids : [];
+        const excluded = Array.isArray(stDoc.excludedUids) ? stDoc.excludedUids : [];
+        if (mode === "SELECTED_ONLY" && !allowed.includes(uid)) {
+          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
+        }
+        if (mode === "ALL_EXCEPT" && excluded.includes(uid)) {
+          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
+        }
+      }
+    }
+  } else if (!isAvatarOrGroup) {
+    if (!chatId) return jsonResponse({ error: "Missing chatId" }, 400, cors);
+    const expectedPrefix = `companies/${companyId}/chats/${chatId}/`;
+    if (!storagePath.startsWith(expectedPrefix)) {
+      return jsonResponse({ error: "Path mismatch for chat attachment" }, 403, cors);
+    }
     await assertChatParticipant(companyId, chatId, uid, member, idToken, projectId, firestoreDbId);
   }
 
@@ -953,7 +1306,7 @@ async function handleSupabaseSignDownload(uid, idToken, companyId, body, project
   const signedUrl = signData.signedURL.startsWith("http")
     ? signData.signedURL
     : `${supabaseBase}/storage/v1${signData.signedURL}`;
-  return jsonResponse({ signedUrl, expiresInSec: 300 }, 200, cors);
+  return jsonResponse({ signedUrl, provider: "SUPABASE_STORAGE", bucket, expiresInSec: 300 }, 200, cors);
 }
 
 async function handlePushDispatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {

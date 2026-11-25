@@ -134,6 +134,7 @@ fun StaffPlanCalendarSection(
     topModeSwitcher: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     val uid = state.myMember?.uid.orEmpty()
     val companyId = state.company?.id?.ifBlank { CatalogueSeedData.DEFAULT_COMPANY_ID }
         ?: CatalogueSeedData.DEFAULT_COMPANY_ID
@@ -295,7 +296,7 @@ fun StaffPlanCalendarSection(
             item {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = ButterYellow,
+                    color = palette.butterBg,
                     border = BorderStroke(1.dp, WarmAlarmAmber.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -311,11 +312,11 @@ fun StaffPlanCalendarSection(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Outlined.EventRepeat, contentDescription = null, tint = DeepAmberInk, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.EventRepeat, contentDescription = null, tint = palette.butterInk, modifier = Modifier.size(18.dp))
                             Text(
                                 text = "${overdueIncompletePlans.size} unfinished plan item(s) from earlier",
                                 style = XMaxType.footnoteMedium.tabular(),
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                         }
                         TextButton(
@@ -326,7 +327,7 @@ fun StaffPlanCalendarSection(
                             },
                             modifier = Modifier.testTag("carry_over_plans_button")
                         ) {
-                            Text("Carry to Today", style = XMaxType.buttonCompact, color = DeepAmberInk)
+                            Text("Carry to Today", style = XMaxType.buttonCompact, color = palette.butterInk)
                         }
                     }
                 }
@@ -344,8 +345,8 @@ fun StaffPlanCalendarSection(
                 }
                 Surface(
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 1.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -365,7 +366,7 @@ fun StaffPlanCalendarSection(
                             Text(
                                 text = "Team Availability",
                                 style = XMaxType.headline,
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MemberAvailability.entries.forEach { avail ->
@@ -383,8 +384,8 @@ fun StaffPlanCalendarSection(
                                             }
                                         },
                                         shape = RoundedCornerShape(999.dp),
-                                        color = if (selected) accent.copy(alpha = 0.14f) else MutedSurface,
-                                        border = BorderStroke(1.dp, if (selected) accent.copy(alpha = 0.45f) else SubtleOutline),
+                                        color = if (selected) accent.copy(alpha = 0.14f) else palette.surfaceMuted,
+                                        border = BorderStroke(1.dp, if (selected) accent.copy(alpha = 0.45f) else palette.outline),
                                         modifier = Modifier.testTag("calendar_set_status_${avail.name.lowercase()}")
                                     ) {
                                         Row(
@@ -396,7 +397,7 @@ fun StaffPlanCalendarSection(
                                             Text(
                                                 text = avail.label,
                                                 style = if (selected) XMaxType.caption1Semibold else XMaxType.caption1Medium,
-                                                color = if (selected) ObsidianCharcoal else StudioTextSecondary
+                                                color = if (selected) palette.textPrimary else palette.textSecondary
                                             )
                                         }
                                     }
@@ -426,14 +427,14 @@ fun StaffPlanCalendarSection(
                                         name = person.fullName,
                                         availability = avail,
                                         size = 44.dp,
-                                        borderColor = SubtleOutline,
+                                        borderColor = palette.outline,
                                         photoBase64 = person.photoBase64,
                                         badgeTestTag = "calendar_member_status_${person.uid}"
                                     )
                                     Text(
                                         text = if (person.uid == uid) "You" else formatTitleCase(person.fullName).substringBefore(" "),
                                         style = XMaxType.caption1Semibold,
-                                        color = ObsidianCharcoal,
+                                        color = palette.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -443,7 +444,7 @@ fun StaffPlanCalendarSection(
                                         color = when (avail) {
                                             MemberAvailability.ACTIVE -> EmeraldApproved
                                             MemberAvailability.BUSY -> CrimsonBlocked
-                                            MemberAvailability.AWAY -> StudioTextSecondary
+                                            MemberAvailability.AWAY -> palette.textSecondary
                                         },
                                         maxLines = 1
                                     )
@@ -459,8 +460,8 @@ fun StaffPlanCalendarSection(
         item {
             Surface(
                 shape = RoundedCornerShape(26.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 shadowElevation = 2.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -492,12 +493,12 @@ fun StaffPlanCalendarSection(
                             Text(
                                 text = headerDateText,
                                 style = XMaxType.headline.tabular(),
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                             Text(
                                 text = headerWeekdayText,
                                 style = XMaxType.subheadline,
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
 
@@ -513,13 +514,13 @@ fun StaffPlanCalendarSection(
                                         calendarMonthOffset = 0
                                     },
                                     shape = RoundedCornerShape(999.dp),
-                                    color = KpiLavenderBg,
+                                    color = palette.lavenderBg,
                                     modifier = Modifier.padding(end = 4.dp)
                                 ) {
                                     Text(
                                         text = "Today",
                                         style = XMaxType.caption1Semibold,
-                                        color = PlanVioletAccent,
+                                        color = palette.lavenderInk,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                     )
                                 }
@@ -536,7 +537,7 @@ fun StaffPlanCalendarSection(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                     contentDescription = "Previous month",
-                                    tint = ObsidianCharcoal
+                                    tint = palette.textPrimary
                                 )
                             }
                             IconButton(
@@ -551,7 +552,7 @@ fun StaffPlanCalendarSection(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                     contentDescription = "Next month",
-                                    tint = ObsidianCharcoal
+                                    tint = palette.textPrimary
                                 )
                             }
                         }
@@ -563,7 +564,7 @@ fun StaffPlanCalendarSection(
                             Text(
                                 text = dayName,
                                 style = XMaxType.caption1Medium,
-                                color = StudioTextSecondary,
+                                color = palette.textSecondary,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.weight(1f)
                             )
@@ -597,10 +598,10 @@ fun StaffPlanCalendarSection(
                                                 modifier = Modifier
                                                     .size(32.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (isSelected) ObsidianCharcoal else Color.Transparent)
+                                                    .background(if (isSelected) palette.buttonPrimaryBg else Color.Transparent)
                                                     .then(
                                                         if (!isSelected && isToday) {
-                                                            Modifier.border(1.dp, ObsidianCharcoal.copy(alpha = 0.28f), CircleShape)
+                                                            Modifier.border(1.dp, palette.textPrimary.copy(alpha = 0.32f), CircleShape)
                                                         } else Modifier
                                                     ),
                                                 contentAlignment = Alignment.Center
@@ -608,7 +609,7 @@ fun StaffPlanCalendarSection(
                                                 Text(
                                                     text = slot.dayOfMonth.toString(),
                                                     style = (if (isSelected || isToday) XMaxType.footnoteSemibold else XMaxType.footnoteMedium).tabular(),
-                                                    color = if (isSelected) PureWhite else ObsidianCharcoal
+                                                    color = if (isSelected) palette.buttonPrimaryFg else palette.textPrimary
                                                 )
                                             }
                                             Row(
@@ -654,7 +655,7 @@ fun StaffPlanCalendarSection(
                                 Text(
                                     text = cat.label,
                                     style = XMaxType.caption1,
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                             }
                         }
@@ -681,19 +682,19 @@ fun StaffPlanCalendarSection(
                                 Text(
                                     text = filterMode.label,
                                     style = XMaxType.secondaryTitle,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                                 Icon(
                                     imageVector = Icons.Filled.KeyboardArrowDown,
                                     contentDescription = "Filter plan items",
-                                    tint = ObsidianCharcoal,
+                                    tint = palette.textPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                             DropdownMenu(
                                 expanded = filterMenuExpanded,
                                 onDismissRequest = { filterMenuExpanded = false },
-                                containerColor = PureWhite
+                                containerColor = palette.surface
                             ) {
                                 PlanFilterMode.entries.forEach { option ->
                                     DropdownMenuItem(
@@ -701,7 +702,7 @@ fun StaffPlanCalendarSection(
                                             Text(
                                                 text = option.label,
                                                 style = if (option == filterMode) XMaxType.subheadlineSemibold else XMaxType.subheadlineMedium,
-                                                color = ObsidianCharcoal
+                                                color = palette.textPrimary
                                             )
                                         },
                                         onClick = {
@@ -722,8 +723,8 @@ fun StaffPlanCalendarSection(
                             if (dayCount > 0) {
                                 StatusPill(
                                     label = "$dayCount items",
-                                    containerColor = MutedSurface,
-                                    contentColor = StudioTextSecondary
+                                    containerColor = palette.surfaceMuted,
+                                    contentColor = palette.textSecondary
                                 )
                             }
                             Surface(
@@ -753,7 +754,7 @@ fun StaffPlanCalendarSection(
 
                     // Hairline-divided schedule items (matching calander_design_ddea79f7.jpg)
                     if (visiblePlanItems.isEmpty() && dayDeliverables.isEmpty()) {
-                        HorizontalDivider(color = SubtleOutline)
+                        HorizontalDivider(color = palette.outline)
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -764,19 +765,19 @@ fun StaffPlanCalendarSection(
                             Icon(
                                 imageVector = Icons.Outlined.EventNote,
                                 contentDescription = null,
-                                tint = StudioTextSecondary.copy(alpha = 0.7f),
+                                tint = palette.textSecondary.copy(alpha = 0.7f),
                                 modifier = Modifier.size(28.dp)
                             )
                             Text(
                                 text = "No tasks scheduled for ${MoneyFormatter.formatDate(selectedDayMillis)}",
                                 style = XMaxType.calloutSemibold.tabular(),
-                                color = ObsidianCharcoal,
+                                color = palette.textPrimary,
                                 textAlign = TextAlign.Center
                             )
                             Text(
                                 text = "Add a plan block or pick a creative template below.",
                                 style = XMaxType.footnote,
-                                color = StudioTextSecondary,
+                                color = palette.textSecondary,
                                 textAlign = TextAlign.Center
                             )
                             Button(
@@ -798,7 +799,7 @@ fun StaffPlanCalendarSection(
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             visiblePlanItems.forEach { item ->
-                                HorizontalDivider(color = SubtleOutline)
+                                HorizontalDivider(color = palette.outline)
                                 PlanTimelineRow(
                                     item = item,
                                     onToggleCompleted = {
@@ -819,7 +820,7 @@ fun StaffPlanCalendarSection(
                             }
 
                             dayDeliverables.forEach { deliv ->
-                                HorizontalDivider(color = SubtleOutline)
+                                HorizontalDivider(color = palette.outline)
                                 AssignedDeliverablePlanRow(
                                     deliverable = deliv,
                                     onClick = { onOpenDeliverable(deliv) }
@@ -835,8 +836,8 @@ fun StaffPlanCalendarSection(
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -846,21 +847,21 @@ fun StaffPlanCalendarSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Outlined.Bolt, contentDescription = null, tint = PlanVioletAccent, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Outlined.Bolt, contentDescription = null, tint = palette.lavenderInk, modifier = Modifier.size(20.dp))
                     Box(modifier = Modifier.weight(1f)) {
                         if (quickAddText.isEmpty()) {
                             Text(
                                 text = "Quick add To Do for ${SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(selectedDayMillis))}…",
                                 style = XMaxType.subheadline,
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         BasicTextField(
                             value = quickAddText,
                             onValueChange = { quickAddText = it },
                             singleLine = true,
-                            textStyle = XMaxType.body.copy(color = ObsidianCharcoal),
-                            cursorBrush = SolidColor(ObsidianCharcoal),
+                            textStyle = XMaxType.body.copy(color = palette.textPrimary),
+                            cursorBrush = SolidColor(palette.textPrimary),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("plan_quick_add_input")
@@ -886,7 +887,7 @@ fun StaffPlanCalendarSection(
                         },
                         enabled = quickAddText.isNotBlank(),
                         shape = RoundedCornerShape(12.dp),
-                        color = if (quickAddText.isNotBlank()) ObsidianCharcoal else MutedSurface,
+                        color = if (quickAddText.isNotBlank()) palette.buttonPrimaryBg else palette.surfaceMuted,
                         modifier = Modifier
                             .height(38.dp)
                             .testTag("plan_quick_add_submit")
@@ -895,7 +896,7 @@ fun StaffPlanCalendarSection(
                             Text(
                                 text = "Add",
                                 style = XMaxType.buttonCompact,
-                                color = if (quickAddText.isNotBlank()) PureWhite else StudioTextSecondary
+                                color = if (quickAddText.isNotBlank()) palette.buttonPrimaryFg else palette.textSecondary
                             )
                         }
                     }
@@ -907,8 +908,8 @@ fun StaffPlanCalendarSection(
         item {
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = KpiLavenderBg.copy(alpha = 0.72f),
-                border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.20f)),
+                color = palette.lavenderBg,
+                border = BorderStroke(1.dp, palette.lavenderInk.copy(alpha = 0.25f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("staff_focus_timer_card")
@@ -929,14 +930,14 @@ fun StaffPlanCalendarSection(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (state.isFocusTimerRunning) PlanVioletAccent else PureWhite,
+                                color = if (state.isFocusTimerRunning) PlanVioletAccent else palette.surface,
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Outlined.Timer,
                                         contentDescription = null,
-                                        tint = if (state.isFocusTimerRunning) PureWhite else PlanVioletAccent,
+                                        tint = if (state.isFocusTimerRunning) PureWhite else palette.lavenderInk,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -945,14 +946,14 @@ fun StaffPlanCalendarSection(
                                 Text(
                                     text = "Deep Work Focus Sprint",
                                     style = XMaxType.footnoteSemibold,
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = formatCountdownMmSs(state.focusSecondsRemaining),
                                     style = XMaxType.numericHeadline.copy(fontFamily = MonoFontFamily),
-                                    color = PlanVioletAccent
+                                    color = palette.lavenderInk
                                 )
                             }
                         }
@@ -966,14 +967,14 @@ fun StaffPlanCalendarSection(
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                 modifier = Modifier.height(36.dp)
                             ) {
-                                Text("Reset", color = ObsidianCharcoal, maxLines = 1, softWrap = false, style = XMaxType.footnoteSemibold)
+                                Text("Reset", color = palette.textPrimary, maxLines = 1, softWrap = false, style = XMaxType.footnoteSemibold)
                             }
                             Button(
                                 onClick = onToggleFocusTimer,
                                 shape = RoundedCornerShape(999.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (state.isFocusTimerRunning) DeepBlushInk else ObsidianCharcoal,
-                                    contentColor = PureWhite
+                                    containerColor = if (state.isFocusTimerRunning) CrimsonBlocked else palette.buttonPrimaryBg,
+                                    contentColor = if (state.isFocusTimerRunning) PureWhite else palette.buttonPrimaryFg
                                 ),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                 modifier = Modifier
@@ -1009,10 +1010,10 @@ fun StaffPlanCalendarSection(
                                 onClick = { onSetFocusPreset(mins) },
                                 shape = RoundedCornerShape(999.dp),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = ObsidianCharcoal,
-                                    selectedLabelColor = PureWhite,
-                                    containerColor = PureWhite,
-                                    labelColor = ObsidianCharcoal
+                                    selectedContainerColor = palette.buttonPrimaryBg,
+                                    selectedLabelColor = palette.buttonPrimaryFg,
+                                    containerColor = palette.surface,
+                                    labelColor = palette.textPrimary
                                 ),
                                 label = { Text("${mins}m", style = XMaxType.footnoteMedium.tabular()) }
                             )
@@ -1025,11 +1026,11 @@ fun StaffPlanCalendarSection(
                             Icon(
                                 imageVector = Icons.Outlined.EditNote,
                                 contentDescription = null,
-                                tint = PlanVioletAccent,
+                                tint = palette.lavenderInk,
                                 modifier = Modifier.size(17.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(if (showScratchpad) "Hide Notes" else "Scratchpad", style = XMaxType.footnoteSemibold, color = PlanVioletAccent)
+                            Text(if (showScratchpad) "Hide Notes" else "Scratchpad", style = XMaxType.footnoteSemibold, color = palette.lavenderInk)
                         }
                     }
 
@@ -1046,8 +1047,8 @@ fun StaffPlanCalendarSection(
                             minLines = 2,
                             maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = PureWhite,
-                                unfocusedContainerColor = PureWhite
+                                focusedContainerColor = palette.surface,
+                                unfocusedContainerColor = palette.surface
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1064,7 +1065,7 @@ fun StaffPlanCalendarSection(
                 Text(
                     text = "One-Tap Creative Blocks",
                     style = XMaxType.subheadlineSemibold,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
                 Row(
                     modifier = Modifier
@@ -1086,8 +1087,8 @@ fun StaffPlanCalendarSection(
                                 showPlanEditorDialog = true
                             },
                             shape = RoundedCornerShape(999.dp),
-                            color = PureWhite,
-                            border = BorderStroke(1.dp, SubtleOutline),
+                            color = palette.surface,
+                            border = BorderStroke(1.dp, palette.outline),
                             modifier = Modifier.height(40.dp)
                         ) {
                             Row(
@@ -1104,7 +1105,7 @@ fun StaffPlanCalendarSection(
                                 Text(
                                     text = tpl.label,
                                     style = XMaxType.footnoteMedium,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                             }
                         }
@@ -1142,6 +1143,7 @@ private fun PlanTimelineRow(
     onRescheduleTomorrow: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val category = item.categoryEnum()
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -1179,20 +1181,20 @@ private fun PlanTimelineRow(
                 Text(
                     text = category.label,
                     style = XMaxType.caption1Medium,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
                 if (item.creativeTag.isNotBlank() && item.creativeTag != "General") {
                     StatusPill(
                         label = item.creativeTag,
-                        containerColor = MutedSurface,
-                        contentColor = ObsidianCharcoal
+                        containerColor = palette.surfaceMuted,
+                        contentColor = palette.textPrimary
                     )
                 }
             }
             Text(
                 text = item.title,
                 style = XMaxType.subheadlineSemibold,
-                color = if (item.completed) StudioTextSecondary else ObsidianCharcoal,
+                color = if (item.completed) palette.textSecondary else palette.textPrimary,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -1201,7 +1203,7 @@ private fun PlanTimelineRow(
                 Text(
                     text = listOf(item.timeRange, item.notes).filter { it.isNotBlank() }.joinToString(" • "),
                     style = XMaxType.footnote.tabular(),
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1216,38 +1218,38 @@ private fun PlanTimelineRow(
                 Icon(
                     imageVector = Icons.Filled.MoreVert,
                     contentDescription = "Plan options",
-                    tint = StudioTextSecondary,
+                    tint = palette.textSecondary,
                     modifier = Modifier.size(18.dp)
                 )
             }
             DropdownMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
-                containerColor = PureWhite
+                containerColor = palette.surface
             ) {
                 DropdownMenuItem(
-                    text = { Text(if (item.completed) "Reopen" else "Mark Done") },
+                    text = { Text(if (item.completed) "Reopen" else "Mark Done", color = palette.textPrimary) },
                     onClick = {
                         menuExpanded = false
                         onToggleCompleted()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Edit") },
+                    text = { Text("Edit", color = palette.textPrimary) },
                     onClick = {
                         menuExpanded = false
                         onEdit()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Move to Next Day") },
+                    text = { Text("Move to Next Day", color = palette.textPrimary) },
                     onClick = {
                         menuExpanded = false
                         onRescheduleTomorrow()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete", color = DeepBlushInk) },
+                    text = { Text("Delete", color = palette.blushInk) },
                     onClick = {
                         menuExpanded = false
                         onDelete()
@@ -1263,6 +1265,7 @@ private fun AssignedDeliverablePlanRow(
     deliverable: Deliverable,
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1278,7 +1281,7 @@ private fun AssignedDeliverablePlanRow(
             Icon(
                 imageVector = Icons.Outlined.WorkOutline,
                 contentDescription = "Assigned deliverable",
-                tint = PlanVioletAccent,
+                tint = palette.lavenderInk,
                 modifier = Modifier.size(21.dp)
             )
         }
@@ -1286,19 +1289,19 @@ private fun AssignedDeliverablePlanRow(
             Text(
                 text = "Deliverable • ${deliverable.statusEnum().label}",
                 style = XMaxType.caption1Medium,
-                color = PlanVioletAccent
+                color = palette.lavenderInk
             )
             Text(
                 text = deliverable.title,
                 style = XMaxType.headline,
-                color = ObsidianCharcoal,
+                color = palette.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "${deliverable.projectTitle} • Due ${MoneyFormatter.formatDate(deliverable.dueDateMillis)}",
                 style = XMaxType.footnote.tabular(),
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1306,7 +1309,7 @@ private fun AssignedDeliverablePlanRow(
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = "Open deliverable",
-            tint = StudioTextSecondary
+            tint = palette.textSecondary
         )
     }
 }
@@ -1318,6 +1321,7 @@ private fun StaffPlanEditorDialog(
     onSave: (StaffPlanItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var title by remember { mutableStateOf(initial.title) }
     var category by remember { mutableStateOf(initial.categoryEnum()) }
     var creativeTag by remember { mutableStateOf(initial.creativeTag.ifBlank { "Design" }) }
@@ -1336,13 +1340,13 @@ private fun StaffPlanEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(26.dp),
         title = {
             Text(
                 text = if (initial.id.isBlank()) "Plan Task or Event" else "Edit Plan Item",
                 style = XMaxType.secondaryTitle,
-                color = ObsidianCharcoal
+                color = palette.textPrimary
             )
         },
         text = {
@@ -1356,10 +1360,10 @@ private fun StaffPlanEditorDialog(
                 Text(
                     text = "Date: ${MoneyFormatter.formatDate(initial.dateMillis)}",
                     style = XMaxType.subheadlineSemibold.tabular(),
-                    color = PlanVioletAccent
+                    color = palette.lavenderInk
                 )
 
-                Text("Category", style = XMaxType.inputLabel, color = StudioTextSecondary)
+                Text("Category", style = XMaxType.inputLabel, color = palette.textSecondary)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1411,7 +1415,7 @@ private fun StaffPlanEditorDialog(
                     }
                 }
 
-                Text("Creative Focus", style = XMaxType.inputLabel, color = StudioTextSecondary)
+                Text("Creative Focus", style = XMaxType.inputLabel, color = palette.textSecondary)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1428,7 +1432,7 @@ private fun StaffPlanEditorDialog(
                 }
 
                 if (assignedDeliverables.isNotEmpty()) {
-                    Text("Link Project Deliverable (Optional)", style = XMaxType.inputLabel, color = StudioTextSecondary)
+                    Text("Link Project Deliverable (Optional)", style = XMaxType.inputLabel, color = palette.textSecondary)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1483,7 +1487,7 @@ private fun StaffPlanEditorDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", style = XMaxType.footnoteSemibold, color = ObsidianCharcoal)
+                Text("Cancel", style = XMaxType.footnoteSemibold, color = palette.textPrimary)
             }
         }
     )

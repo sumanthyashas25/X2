@@ -39,10 +39,10 @@ import com.example.ui.theme.*
 
 @Composable
 private fun monochromeChipColors() = FilterChipDefaults.filterChipColors(
-    selectedContainerColor = ObsidianCharcoal,
-    selectedLabelColor = PureWhite,
-    containerColor = MutedSurface,
-    labelColor = ObsidianCharcoal
+    selectedContainerColor = XMaxTheme.colors.buttonPrimaryBg,
+    selectedLabelColor = XMaxTheme.colors.buttonPrimaryFg,
+    containerColor = XMaxTheme.colors.surfaceMuted,
+    labelColor = XMaxTheme.colors.textPrimary
 )
 
 @Composable
@@ -52,6 +52,7 @@ fun TeamGovernanceScreen(
     onConfigureMember: (Member, MembershipStatus, AccessLevel, Department, JobRole, ScopeType, List<String>, Map<String, PermissionGrant>) -> Unit,
     onUpdateStaffDelegation: (Member, Map<String, DelegatedGrant>) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var editingMember by remember { mutableStateOf<Member?>(null) }
     var delegatingStaff by remember { mutableStateOf<Member?>(null) }
     var showInviteDialog by remember { mutableStateOf(false) }
@@ -61,18 +62,18 @@ fun TeamGovernanceScreen(
     val privateByUid = remember(state.allPrivateInfo) { state.allPrivateInfo.associateBy { it.uid } }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Team & Permissions (${state.members.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Team & Permissions (${state.members.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 if (isSuper) {
                     Button(
                         onClick = { showInviteDialog = true },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.height(42.dp).testTag("invite_member_button")
                     ) {
                         Icon(Icons.Filled.MailOutline, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -88,14 +89,14 @@ fun TeamGovernanceScreen(
             val activeCount = state.deliverables.count { it.assignedToUid == m.uid && it.statusEnum() != DeliverableStatus.APPROVED }
             val blockedCount = state.deliverables.count { it.assignedToUid == m.uid && it.statusEnum() == DeliverableStatus.BLOCKED }
             val (stBg, stFg) = when (m.statusEnum()) {
-                MembershipStatus.APPROVED -> SoftMint to DeepMintInk
-                MembershipStatus.PENDING -> ButterYellow to DeepAmberInk
-                MembershipStatus.DECLINED, MembershipStatus.SUSPENDED -> SoftBlush to CrimsonBlocked
+                MembershipStatus.APPROVED -> palette.mintBg to palette.mintInk
+                MembershipStatus.PENDING -> palette.butterBg to palette.butterInk
+                MembershipStatus.DECLINED, MembershipStatus.SUSPENDED -> palette.blushBg to palette.blushInk
             }
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -105,20 +106,20 @@ fun TeamGovernanceScreen(
                             name = m.fullName.ifBlank { m.requestedJobRole },
                             photoBase64 = m.photoBase64,
                             size = 46.dp,
-                            borderColor = KpiLavenderBg
+                            borderColor = palette.lavenderBg
                         )
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(m.fullName.ifBlank { m.requestedJobRole }.uppercase(), style = XMaxType.headline, color = ObsidianCharcoal)
+                            Text(m.fullName.ifBlank { m.requestedJobRole }.uppercase(), style = XMaxType.headline, color = palette.textPrimary)
                             Text(
                                 "${m.accessLevelEnum().label} • ${m.jobRoleName.ifBlank { m.requestedJobRole }} (${m.departmentName.ifBlank { m.requestedDepartment }})",
                                 style = XMaxType.footnote,
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         StatusPill(m.statusEnum().label, stBg, stFg)
                     }
                     if (isSuper && pInfo != null) {
-                        Text("Private PII: Age ${pInfo.age} • ${pInfo.email}", style = XMaxType.caption1.tabular(), color = StudioTextSecondary)
+                        Text("Private PII: Age ${pInfo.age} • ${pInfo.email}", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -128,7 +129,7 @@ fun TeamGovernanceScreen(
                         Text(
                             text = "Workload: $activeCount active • $blockedCount blocked",
                             style = XMaxType.footnoteMedium.tabular(),
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
                     }
 
@@ -137,8 +138,8 @@ fun TeamGovernanceScreen(
                             OutlinedButton(
                                 onClick = { editingMember = m },
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SubtleOutline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = KpiLavenderBg, contentColor = VioletPrimary),
+                                border = BorderStroke(1.dp, palette.outline),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk),
                                 modifier = Modifier.testTag("configure_member_${m.uid}")
                             ) {
                                 Text("Configure & Permissions", style = XMaxType.buttonCompact)
@@ -147,8 +148,8 @@ fun TeamGovernanceScreen(
                             OutlinedButton(
                                 onClick = { delegatingStaff = m },
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SubtleOutline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = KpiLavenderBg, contentColor = VioletPrimary)
+                                border = BorderStroke(1.dp, palette.outline),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk)
                             ) {
                                 Text("Delegate Staff Capabilities", style = XMaxType.buttonCompact)
                             }
@@ -203,6 +204,7 @@ private fun MemberPermissionEditorDialog(
     onSave: (MembershipStatus, AccessLevel, Department, JobRole, ScopeType, List<String>, Map<String, PermissionGrant>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val activeDepts = state.departments.filter { it.active }
     val activeRoles = state.jobRoles.filter { it.active }
 
@@ -221,21 +223,21 @@ private fun MemberPermissionEditorDialog(
         Surface(
             modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp),
             shape = RoundedCornerShape(28.dp),
-            color = CrispCanvas
+            color = palette.canvas
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = ObsidianCharcoal)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = palette.textPrimary)
                     }
-                    Text("CONFIGURE ${target.fullName.uppercase()}", style = XMaxType.headline, color = ObsidianCharcoal)
+                    Text("CONFIGURE ${target.fullName.uppercase()}", style = XMaxType.headline, color = palette.textPrimary)
                     Spacer(Modifier.size(48.dp))
                 }
-                HorizontalDivider(color = SubtleOutline)
+                HorizontalDivider(color = palette.outline)
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
-                        Text("Membership Status", style = XMaxType.headline, color = ObsidianCharcoal)
+                        Text("Membership Status", style = XMaxType.headline, color = palette.textPrimary)
                         Spacer(Modifier.height(6.dp))
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MembershipStatus.entries.forEach { st ->
@@ -251,7 +253,7 @@ private fun MemberPermissionEditorDialog(
                         }
                     }
                     item {
-                        Text("Access Level (Separate from Job Role)", style = XMaxType.headline, color = ObsidianCharcoal)
+                        Text("Access Level (Separate from Job Role)", style = XMaxType.headline, color = palette.textPrimary)
                         Spacer(Modifier.height(6.dp))
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AccessLevel.entries.forEach { lvl ->
@@ -267,7 +269,7 @@ private fun MemberPermissionEditorDialog(
                         }
                     }
                     item {
-                        Text("Department & Job Role", style = XMaxType.headline, color = ObsidianCharcoal)
+                        Text("Department & Job Role", style = XMaxType.headline, color = palette.textPrimary)
                         Spacer(Modifier.height(6.dp))
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             activeDepts.forEach { d ->
@@ -298,7 +300,7 @@ private fun MemberPermissionEditorDialog(
 
                     if (accessLevel == AccessLevel.ADMIN) {
                         item {
-                            Text("Manager Scope", style = XMaxType.headline, color = ObsidianCharcoal)
+                            Text("Manager Scope", style = XMaxType.headline, color = palette.textPrimary)
                             Spacer(Modifier.height(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 ScopeType.entries.forEach { sc ->
@@ -331,29 +333,29 @@ private fun MemberPermissionEditorDialog(
                         }
 
                         item {
-                            Text("Admin Permission Matrix (Allowed / May Delegate to Staff)", style = XMaxType.headline, color = ObsidianCharcoal)
+                            Text("Admin Permission Matrix (Allowed / May Delegate to Staff)", style = XMaxType.headline, color = palette.textPrimary)
                         }
                         items(AppPermission.entries, key = { it.name }) { p ->
                             val current = perms[p.name] ?: PermissionGrant()
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = MutedSurface,
+                                color = palette.surfaceMuted,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Surface(
                                         shape = RoundedCornerShape(14.dp),
-                                        color = PureWhite,
+                                        color = palette.surface,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                                                    Text(p.label, style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
-                                                    Text(p.description, style = XMaxType.footnote, color = StudioTextSecondary)
+                                                    Text(p.label, style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                                                    Text(p.description, style = XMaxType.footnote, color = palette.textSecondary)
                                                 }
                                                 Column(horizontalAlignment = Alignment.End) {
-                                                    Text("Allowed", style = XMaxType.caption1, color = StudioTextSecondary)
+                                                    Text("Allowed", style = XMaxType.caption1, color = palette.textSecondary)
                                                     Switch(
                                                         checked = current.allowed,
                                                         onCheckedChange = { allow ->
@@ -363,9 +365,9 @@ private fun MemberPermissionEditorDialog(
                                                 }
                                             }
                                             if (p.staffEligible) {
-                                                HorizontalDivider(color = SubtleOutline)
+                                                HorizontalDivider(color = palette.outline)
                                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("May delegate to staff", style = XMaxType.footnoteMedium, color = ObsidianCharcoal)
+                                                    Text("May delegate to staff", style = XMaxType.footnoteMedium, color = palette.textPrimary)
                                                     Switch(
                                                         checked = current.canDelegate,
                                                         enabled = current.allowed,
@@ -388,7 +390,7 @@ private fun MemberPermissionEditorDialog(
                 Button(
                     onClick = { onSave(status, accessLevel, selectedDept, selectedRole, scopeType, scopeDeptIds.toList(), perms) },
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                     modifier = Modifier.fillMaxWidth().height(50.dp).testTag("save_member_permissions_button")
                 ) { Text("Save Member & Permissions", style = XMaxType.button) }
             }
@@ -403,23 +405,24 @@ private fun StaffDelegationDialog(
     onSave: (Map<String, DelegatedGrant>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var grants by remember { mutableStateOf(staff.delegatedGrants) }
     val delegablePerms = AppPermission.entries.filter { PermissionEngine.canAdminDelegateToStaff(actor, staff, it) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(26.dp),
-        title = { Text("DELEGATE CAPABILITIES — ${staff.fullName.uppercase()}", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        title = { Text("DELEGATE CAPABILITIES — ${staff.fullName.uppercase()}", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (delegablePerms.isEmpty()) {
-                    Text("You do not hold any delegable permissions within this team member's scope.", style = XMaxType.subheadline, color = StudioTextSecondary)
+                    Text("You do not hold any delegable permissions within this team member's scope.", style = XMaxType.subheadline, color = palette.textSecondary)
                 } else {
                     delegablePerms.forEach { p ->
                         val active = grants[p.name]?.allowed == true
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(p.label, style = XMaxType.subheadlineMedium, modifier = Modifier.weight(1f), color = ObsidianCharcoal)
+                            Text(p.label, style = XMaxType.subheadlineMedium, modifier = Modifier.weight(1f), color = palette.textPrimary)
                             Switch(
                                 checked = active,
                                 onCheckedChange = { checked ->
@@ -439,10 +442,10 @@ private fun StaffDelegationDialog(
             Button(
                 onClick = { onSave(grants) },
                 shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
             ) { Text("Save", style = XMaxType.buttonCompact) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
     )
 }
 
@@ -453,6 +456,7 @@ private fun InviteMemberDialog(
     onInvite: (String, AccessLevel, Department, JobRole) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var email by remember { mutableStateOf("") }
     var level by remember { mutableStateOf(AccessLevel.STAFF) }
     var dept by remember { mutableStateOf(departments.firstOrNull() ?: Department("dept_creative", "Creative")) }
@@ -460,9 +464,9 @@ private fun InviteMemberDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(26.dp),
-        title = { Text("Invite Team Member", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        title = { Text("Invite Team Member", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = email, onValueChange = { email = it }, textStyle = XMaxType.body, label = { Text("Google Email *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -488,10 +492,10 @@ private fun InviteMemberDialog(
                 onClick = { onInvite(email, level, dept, role) },
                 enabled = email.contains("@"),
                 shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
             ) { Text("Send Invite", style = XMaxType.buttonCompact) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
     )
 }
 
@@ -504,6 +508,7 @@ fun OrgAndRoutingScreen(
     onRetireJobRole: (JobRole, Department, JobRole) -> Unit,
     onSaveRoutingRule: (RoutingRule) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var retireDeptTarget by remember { mutableStateOf<Department?>(null) }
     var retireRoleTarget by remember { mutableStateOf<JobRole?>(null) }
     var showAddDept by remember { mutableStateOf(false) }
@@ -513,17 +518,17 @@ fun OrgAndRoutingScreen(
     val activeRoles = state.jobRoles.filter { it.active }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Departments (${activeDepts.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Departments (${activeDepts.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 Button(
                     onClick = { showAddDept = true },
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                     modifier = Modifier.height(40.dp)
                 ) { Text("+ DEPT", style = XMaxType.buttonCompact) }
             }
@@ -531,7 +536,7 @@ fun OrgAndRoutingScreen(
         items(activeDepts, key = { it.id }) { d ->
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
@@ -540,8 +545,8 @@ fun OrgAndRoutingScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(d.name.uppercase(), style = XMaxType.headline, color = ObsidianCharcoal)
-                        if (d.description.isNotBlank()) Text(d.description, style = XMaxType.footnote, color = StudioTextSecondary)
+                        Text(d.name.uppercase(), style = XMaxType.headline, color = palette.textPrimary)
+                        if (d.description.isNotBlank()) Text(d.description, style = XMaxType.footnote, color = palette.textSecondary)
                     }
                     if (activeDepts.size > 1) {
                         TextButton(onClick = { retireDeptTarget = d }) { Text("Retire", style = XMaxType.footnoteSemibold, color = CrimsonBlocked) }
@@ -552,11 +557,11 @@ fun OrgAndRoutingScreen(
 
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Job Roles (${activeRoles.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Job Roles (${activeRoles.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 Button(
                     onClick = { showAddRole = true },
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                     modifier = Modifier.height(40.dp)
                 ) { Text("+ ROLE", style = XMaxType.buttonCompact) }
             }
@@ -565,7 +570,7 @@ fun OrgAndRoutingScreen(
             val dName = activeDepts.firstOrNull { it.id == r.departmentId }?.name ?: r.departmentId
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
@@ -574,8 +579,8 @@ fun OrgAndRoutingScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(r.name.uppercase(), style = XMaxType.headline, color = ObsidianCharcoal)
-                        Text("Department: ${dName.uppercase()}", style = XMaxType.footnote, color = StudioTextSecondary)
+                        Text(r.name.uppercase(), style = XMaxType.headline, color = palette.textPrimary)
+                        Text("Department: ${dName.uppercase()}", style = XMaxType.footnote, color = palette.textSecondary)
                     }
                     if (activeRoles.size > 1) {
                         TextButton(onClick = { retireRoleTarget = r }) { Text("Retire", style = XMaxType.footnoteSemibold, color = CrimsonBlocked) }
@@ -584,11 +589,11 @@ fun OrgAndRoutingScreen(
             }
         }
 
-        item { Text("Service-to-Role Routing Rules (${state.routingRules.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal) }
+        item { Text("Service-to-Role Routing Rules (${state.routingRules.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary) }
         items(state.routingRules, key = { it.id }) { rule ->
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Row(
@@ -597,8 +602,8 @@ fun OrgAndRoutingScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                        Text(formatTitleCase(rule.name), style = XMaxType.headline, color = ObsidianCharcoal)
-                        Text("Priority ${rule.priority} • Target: ${formatTitleCase(rule.departmentName)} / ${formatTitleCase(rule.jobRoleName)}", style = XMaxType.footnote.tabular(), color = StudioTextSecondary)
+                        Text(formatTitleCase(rule.name), style = XMaxType.headline, color = palette.textPrimary)
+                        Text("Priority ${rule.priority} • Target: ${formatTitleCase(rule.departmentName)} / ${formatTitleCase(rule.jobRoleName)}", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                     }
                     Switch(checked = rule.active, onCheckedChange = { onSaveRoutingRule(rule.copy(active = it)) })
                 }
@@ -619,12 +624,12 @@ fun OrgAndRoutingScreen(
 
         AlertDialog(
             onDismissRequest = { retireDeptTarget = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Retire Department: ${dept.name}", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Retire Department: ${dept.name}", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Impact Preview:\n• ${impact.affectedEmployees.size} employees\n• ${impact.affectedJobRoles.size} job roles\n• ${impact.affectedRoutingRules.size} routing rules\n• ${impact.activeDeliverableCount} active deliverables", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary)
+                    Text("Impact Preview:\n• ${impact.affectedEmployees.size} employees\n• ${impact.affectedJobRoles.size} job roles\n• ${impact.affectedRoutingRules.size} routing rules\n• ${impact.activeDeliverableCount} active deliverables", style = XMaxType.subheadline.tabular(), color = palette.textSecondary)
                     if (candidates.isEmpty() || repRole == null) {
                         Text(
                             "Create another active department and job role before retiring this department.",
@@ -632,7 +637,7 @@ fun OrgAndRoutingScreen(
                             style = XMaxType.footnote
                         )
                     } else {
-                        Text("Reassign all to:", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                        Text("Reassign all to:", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             candidates.forEach { c ->
                                 FilterChip(
@@ -663,10 +668,10 @@ fun OrgAndRoutingScreen(
                     },
                     enabled = safeDept != null && safeRole != null,
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Reassign & Retire", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { retireDeptTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { retireDeptTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 
@@ -679,12 +684,12 @@ fun OrgAndRoutingScreen(
 
         AlertDialog(
             onDismissRequest = { retireRoleTarget = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Retire Job Role: ${role.name}", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Retire Job Role: ${role.name}", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Impact Preview:\n• ${impact.affectedEmployees.size} employees\n• ${impact.affectedRoutingRules.size} routing rules\n• ${impact.activeDeliverableCount} active deliverables", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary)
+                    Text("Impact Preview:\n• ${impact.affectedEmployees.size} employees\n• ${impact.affectedRoutingRules.size} routing rules\n• ${impact.activeDeliverableCount} active deliverables", style = XMaxType.subheadline.tabular(), color = palette.textSecondary)
                     if (candidates.isEmpty() || repDept == null) {
                         Text(
                             "Create another active job role before retiring this role.",
@@ -692,7 +697,7 @@ fun OrgAndRoutingScreen(
                             style = XMaxType.footnote
                         )
                     } else {
-                        Text("Reassign to replacement role:", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                        Text("Reassign to replacement role:", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             candidates.forEach { c ->
                                 FilterChip(selected = repRole?.id == c.id, onClick = { repRole = c }, shape = RoundedCornerShape(999.dp), colors = monochromeChipColors(), border = null, label = { Text(c.name, style = XMaxType.footnoteMedium) })
@@ -713,10 +718,10 @@ fun OrgAndRoutingScreen(
                     },
                     enabled = safeDept != null && safeRole != null,
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Reassign & Retire", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { retireRoleTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { retireRoleTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 
@@ -725,9 +730,9 @@ fun OrgAndRoutingScreen(
         var desc by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddDept = false },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Add Department", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Add Department", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, textStyle = XMaxType.body, label = { Text("Department Name *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -739,10 +744,10 @@ fun OrgAndRoutingScreen(
                     onClick = { onSaveDepartment(null, name, desc); showAddDept = false },
                     enabled = name.isNotBlank(),
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Save", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { showAddDept = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { showAddDept = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 
@@ -751,9 +756,9 @@ fun OrgAndRoutingScreen(
         var dept by remember { mutableStateOf(activeDepts.first()) }
         AlertDialog(
             onDismissRequest = { showAddRole = false },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Add Job Role", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Add Job Role", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, textStyle = XMaxType.body, label = { Text("Role Name *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -767,10 +772,10 @@ fun OrgAndRoutingScreen(
                     onClick = { onSaveJobRole(null, name, dept.id); showAddRole = false },
                     enabled = name.isNotBlank(),
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Save", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { showAddRole = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { showAddRole = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
@@ -780,6 +785,7 @@ fun CompanySettingsScreen(
     state: AgencyUiState,
     onSaveCompany: (CompanyProfile) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val company = state.company ?: return
     var name by remember(company) { mutableStateOf(company.name) }
     var tagline by remember(company) { mutableStateOf(company.tagline) }
@@ -793,9 +799,20 @@ fun CompanySettingsScreen(
     var valDays by remember(company) { mutableStateOf(company.defaultValidityDays.toString()) }
     var revRounds by remember(company) { mutableStateOf(company.defaultRevisionRounds.toString()) }
     var payTerms by remember(company) { mutableStateOf(company.defaultPaymentTerms) }
+    var defaultWallpaperId by remember(company) { mutableStateOf(company.defaultChatWallpaperId.ifBlank { "studio_white" }) }
+    var defaultWallpaperUrl by remember(company) { mutableStateOf(company.defaultChatWallpaperUrl) }
+
+    val presetWallpapers = listOf(
+        "studio_white" to "Studio Crisp",
+        "dark_doodle" to "Dark Doodle",
+        "midnight_slate" to "Obsidian Slate",
+        "warm_gradient" to "Sunset Amber",
+        "sky_breeze" to "Sky Breeze",
+        "lavender_cloud" to "Pastel Violet"
+    )
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -803,20 +820,20 @@ fun CompanySettingsScreen(
         item {
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val tfColors = OutlinedTextFieldDefaults.colors(focusedContainerColor = PureWhite, unfocusedContainerColor = PureWhite)
+                    val tfColors = OutlinedTextFieldDefaults.colors(focusedContainerColor = palette.surface, unfocusedContainerColor = palette.surface)
                     OutlinedTextField(value = name, onValueChange = { name = it }, textStyle = XMaxType.body, label = { Text("Company Name", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = tagline, onValueChange = { tagline = it }, textStyle = XMaxType.body, label = { Text("Tagline", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = address, onValueChange = { address = it }, textStyle = XMaxType.body, label = { Text("Business Address", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = phone, onValueChange = { phone = it }, textStyle = XMaxType.body.tabular(), label = { Text("Phone", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = email, onValueChange = { email = it }, textStyle = XMaxType.body, label = { Text("Email", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = gstin, onValueChange = { gstin = it }, textStyle = XMaxType.body.tabular(), label = { Text("GSTIN (Optional)", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
-                    Surface(shape = RoundedCornerShape(14.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+                    Surface(shape = RoundedCornerShape(14.dp), color = palette.surface, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Enable GST on new quotes", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                            Text("Enable GST on new quotes", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                             Switch(checked = gstEnabled, onCheckedChange = { gstEnabled = it })
                         }
                     }
@@ -827,6 +844,52 @@ fun CompanySettingsScreen(
                         OutlinedTextField(value = revRounds, onValueChange = { revRounds = it.filter(Char::isDigit) }, textStyle = XMaxType.body.tabular(), label = { Text("Revisions", style = XMaxType.inputLabel) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.weight(1f))
                     }
                     OutlinedTextField(value = payTerms, onValueChange = { payTerms = it }, textStyle = XMaxType.body, label = { Text("Default Payment Terms", style = XMaxType.inputLabel) }, shape = RoundedCornerShape(14.dp), colors = tfColors, modifier = Modifier.fillMaxWidth())
+
+                    HorizontalDivider(color = palette.outline, modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Super Admin Workspace Default Chat Wallpaper
+                    Text(
+                        text = "Workspace Default Chat Wallpaper",
+                        style = XMaxType.subheadlineSemibold,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Set a baseline background for all team chats. Team members can still override with their personal favorite.",
+                        style = XMaxType.caption1,
+                        color = palette.textSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        presetWallpapers.forEach { (pid, plabel) ->
+                            val isSel = defaultWallpaperId == pid && defaultWallpaperUrl.isBlank()
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    defaultWallpaperId = pid
+                                    defaultWallpaperUrl = ""
+                                },
+                                label = { Text(plabel, style = XMaxType.caption1Medium) },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = defaultWallpaperUrl,
+                        onValueChange = { defaultWallpaperUrl = it },
+                        textStyle = XMaxType.body,
+                        label = { Text("Custom Wallpaper Image URL (Optional)", style = XMaxType.inputLabel) },
+                        placeholder = { Text("https://example.com/company-wallpaper.jpg", style = XMaxType.caption1) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = tfColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     Button(
                         onClick = {
                             onSaveCompany(
@@ -842,12 +905,14 @@ fun CompanySettingsScreen(
                                     defaultAdvancePercent = advPct.toIntOrNull()?.coerceIn(0, 100) ?: 50,
                                     defaultValidityDays = valDays.toIntOrNull()?.coerceIn(1, 365) ?: 15,
                                     defaultRevisionRounds = revRounds.toIntOrNull()?.coerceIn(0, 20) ?: 2,
-                                    defaultPaymentTerms = payTerms
+                                    defaultPaymentTerms = payTerms,
+                                    defaultChatWallpaperId = defaultWallpaperId,
+                                    defaultChatWallpaperUrl = defaultWallpaperUrl.trim()
                                 )
                             )
                         },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
                     ) { Text("SAVE COMPANY SETTINGS", style = XMaxType.button) }
                 }
@@ -868,6 +933,7 @@ fun NotificationsScreen(
     onOpenDeliverableById: (String) -> Unit = {},
     onOpenPayments: () -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     val myUid = state.myMember?.uid.orEmpty()
     val relevant = state.myNotifications
     val unreadCount = relevant.count { it.isUnreadFor(myUid) }
@@ -879,7 +945,7 @@ fun NotificationsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(CrispCanvas)
+            .background(palette.canvas)
             .testTag("notifications_screen_list"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -893,7 +959,7 @@ fun NotificationsScreen(
                 Text(
                     "Notifications (${relevant.size})",
                     style = XMaxType.sectionHeading.tabular(),
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 if (unreadCount > 0) {
@@ -901,7 +967,7 @@ fun NotificationsScreen(
                         onClick = onMarkAllRead,
                         modifier = Modifier.testTag("mark_all_notifications_read_button")
                     ) {
-                        Text("MARK ALL READ", style = XMaxType.footnoteSemibold, color = VioletPrimary)
+                        Text("MARK ALL READ", style = XMaxType.footnoteSemibold, color = palette.lavenderInk)
                     }
                 }
             }
@@ -911,8 +977,8 @@ fun NotificationsScreen(
         item {
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -931,19 +997,19 @@ fun NotificationsScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             Box(
-                                modifier = Modifier.size(40.dp).clip(CircleShape).background(KpiLavenderBg),
+                                modifier = Modifier.size(40.dp).clip(CircleShape).background(palette.lavenderBg),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = if (state.soundEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                                     contentDescription = "Notification sound",
-                                    tint = VioletPrimary,
+                                    tint = palette.lavenderInk,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                             Column {
-                                Text("NOTIFICATION SOUND", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
-                                Text("Play alert chime on new tasks, approvals & messages", style = XMaxType.footnote, color = StudioTextSecondary)
+                                Text("NOTIFICATION SOUND", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                                Text("Play alert chime on new tasks, approvals & messages", style = XMaxType.footnote, color = palette.textSecondary)
                             }
                         }
                         Switch(
@@ -1011,8 +1077,8 @@ fun NotificationsScreen(
                         }
                     },
                     shape = RoundedCornerShape(22.dp),
-                    color = if (isUnread) KpiLavenderBg.copy(alpha = 0.72f) else PureWhite,
-                    border = BorderStroke(1.dp, if (isUnread) VioletPrimary.copy(alpha = 0.45f) else SubtleOutline),
+                    color = if (isUnread) palette.lavenderBg.copy(alpha = 0.72f) else palette.surface,
+                    border = BorderStroke(1.dp, if (isUnread) palette.accentViolet.copy(alpha = 0.45f) else palette.outline),
                     shadowElevation = if (isUnread) 3.dp else 1.dp,
                     modifier = Modifier.fillMaxWidth().testTag("notification_card_${notif.id}")
                 ) {
@@ -1025,13 +1091,13 @@ fun NotificationsScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(if (isUnread) VioletPrimary else MutedSurface),
+                                .background(if (isUnread) palette.accentViolet else palette.surfaceMuted),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = icon,
                                 contentDescription = null,
-                                tint = if (isUnread) PureWhite else ObsidianCharcoal,
+                                tint = if (isUnread) PureWhite else palette.textPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1045,13 +1111,13 @@ fun NotificationsScreen(
                                         modifier = Modifier
                                             .size(8.dp)
                                             .clip(CircleShape)
-                                            .background(VioletPrimary)
+                                            .background(palette.accentViolet)
                                     )
                                 }
                                 Text(
                                     formatTitleCase(notif.title),
                                     style = XMaxType.headline,
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1059,13 +1125,13 @@ fun NotificationsScreen(
                                 Text(
                                     notif.body,
                                     style = XMaxType.footnote,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                             }
                             Text(
                                 "${formatTitleCase(notif.actorName.ifBlank { "Workspace" })} • $timeLabel",
                                 style = XMaxType.caption1.tabular(),
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         if (state.isSuperAdmin) {

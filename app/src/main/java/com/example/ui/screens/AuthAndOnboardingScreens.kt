@@ -42,7 +42,8 @@ import com.example.ui.AgencyUiState
 import com.example.ui.components.*
 import com.example.ui.theme.*
 
-private fun Modifier.cleanLightBackdrop(): Modifier = this.background(CrispCanvas)
+@Composable
+private fun Modifier.cleanLightBackdrop(): Modifier = this.background(XMaxTheme.colors.canvas)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,13 +57,14 @@ fun SignInScreen(
     onVerifyPhoneOtp: (String) -> Unit = {},
     onResetPhoneAuth: () -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     var showPhoneSheet by remember { mutableStateOf(false) }
     var activeLegalTopic by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PureWhite)
+            .background(palette.surface)
     ) {
         BoxWithConstraints(
             modifier = Modifier
@@ -90,7 +92,7 @@ fun SignInScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    XMaxLogoImage(tint = ObsidianCharcoal.copy(alpha = 0.78f), height = 14.dp)
+                    XMaxLogoImage(tint = palette.textPrimary.copy(alpha = 0.78f), height = 14.dp)
                 }
 
                 // Main centered identity, headline, and auth actions
@@ -111,7 +113,7 @@ fun SignInScreen(
                     Text(
                         text = "Sign in to continue",
                         style = XMaxType.primaryTitle,
-                        color = ObsidianCharcoal,
+                        color = palette.textPrimary,
                         textAlign = TextAlign.Center
                     )
 
@@ -120,7 +122,7 @@ fun SignInScreen(
                     Text(
                         text = "Please try one of the following ways to\nregister or log in to your account.",
                         style = XMaxType.subheadline,
-                        color = StudioTextSecondary,
+                        color = palette.textSecondary,
                         textAlign = TextAlign.Center
                     )
 
@@ -136,12 +138,12 @@ fun SignInScreen(
 
                     Spacer(Modifier.height(34.dp))
 
-                    // Primary Solid Jet-Black Google Button (matching Login_ui_referance_f765934b.jpg)
+                    // Primary Solid Google Button
                     Surface(
                         onClick = { if (!authInProgress) onGoogleSignIn() },
                         enabled = !authInProgress,
                         shape = RoundedCornerShape(999.dp),
-                        color = ObsidianCharcoal,
+                        color = palette.buttonPrimaryBg,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp)
@@ -158,13 +160,13 @@ fun SignInScreen(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
-                                    color = PureWhite
+                                    color = palette.buttonPrimaryFg
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Text(
                                     text = "Signing in…",
                                     style = XMaxType.button,
-                                    color = PureWhite
+                                    color = palette.buttonPrimaryFg
                                 )
                             } else {
                                 GoogleGLogo(modifier = Modifier.size(18.dp))
@@ -172,7 +174,7 @@ fun SignInScreen(
                                 Text(
                                     text = "Continue with Google",
                                     style = XMaxType.button,
-                                    color = PureWhite
+                                    color = palette.buttonPrimaryFg
                                 )
                             }
                         }
@@ -180,7 +182,7 @@ fun SignInScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Clean Outlined White Pill: Continue with Phone
+                    // Clean Outlined Pill: Continue with Phone
                     Surface(
                         onClick = {
                             if (!authInProgress) {
@@ -190,8 +192,8 @@ fun SignInScreen(
                         },
                         enabled = !authInProgress,
                         shape = RoundedCornerShape(999.dp),
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
+                        color = palette.surface,
+                        border = BorderStroke(1.dp, palette.outline),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp)
@@ -207,14 +209,14 @@ fun SignInScreen(
                             Icon(
                                 imageVector = Icons.Filled.PhoneAndroid,
                                 contentDescription = null,
-                                tint = ObsidianCharcoal,
+                                tint = palette.textPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
                                 text = "Continue with Phone",
                                 style = XMaxType.button,
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                         }
                     }
@@ -262,7 +264,7 @@ fun SignInScreen(
                 Text(
                     text = legalCaption,
                     style = XMaxType.caption1.copy(
-                        color = StudioTextSecondary,
+                        color = palette.textSecondary,
                         textAlign = TextAlign.Center
                     ),
                     modifier = Modifier
@@ -289,8 +291,8 @@ fun SignInScreen(
     if (activeLegalTopic != null) {
         ModalBottomSheet(
             onDismissRequest = { activeLegalTopic = null },
-            containerColor = PureWhite,
-            contentColor = ObsidianCharcoal
+            containerColor = palette.surface,
+            contentColor = palette.textPrimary
         ) {
             Column(
                 modifier = Modifier
@@ -302,7 +304,7 @@ fun SignInScreen(
                 Text(
                     text = activeLegalTopic ?: "",
                     style = XMaxType.secondaryTitle,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
                 Text(
                     text = if (activeLegalTopic == "Terms of Service") {
@@ -311,14 +313,14 @@ fun SignInScreen(
                         "Authentication identifiers (Google account email or verified phone number) and profile details submitted during onboarding are stored securely in Firebase Authentication and Cloud Firestore for team role access and activity auditing."
                     },
                     style = XMaxType.subheadline,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
                 Button(
                     onClick = { activeLegalTopic = null },
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ObsidianCharcoal,
-                        contentColor = PureWhite
+                        containerColor = palette.buttonPrimaryBg,
+                        contentColor = palette.buttonPrimaryFg
                     ),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
@@ -381,14 +383,15 @@ private fun PhoneAuthBottomSheet(
     onVerifyOtp: (String) -> Unit,
     onChangeNumber: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var phoneInput by remember(session.phoneNumber) { mutableStateOf(session.phoneNumber.ifBlank { "+91" }) }
     var otpInput by remember { mutableStateOf("") }
     val awaitingOtp = !session.verificationId.isNullOrBlank()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -400,7 +403,7 @@ private fun PhoneAuthBottomSheet(
             Text(
                 text = if (awaitingOtp) "Enter Verification Code" else "Continue with Phone",
                 style = XMaxType.secondaryTitle,
-                color = ObsidianCharcoal
+                color = palette.textPrimary
             )
             Text(
                 text = if (awaitingOtp) {
@@ -409,7 +412,7 @@ private fun PhoneAuthBottomSheet(
                     "Enter your mobile number with country code (for example +919876543210)."
                 },
                 style = XMaxType.subheadline,
-                color = StudioTextSecondary
+                color = palette.textSecondary
             )
 
             if (!awaitingOtp) {
@@ -422,10 +425,10 @@ private fun PhoneAuthBottomSheet(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CrispCanvas,
-                        unfocusedContainerColor = CrispCanvas,
-                        focusedBorderColor = ObsidianCharcoal,
-                        unfocusedBorderColor = SubtleOutline
+                        focusedContainerColor = palette.canvas,
+                        unfocusedContainerColor = palette.canvas,
+                        focusedBorderColor = palette.textPrimary,
+                        unfocusedBorderColor = palette.outline
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -441,10 +444,10 @@ private fun PhoneAuthBottomSheet(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CrispCanvas,
-                        unfocusedContainerColor = CrispCanvas,
-                        focusedBorderColor = ObsidianCharcoal,
-                        unfocusedBorderColor = SubtleOutline
+                        focusedContainerColor = palette.canvas,
+                        unfocusedContainerColor = palette.canvas,
+                        focusedBorderColor = palette.textPrimary,
+                        unfocusedBorderColor = palette.outline
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -467,8 +470,8 @@ private fun PhoneAuthBottomSheet(
                 enabled = !session.inProgress,
                 shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = ObsidianCharcoal,
-                    contentColor = PureWhite
+                    containerColor = palette.buttonPrimaryBg,
+                    contentColor = palette.buttonPrimaryFg
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -479,7 +482,7 @@ private fun PhoneAuthBottomSheet(
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = PureWhite
+                        color = palette.buttonPrimaryFg
                     )
                     Spacer(Modifier.width(10.dp))
                     Text("Please wait…", style = XMaxType.button)
@@ -502,13 +505,13 @@ private fun PhoneAuthBottomSheet(
                             onChangeNumber()
                         }
                     ) {
-                        Text("Change Number", style = XMaxType.buttonCompact, color = StudioTextSecondary)
+                        Text("Change Number", style = XMaxType.buttonCompact, color = palette.textSecondary)
                     }
                     TextButton(
                         onClick = { onSendOtp(session.phoneNumber) },
                         enabled = !session.inProgress
                     ) {
-                        Text("Resend Code", style = XMaxType.buttonCompact, color = ObsidianCharcoal)
+                        Text("Resend Code", style = XMaxType.buttonCompact, color = palette.textPrimary)
                     }
                 }
             }
@@ -579,6 +582,8 @@ fun OnboardingScreen(
     onBootstrapSuperAdmin: (fullName: String, age: Int) -> Unit,
     onSignOut: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     val user = state.firebaseUser
     var companyName by remember { mutableStateOf("X.MAX") }
     var fullName by remember(user?.uid) { mutableStateOf(user?.displayName ?: "") }
@@ -618,7 +623,7 @@ fun OnboardingScreen(
                 Surface(
                     onClick = onSignOut,
                     shape = RoundedCornerShape(999.dp),
-                    color = Color(0xFFECEDF1),
+                    color = palette.surfaceMuted,
                     modifier = Modifier
                         .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                         .testTag("onboarding_sign_out_button")
@@ -631,12 +636,12 @@ fun OnboardingScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Logout,
                             contentDescription = null,
-                            tint = ObsidianCharcoal,
+                            tint = palette.textPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             "Sign Out",
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             style = XMaxType.buttonCompact
                         )
                     }
@@ -655,11 +660,11 @@ fun OnboardingScreen(
                 if (!state.errorMessage.isNullOrBlank()) {
                     Card(
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = SoftBlush)
+                        colors = CardDefaults.cardColors(containerColor = palette.blushBg)
                     ) {
                         Text(
                             text = state.errorMessage,
-                            color = DeepBlushInk,
+                            color = palette.blushInk,
                             style = XMaxType.footnote,
                             modifier = Modifier.padding(14.dp)
                         )
@@ -668,7 +673,8 @@ fun OnboardingScreen(
                 if (state.isBootstrappedEmail) {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
-                        color = ObsidianCharcoal,
+                        color = if (isDark) palette.surfaceElevated else ObsidianCharcoal,
+                        border = if (isDark) BorderStroke(1.dp, palette.outline) else null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -679,11 +685,11 @@ fun OnboardingScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Surface(shape = RoundedCornerShape(999.dp), color = InfoPillBg) {
+                                Surface(shape = RoundedCornerShape(999.dp), color = palette.infoBg) {
                                     Text(
                                         text = "Super Admin Ready",
                                         style = XMaxType.caption1Semibold,
-                                        color = InfoPillInk,
+                                        color = palette.infoInk,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
@@ -696,7 +702,7 @@ fun OnboardingScreen(
                             Text(
                                 "Verified Google account (${user?.email}) is authorized to provision the X.MAX workspace, starting 40-service catalogue, 5 packages, 11 add-ons, and Super Admin access.",
                                 style = XMaxType.subheadline,
-                                color = Color(0xFFB5B9C4)
+                                color = if (isDark) palette.textSecondary else Color(0xFFB5B9C4)
                             )
                             Button(
                                 onClick = {
@@ -705,8 +711,8 @@ fun OnboardingScreen(
                                 },
                                 shape = RoundedCornerShape(999.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = PureWhite,
-                                    contentColor = ObsidianCharcoal
+                                    containerColor = if (isDark) palette.buttonPrimaryBg else PureWhite,
+                                    contentColor = if (isDark) palette.buttonPrimaryFg else ObsidianCharcoal
                                 ),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -723,8 +729,8 @@ fun OnboardingScreen(
 
                 Card(
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MutedSurface),
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
+                    border = BorderStroke(1.dp, palette.outline),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(
@@ -734,12 +740,12 @@ fun OnboardingScreen(
                         Text(
                             "Employee Membership Request",
                             style = XMaxType.secondaryTitle,
-                            color = ObsidianCharcoal
+                            color = palette.textPrimary
                         )
                         Text(
                             "Signed in as ${user?.email ?: user?.phoneNumber ?: "Unknown"}. Requests require Super Admin approval unless an invitation already matches your email.",
                             style = XMaxType.subheadline,
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
 
                         OutlinedTextField(
@@ -750,8 +756,8 @@ fun OnboardingScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = PureWhite,
-                                unfocusedContainerColor = PureWhite
+                                focusedContainerColor = palette.surface,
+                                unfocusedContainerColor = palette.surface
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -766,8 +772,8 @@ fun OnboardingScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = PureWhite,
-                                unfocusedContainerColor = PureWhite
+                                focusedContainerColor = palette.surface,
+                                unfocusedContainerColor = palette.surface
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -784,8 +790,8 @@ fun OnboardingScreen(
                                 singleLine = true,
                                 shape = RoundedCornerShape(16.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = PureWhite,
-                                    unfocusedContainerColor = PureWhite
+                                    focusedContainerColor = palette.surface,
+                                    unfocusedContainerColor = palette.surface
                                 ),
                                 modifier = Modifier
                                     .weight(0.42f)
@@ -800,8 +806,8 @@ fun OnboardingScreen(
                                 singleLine = true,
                                 shape = RoundedCornerShape(16.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = PureWhite,
-                                    unfocusedContainerColor = PureWhite
+                                    focusedContainerColor = palette.surface,
+                                    unfocusedContainerColor = palette.surface
                                 ),
                                 modifier = Modifier.weight(0.58f)
                             )
@@ -809,10 +815,10 @@ fun OnboardingScreen(
                         Text(
                             "Privacy: Your age & contact details are stored separately and visible only to you and Super Admins.",
                             style = XMaxType.caption1,
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
 
-                        Text("Requested Department", style = XMaxType.inputLabel, color = ObsidianCharcoal)
+                        Text("Requested Department", style = XMaxType.inputLabel, color = palette.textPrimary)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -823,10 +829,10 @@ fun OnboardingScreen(
                                     onClick = { requestedDept = dept },
                                     shape = RoundedCornerShape(999.dp),
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ObsidianCharcoal,
-                                        selectedLabelColor = PureWhite,
-                                        containerColor = PureWhite,
-                                        labelColor = ObsidianCharcoal
+                                        selectedContainerColor = palette.buttonPrimaryBg,
+                                        selectedLabelColor = palette.buttonPrimaryFg,
+                                        containerColor = palette.surface,
+                                        labelColor = palette.textPrimary
                                     ),
                                     border = null,
                                     label = { Text(dept, style = XMaxType.footnoteSemibold) }
@@ -841,15 +847,15 @@ fun OnboardingScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = PureWhite,
-                                unfocusedContainerColor = PureWhite
+                                focusedContainerColor = palette.surface,
+                                unfocusedContainerColor = palette.surface
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("onboarding_department_input")
                         )
 
-                        Text("Requested Job Role", style = XMaxType.inputLabel, color = ObsidianCharcoal)
+                        Text("Requested Job Role", style = XMaxType.inputLabel, color = palette.textPrimary)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -860,10 +866,10 @@ fun OnboardingScreen(
                                     onClick = { requestedRole = r },
                                     shape = RoundedCornerShape(999.dp),
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ObsidianCharcoal,
-                                        selectedLabelColor = PureWhite,
-                                        containerColor = PureWhite,
-                                        labelColor = ObsidianCharcoal
+                                        selectedContainerColor = palette.buttonPrimaryBg,
+                                        selectedLabelColor = palette.buttonPrimaryFg,
+                                        containerColor = palette.surface,
+                                        labelColor = palette.textPrimary
                                     ),
                                     border = null,
                                     label = { Text(r, maxLines = 1, style = XMaxType.footnoteSemibold) }
@@ -878,8 +884,8 @@ fun OnboardingScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = PureWhite,
-                                unfocusedContainerColor = PureWhite
+                                focusedContainerColor = palette.surface,
+                                unfocusedContainerColor = palette.surface
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -906,8 +912,8 @@ fun OnboardingScreen(
                             },
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = ObsidianCharcoal,
-                                contentColor = PureWhite
+                                containerColor = palette.buttonPrimaryBg,
+                                contentColor = palette.buttonPrimaryFg
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -930,13 +936,15 @@ fun PendingApprovalScreen(
     onBootstrapSuperAdmin: (fullName: String) -> Unit,
     onSignOut: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     val member = state.myMember
     val status = member?.statusEnum() ?: MembershipStatus.PENDING
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF3F4F7)),
+            .background(palette.canvas),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -949,16 +957,15 @@ fun PendingApprovalScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Floating Pure-White Card matching pending_approval_with_sign_out_89583af1.jpg
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, Color(0xFFECEEF3)),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 shadowElevation = 12.dp
             ) {
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // Soft dreamy pastel pink-lavender-blue top halo inside the card behind the clock badge
+                    // Soft top halo inside the card behind the clock badge
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -969,7 +976,11 @@ fun PendingApprovalScreen(
                         val h = size.height
                         drawRect(
                             brush = Brush.radialGradient(
-                                colors = listOf(
+                                colors = if (isDark) listOf(
+                                    palette.blushBg.copy(alpha = 0.55f),
+                                    palette.lavenderBg.copy(alpha = 0.35f),
+                                    Color.Transparent
+                                ) else listOf(
                                     Color(0xFFFCE7F3).copy(alpha = 0.72f),
                                     Color(0xFFEDE9FE).copy(alpha = 0.42f),
                                     Color.Transparent
@@ -980,7 +991,11 @@ fun PendingApprovalScreen(
                         )
                         drawRect(
                             brush = Brush.radialGradient(
-                                colors = listOf(
+                                colors = if (isDark) listOf(
+                                    palette.skyBg.copy(alpha = 0.55f),
+                                    palette.lavenderBg.copy(alpha = 0.30f),
+                                    Color.Transparent
+                                ) else listOf(
                                     Color(0xFFE0F2FE).copy(alpha = 0.70f),
                                     Color(0xFFEDE9FE).copy(alpha = 0.38f),
                                     Color.Transparent
@@ -1000,19 +1015,19 @@ fun PendingApprovalScreen(
                     ) {
                         Spacer(Modifier.height(6.dp))
 
-                        // Floating circular white badge with purple clock icon
+                        // Floating circular badge with clock icon
                         Surface(
                             modifier = Modifier.size(56.dp),
                             shape = CircleShape,
-                            color = PureWhite,
-                            border = BorderStroke(1.dp, Color(0xFFF0F1F5)),
+                            color = palette.surface,
+                            border = BorderStroke(1.dp, palette.outline),
                             shadowElevation = 4.dp
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = if (state.isBootstrappedEmail) Icons.Filled.Shield else Icons.Outlined.Schedule,
                                     contentDescription = null,
-                                    tint = if (state.isBootstrappedEmail) ObsidianCharcoal else Color(0xFF6B46C1),
+                                    tint = if (state.isBootstrappedEmail) palette.textPrimary else palette.lavenderInk,
                                     modifier = Modifier.size(25.dp)
                                 )
                             }
@@ -1020,7 +1035,6 @@ fun PendingApprovalScreen(
 
                         Spacer(Modifier.height(4.dp))
 
-                        // Title: "Membership pending..."
                         Text(
                             text = when {
                                 state.isBootstrappedEmail -> "Super Admin ready..."
@@ -1030,11 +1044,10 @@ fun PendingApprovalScreen(
                                 else -> "Workspace pending..."
                             },
                             style = XMaxType.sectionHeading,
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             textAlign = TextAlign.Center
                         )
 
-                        // Subtitle: "Your account is awaiting Super Admin approval.\nPlease wait."
                         Text(
                             text = when {
                                 state.isBootstrappedEmail ->
@@ -1049,7 +1062,7 @@ fun PendingApprovalScreen(
                                     "Your account is awaiting workspace authorization.\nPlease wait."
                             },
                             style = XMaxType.subheadline,
-                            color = StudioTextSecondary,
+                            color = palette.textSecondary,
                             textAlign = TextAlign.Center
                         )
 
@@ -1057,12 +1070,12 @@ fun PendingApprovalScreen(
                         if (!identity.isNullOrBlank()) {
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = Color(0xFFF4F5F8)
+                                color = palette.surfaceMuted
                             ) {
                                 Text(
                                     text = identity,
                                     style = XMaxType.caption1,
-                                    color = StudioTextSecondary,
+                                    color = palette.textSecondary,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
                             }
@@ -1071,11 +1084,11 @@ fun PendingApprovalScreen(
                         if (!state.errorMessage.isNullOrBlank()) {
                             Card(
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = SoftBlush)
+                                colors = CardDefaults.cardColors(containerColor = palette.blushBg)
                             ) {
                                 Text(
                                     text = state.errorMessage,
-                                    color = DeepBlushInk,
+                                    color = palette.blushInk,
                                     style = XMaxType.footnote,
                                     modifier = Modifier.padding(12.dp)
                                 )
@@ -1095,8 +1108,8 @@ fun PendingApprovalScreen(
                                 },
                                 shape = RoundedCornerShape(999.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = ObsidianCharcoal,
-                                    contentColor = PureWhite
+                                    containerColor = palette.buttonPrimaryBg,
+                                    contentColor = palette.buttonPrimaryFg
                                 ),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1109,11 +1122,11 @@ fun PendingApprovalScreen(
                             }
                         }
 
-                        // Soft-pill Sign Out Button matching pending_approval_with_sign_out_89583af1.jpg
+                        // Soft-pill Sign Out Button
                         Surface(
                             onClick = onSignOut,
                             shape = RoundedCornerShape(999.dp),
-                            color = Color(0xFFECEDF1),
+                            color = palette.surfaceMuted,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp)
@@ -1126,7 +1139,7 @@ fun PendingApprovalScreen(
                                 Text(
                                     text = "Sign Out",
                                     style = XMaxType.button,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                             }
                         }

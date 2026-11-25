@@ -25,22 +25,26 @@ class AuthConfigVerificationTest {
         val webClientId = context.getString(R.string.default_web_client_id)
         assertFalse("Web client ID must not be empty", webClientId.isBlank())
         assertFalse("Web client ID must not use dummy client ID", webClientId.contains("dummyclientid", ignoreCase = true))
-        assertEquals("1078871317445-8hpi7fn9sr0ge2f1sg7jcgjp8lrocdq0.apps.googleusercontent.com", webClientId)
+        assertEquals("894541050606-lg3alkbimc27c78i2pplisflv26otc4m.apps.googleusercontent.com", webClientId)
 
         val databaseId = context.getString(R.string.firestore_database_id)
-        assertEquals("ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a", databaseId)
+        assertEquals("ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed", databaseId)
 
         val options = FirebaseApp.getInstance().options
-        assertEquals("gen-lang-client-0410091917", options.projectId)
+        assertEquals("gen-lang-client-0137668580", options.projectId)
         assertNotEquals("AIzaSyDummyKeyForInitializationCheck00", options.apiKey)
         assertTrue(options.applicationId.isNotBlank())
 
         assertEquals(
-            "https://gen-lang-client-0410091917-default-rtdb.firebaseio.com",
-            BuildConfig.FIREBASE_RTDB_URL.trim()
+            "https://gen-lang-client-0137668580-default-rtdb.firebaseio.com",
+            com.example.chat.realtime.RtdbPresenceManager.resolveRtdbUrl(
+                configuredUrl = BuildConfig.FIREBASE_RTDB_URL,
+                activeProjectId = options.projectId,
+                optionsDatabaseUrl = options.databaseUrl
+            )
         )
         assertEquals(
-            "https://gen-lang-client-0410091917-default-rtdb.firebaseio.com",
+            "https://gen-lang-client-0137668580-default-rtdb.firebaseio.com",
             com.example.chat.realtime.RtdbPresenceManager.resolveRtdbUrl(
                 configuredUrl = "https://gen-lang-client-0461366135-default-rtdb.firebaseio.com",
                 activeProjectId = options.projectId,

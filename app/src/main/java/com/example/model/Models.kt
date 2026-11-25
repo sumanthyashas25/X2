@@ -172,6 +172,8 @@ data class CompanyProfile(
     val defaultApprovalInstructions: String = "Reply in writing referencing the Quotation Number and Revision to confirm approval.",
     val nextQuoteSeq: Long = 1L,
     val nextInvoiceSeq: Long = 1L,
+    val defaultChatWallpaperId: String = "studio_white",
+    val defaultChatWallpaperUrl: String = "",
     val seededCatalogue: Boolean = false,
     val createdByUid: String = "",
     val createdAt: Timestamp? = null,
@@ -777,7 +779,11 @@ data class ChatMessage(
     fun attachmentTypeEnum(): ChatAttachmentType = safeEnum(attachmentType, ChatAttachmentType.NONE)
     fun kindEnum(): ChatMessageKind = safeEnum(kind, ChatMessageKind.TEXT)
     val isCloudflareStored: Boolean
-        get() = !isDeletedForEveryone && storageProvider == "CLOUDFLARE_R2" && attachmentStoragePath.isNotBlank()
+        get() = !isDeletedForEveryone &&
+            (storageProvider == "CLOUDFLARE_R2" || storageProvider == "SUPABASE_STORAGE") &&
+            attachmentStoragePath.isNotBlank()
+    val isCloudStored: Boolean
+        get() = isCloudflareStored
     val hasAttachment: Boolean
         get() = !isDeletedForEveryone && attachmentTypeEnum() != ChatAttachmentType.NONE &&
             (attachmentName.isNotBlank() || attachmentDataBase64.isNotBlank() || attachmentLocalPath.isNotBlank() || attachmentStoragePath.isNotBlank())

@@ -430,7 +430,7 @@ service cloud.firestore {
              (!('attachmentBucket' in data) || (data.attachmentBucket is string && data.attachmentBucket.size() <= 64)) &&
              (!('attachmentStoragePath' in data) || (data.attachmentStoragePath is string && data.attachmentStoragePath.size() <= 500)) &&
              (!('attachmentSha256' in data) || (data.attachmentSha256 is string && data.attachmentSha256.size() <= 128)) &&
-             (!('storageProvider' in data) || (data.storageProvider in ['', 'FIRESTORE_INLINE', 'CLOUDFLARE_R2'])) &&
+             (!('storageProvider' in data) || (data.storageProvider in ['', 'FIRESTORE_INLINE', 'CLOUDFLARE_R2', 'SUPABASE_STORAGE'])) &&
              (
                data.body.size() >= 1 ||
                data.attachmentType != 'NONE' ||

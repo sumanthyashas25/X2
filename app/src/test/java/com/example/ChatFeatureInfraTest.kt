@@ -157,4 +157,45 @@ class ChatFeatureInfraTest {
             RtdbPresenceManager.resolveAvailability(memberStub, MemberPresenceState(online = false, availability = MemberAvailability.ACTIVE))
         )
     }
+
+    @Test
+    fun `custom image wallpaper resolves per-chat custom, per-chat preset, global custom, global preset in order`() {
+        ChatSettingsStore.clearCustomWallpaper(context, channelId = null)
+        ChatSettingsStore.clearCustomWallpaper(context, channelId = "ch_alpha")
+        ChatSettingsStore.setWallpaper(context, "cool_slate", channelId = null)
+
+        var resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("cool_slate", resolved.presetId)
+        assertNull(resolved.customImagePath)
+
+        // Global custom wallpaper overrides global preset
+        ChatSettingsStore.setCustomWallpaperPath(context, "/tmp/global_bg.jpg", channelId = null)
+        resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("/tmp/global_bg.jpg", resolved.customImagePath)
+
+        // Per-chat preset overrides global custom image for that specific chat
+        ChatSettingsStore.setWallpaper(context, "lavender_haze", channelId = "ch_alpha")
+        resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("lavender_haze", resolved.presetId)
+        assertNull(resolved.customImagePath)
+
+        // Per-chat custom image overrides everything for that chat
+        ChatSettingsStore.setCustomWallpaperPath(context, "/tmp/alpha_bg.jpg", channelId = "ch_alpha")
+        resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("/tmp/alpha_bg.jpg", resolved.customImagePath)
+
+        // Other chats still inherit global custom wallpaper
+        val betaResolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_beta")
+        assertEquals("/tmp/global_bg.jpg", betaResolved.customImagePath)
+
+        // Resetting per-chat wallpaper reverts ch_alpha back to global custom wallpaper
+        ChatSettingsStore.clearCustomWallpaper(context, channelId = "ch_alpha")
+        resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("/tmp/global_bg.jpg", resolved.customImagePath)
+
+        ChatSettingsStore.clearCustomWallpaper(context, channelId = null)
+        resolved = ChatSettingsStore.resolveThreadWallpaper(ChatSettingsStore.prefsFlow.value, "ch_alpha")
+        assertEquals("cool_slate", resolved.presetId)
+        assertNull(resolved.customImagePath)
+    }
 }

@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +69,7 @@ fun CreateGroupSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val palette = XMaxTheme.colors
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var photoBase64 by remember { mutableStateOf("") }
@@ -90,7 +92,8 @@ fun CreateGroupSheet(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = PureWhite,
+            color = palette.surface,
+            border = BorderStroke(1.dp, palette.outline),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 600.dp)
@@ -101,21 +104,21 @@ fun CreateGroupSheet(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("New Group / Community", style = XMaxType.secondaryTitle, color = ObsidianCharcoal)
+                Text("New Group / Community", style = XMaxType.secondaryTitle, color = palette.textPrimary)
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
-                            .background(MutedSurface)
+                            .background(palette.surfaceMuted)
                             .clickable {
                                 photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         if (photoBase64.isNotBlank()) {
-                            StudioAvatar(name = title.ifBlank { "G" }, size = 56.dp, borderColor = PureWhite, photoBase64 = photoBase64)
+                            StudioAvatar(name = title.ifBlank { "G" }, size = 56.dp, borderColor = palette.surface, photoBase64 = photoBase64)
                         } else {
                             Icon(Icons.Default.AddAPhoto, contentDescription = "Group icon", tint = VioletPrimary)
                         }
@@ -140,7 +143,7 @@ fun CreateGroupSheet(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Surface(shape = RoundedCornerShape(14.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(14.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Announcements Only (Admin post)", style = XMaxType.footnoteMedium)
@@ -153,7 +156,7 @@ fun CreateGroupSheet(
                     }
                 }
 
-                Text("Add Members (${selectedUids.size} selected)", style = XMaxType.caption1Semibold.tabular(), color = StudioTextSecondary)
+                Text("Add Members (${selectedUids.size} selected)", style = XMaxType.caption1Semibold.tabular(), color = palette.textSecondary)
                 colleagues.forEach { person ->
                     val checked = person.uid in selectedUids
                     val availability = RtdbPresenceManager.resolveAvailability(person, companyPresence[person.uid])
@@ -187,7 +190,7 @@ fun CreateGroupSheet(
                             availability = availability,
                             showAvailabilityBadge = true,
                             size = 34.dp,
-                            borderColor = PureWhite,
+                            borderColor = palette.surface,
                             photoBase64 = person.photoBase64,
                             activeStatuses = memberStatuses,
                             viewerUid = myMember?.uid.orEmpty(),
@@ -198,7 +201,7 @@ fun CreateGroupSheet(
                             } else null
                         )
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(formatTitleCase(person.fullName), style = XMaxType.subheadlineSemibold)
+                            Text(formatTitleCase(person.fullName), style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                             val roleLabel = person.jobRoleName.ifBlank { person.departmentName }
                             Text(
                                 text = if (roleLabel.isNotBlank()) "${availability.label} • $roleLabel" else availability.label,
@@ -206,7 +209,7 @@ fun CreateGroupSheet(
                                 color = when (availability) {
                                     MemberAvailability.ACTIVE -> EmeraldApproved
                                     MemberAvailability.BUSY -> CrimsonBlocked
-                                    MemberAvailability.AWAY -> StudioTextSecondary
+                                    MemberAvailability.AWAY -> palette.textSecondary
                                 }
                             )
                         }
@@ -228,7 +231,7 @@ fun CreateGroupSheet(
                                 onCreateGroup(title.trim(), description.trim(), selectedUids.toList(), photoBase64, announcementOnly, requireApproval)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) {
                         Text("Create Group", style = XMaxType.buttonCompact)
                     }
@@ -243,11 +246,12 @@ fun JoinInviteLinkDialog(
     onJoin: (code: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var code by remember { mutableStateOf("") }
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(22.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = RoundedCornerShape(22.dp), color = palette.surface, border = BorderStroke(1.dp, palette.outline), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Join Group by Invite", style = XMaxType.secondaryTitle, color = ObsidianCharcoal)
+                Text("Join Group by Invite", style = XMaxType.secondaryTitle, color = palette.textPrimary)
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
@@ -262,7 +266,7 @@ fun JoinInviteLinkDialog(
                     Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { if (code.trim().isNotBlank()) onJoin(code.trim()) },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) {
                         Text("Join", style = XMaxType.buttonCompact)
                     }
@@ -305,6 +309,8 @@ fun EnhancedConversationInfoSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     val isDirect = channel.channelTypeEnum() == ChatChannelType.DIRECT || channel.isSelfNotes(myUid)
     val isMuted = channel.isMutedFor(myUid)
     val isPinned = channel.isPinnedFor(myUid)
@@ -334,8 +340,8 @@ fun EnhancedConversationInfoSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -354,7 +360,7 @@ fun EnhancedConversationInfoSheet(
                 StudioAvatar(
                     name = channel.title,
                     size = 76.dp,
-                    borderColor = PureWhite,
+                    borderColor = palette.surface,
                     photoBase64 = channel.photoBase64
                 )
             }
@@ -374,7 +380,7 @@ fun EnhancedConversationInfoSheet(
             Text(
                 text = channel.description.ifBlank { channel.topic }.ifBlank { "Workspace conversation" },
                 style = XMaxType.footnote,
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 textAlign = TextAlign.Center
             )
 
@@ -421,7 +427,7 @@ fun EnhancedConversationInfoSheet(
             if (prefs.customLists.isNotEmpty()) {
                 val activeLists = prefs.channelListsMap[channel.id].orEmpty()
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Custom Lists", style = XMaxType.caption1Semibold, color = StudioTextSecondary)
+                    Text("Custom Lists", style = XMaxType.caption1Semibold, color = palette.textSecondary)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -441,7 +447,7 @@ fun EnhancedConversationInfoSheet(
 
             // Disappearing Messages Timer
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Disappearing Messages", style = XMaxType.caption1Semibold, color = StudioTextSecondary)
+                Text("Disappearing Messages", style = XMaxType.caption1Semibold, color = palette.textSecondary)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -458,10 +464,124 @@ fun EnhancedConversationInfoSheet(
                 }
             }
 
-            // Thread Wallpaper override
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val currentWp = prefs.channelWallpapers[channel.id] ?: "default"
-                Text("Chat Wallpaper", style = XMaxType.caption1Semibold, color = StudioTextSecondary)
+            // Thread Wallpaper override (Custom Gallery Image + Presets)
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val resolvedWp = ChatSettingsStore.resolveThreadWallpaper(prefs, channel.id)
+                val perChatCustomPath = prefs.channelCustomWallpaperPaths[channel.id].orEmpty()
+                val currentPresetWp = prefs.channelWallpapers[channel.id] ?: "default"
+                val hasCustomOverride = perChatCustomPath.isNotBlank() || currentPresetWp != "default"
+                val perChatPicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickVisualMedia()
+                ) { uri ->
+                    if (uri != null) {
+                        scope.launch {
+                            ChatFileManager.saveCustomChatWallpaper(context, uri, channel.id)
+                                .onSuccess { savedPath ->
+                                    ChatSettingsStore.setCustomWallpaperPath(context, savedPath, channel.id)
+                                }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Chat Wallpaper", style = XMaxType.caption1Semibold, color = palette.textSecondary)
+                    if (hasCustomOverride) {
+                        TextButton(
+                            onClick = {
+                                if (perChatCustomPath.isNotBlank()) {
+                                    ChatFileManager.deleteWallpaperFile(perChatCustomPath)
+                                }
+                                ChatSettingsStore.clearCustomWallpaper(context, channel.id)
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("Reset to Global", style = XMaxType.caption1Semibold, color = CrimsonBlocked)
+                        }
+                    }
+                }
+
+                // Active Wallpaper Preview + Pick Custom Image CTA
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = palette.surfaceMuted,
+                    border = BorderStroke(1.dp, palette.outline),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        val previewBmp = remember(resolvedWp.customImagePath) {
+                            ChatFileManager.loadWallpaperBitmap(resolvedWp.customImagePath)
+                        }
+                        val presetObj = ChatVisualCatalog.wallpaper(resolvedWp.presetId, !isDark)
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        presetObj.baseColors
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (previewBmp != null) {
+                                Image(
+                                    bitmap = previewBmp.asImageBitmap(),
+                                    contentDescription = "Active chat wallpaper preview",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(Icons.Default.Wallpaper, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = when {
+                                    perChatCustomPath.isNotBlank() -> "Custom Photo (This Chat)"
+                                    currentPresetWp != "default" -> "${presetObj.label} (This Chat)"
+                                    !resolvedWp.customImagePath.isNullOrBlank() -> "Using Global Custom Photo"
+                                    else -> "Global: ${presetObj.label}"
+                                },
+                                style = XMaxType.subheadlineSemibold,
+                                color = palette.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Applies only to this conversation",
+                                style = XMaxType.caption1,
+                                color = palette.textSecondary
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = {
+                                perChatPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = palette.buttonPrimaryBg,
+                                contentColor = palette.buttonPrimaryFg
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Gallery", style = XMaxType.caption1Semibold)
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -469,13 +589,18 @@ fun EnhancedConversationInfoSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
-                        selected = currentWp == "default",
-                        onClick = { ChatSettingsStore.setWallpaper(context, "default", channel.id) },
-                        label = { Text("Default", style = XMaxType.footnoteMedium) }
+                        selected = !hasCustomOverride,
+                        onClick = {
+                            if (perChatCustomPath.isNotBlank()) {
+                                ChatFileManager.deleteWallpaperFile(perChatCustomPath)
+                            }
+                            ChatSettingsStore.clearCustomWallpaper(context, channel.id)
+                        },
+                        label = { Text("Global Default", style = XMaxType.footnoteMedium) }
                     )
                     ChatVisualCatalog.wallpapers.forEach { wp ->
                         FilterChip(
-                            selected = currentWp == wp.id,
+                            selected = perChatCustomPath.isBlank() && currentPresetWp == wp.id,
                             onClick = { ChatSettingsStore.setWallpaper(context, wp.id, channel.id) },
                             label = { Text(wp.label, style = XMaxType.footnoteMedium) }
                         )
@@ -486,7 +611,7 @@ fun EnhancedConversationInfoSheet(
             // Group Controls: Permissions, Invite Link + QR, Pending Approvals, Members
             if (!isDirect) {
                 if (isChannelAdmin) {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Group Permissions", style = XMaxType.subheadlineSemibold)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -516,10 +641,10 @@ fun EnhancedConversationInfoSheet(
                     // Invite link & QR code
                     val inviteCode = channel.inviteCode.ifBlank { channel.id.take(8).uppercase() }
                     val inviteUrl = "https://xmax.app/join/$inviteCode"
-                    Surface(shape = RoundedCornerShape(16.dp), color = VioletSoftBg, modifier = Modifier.fillMaxWidth()) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = palette.softVioletBg, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Group Invite Link", style = XMaxType.subheadlineSemibold, color = VioletPrimary)
-                            Text(inviteUrl, style = XMaxType.monoTimer, color = ObsidianCharcoal)
+                            Text(inviteUrl, style = XMaxType.monoTimer, color = palette.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
                                     onClick = {
@@ -605,8 +730,8 @@ fun EnhancedConversationInfoSheet(
                         val availability = RtdbPresenceManager.resolveAvailability(mem, companyPresence[uid])
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = PureWhite,
-                            border = BorderStroke(1.dp, SubtleOutline),
+                            color = palette.surfaceElevated,
+                            border = BorderStroke(1.dp, palette.outline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -629,7 +754,7 @@ fun EnhancedConversationInfoSheet(
                                     availability = availability,
                                     showAvailabilityBadge = true,
                                     size = 36.dp,
-                                    borderColor = PureWhite,
+                                    borderColor = palette.surface,
                                     photoBase64 = mem?.photoBase64.orEmpty(),
                                     activeStatuses = memberStatuses,
                                     viewerUid = myUid,
@@ -640,7 +765,7 @@ fun EnhancedConversationInfoSheet(
                                     } else null
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(formatTitleCase(mem?.fullName ?: uid) + if (uid == myUid) " (You)" else "", style = XMaxType.headline)
+                                    Text(formatTitleCase(mem?.fullName ?: uid) + if (uid == myUid) " (You)" else "", style = XMaxType.headline, color = palette.textPrimary)
                                     val rolePart = if (isAdmin) "Admin" else "Member"
                                     Text(
                                         text = "${availability.label} • $rolePart",
@@ -648,7 +773,7 @@ fun EnhancedConversationInfoSheet(
                                         color = when (availability) {
                                             MemberAvailability.ACTIVE -> EmeraldApproved
                                             MemberAvailability.BUSY -> CrimsonBlocked
-                                            MemberAvailability.AWAY -> StudioTextSecondary
+                                            MemberAvailability.AWAY -> palette.textSecondary
                                         }
                                     )
                                 }
@@ -678,32 +803,32 @@ fun EnhancedConversationInfoSheet(
             }
 
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Shared Media, Docs & Links", style = XMaxType.headline)
-                TabRow(selectedTabIndex = sharedTab, containerColor = MutedSurface, contentColor = ObsidianCharcoal) {
+                Text("Shared Media, Docs & Links", style = XMaxType.headline, color = palette.textPrimary)
+                TabRow(selectedTabIndex = sharedTab, containerColor = palette.surfaceMuted, contentColor = palette.textPrimary) {
                     Tab(selected = sharedTab == 0, onClick = { sharedTab = 0 }, text = { Text("Media (${sharedMedia.size})", style = XMaxType.footnoteSemibold.tabular()) })
                     Tab(selected = sharedTab == 1, onClick = { sharedTab = 1 }, text = { Text("Docs (${sharedDocs.size})", style = XMaxType.footnoteSemibold.tabular()) })
                     Tab(selected = sharedTab == 2, onClick = { sharedTab = 2 }, text = { Text("Links (${sharedLinks.size})", style = XMaxType.footnoteSemibold.tabular()) })
                 }
                 when (sharedTab) {
-                    0 -> if (sharedMedia.isEmpty()) Text("No photos or videos shared yet.", style = XMaxType.footnote, color = StudioTextSecondary)
+                    0 -> if (sharedMedia.isEmpty()) Text("No photos or videos shared yet.", style = XMaxType.footnote, color = palette.textSecondary)
                     else sharedMedia.take(10).forEach { m ->
-                        Surface(onClick = { onOpenAttachment(m) }, shape = RoundedCornerShape(10.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                        Surface(onClick = { onOpenAttachment(m) }, shape = RoundedCornerShape(10.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(m.attachmentName.ifBlank { m.kindEnum().label }, style = XMaxType.subheadlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Text(ChatFileManager.formatFileSize(m.attachmentSizeBytes), style = XMaxType.caption1.tabular(), color = StudioTextSecondary)
+                                Text(m.attachmentName.ifBlank { m.kindEnum().label }, style = XMaxType.subheadlineMedium, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(ChatFileManager.formatFileSize(m.attachmentSizeBytes), style = XMaxType.caption1.tabular(), color = palette.textSecondary)
                             }
                         }
                     }
-                    1 -> if (sharedDocs.isEmpty()) Text("No documents shared yet.", style = XMaxType.footnote, color = StudioTextSecondary)
+                    1 -> if (sharedDocs.isEmpty()) Text("No documents shared yet.", style = XMaxType.footnote, color = palette.textSecondary)
                     else sharedDocs.take(10).forEach { m ->
-                        Surface(onClick = { onOpenAttachment(m) }, shape = RoundedCornerShape(10.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                        Surface(onClick = { onOpenAttachment(m) }, shape = RoundedCornerShape(10.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(m.attachmentName.ifBlank { "Document" }, style = XMaxType.subheadlineMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Text(ChatFileManager.formatFileSize(m.attachmentSizeBytes), style = XMaxType.caption1.tabular(), color = StudioTextSecondary)
+                                Text(m.attachmentName.ifBlank { "Document" }, style = XMaxType.subheadlineMedium, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(ChatFileManager.formatFileSize(m.attachmentSizeBytes), style = XMaxType.caption1.tabular(), color = palette.textSecondary)
                             }
                         }
                     }
-                    else -> if (sharedLinks.isEmpty()) Text("No shared links yet.", style = XMaxType.footnote, color = StudioTextSecondary)
+                    else -> if (sharedLinks.isEmpty()) Text("No shared links yet.", style = XMaxType.footnote, color = palette.textSecondary)
                     else sharedLinks.take(10).forEach { m ->
                         val url = m.linkUrl.ifBlank { ChatFileManager.extractHttpsUrls(m.body).firstOrNull().orEmpty() }
                         Surface(
@@ -715,10 +840,10 @@ fun EnhancedConversationInfoSheet(
                                 }
                             },
                             shape = RoundedCornerShape(10.dp),
-                            color = MutedSurface,
+                            color = palette.surfaceMuted,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(url, style = XMaxType.footnote, color = Color(0xFF0284C7), modifier = Modifier.padding(10.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(url, style = XMaxType.footnote, color = palette.skyInk, modifier = Modifier.padding(10.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -728,14 +853,14 @@ fun EnhancedConversationInfoSheet(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onClearChat,
-                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlocked.copy(alpha = 0.12f), contentColor = CrimsonBlocked),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.blushBg, contentColor = CrimsonBlocked),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Clear Chat", style = XMaxType.caption1Semibold)
                 }
                 Button(
                     onClick = onReportGroup,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEF3C7), contentColor = Color(0xFFD97706)),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.butterBg, contentColor = palette.butterInk),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Report", style = XMaxType.caption1Semibold)
@@ -758,9 +883,9 @@ fun EnhancedConversationInfoSheet(
         var editTitle by remember { mutableStateOf(channel.title) }
         var editDesc by remember { mutableStateOf(channel.description.ifBlank { channel.topic }) }
         Dialog(onDismissRequest = { showEditInfoDialog = false }) {
-            Surface(shape = RoundedCornerShape(22.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(22.dp), color = palette.surface, border = BorderStroke(1.dp, palette.outline), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Edit Group Info", style = XMaxType.secondaryTitle)
+                    Text("Edit Group Info", style = XMaxType.secondaryTitle, color = palette.textPrimary)
                     OutlinedTextField(value = editTitle, onValueChange = { editTitle = it }, textStyle = XMaxType.body, label = { Text("Name", style = XMaxType.inputLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = editDesc, onValueChange = { editDesc = it }, textStyle = XMaxType.body, label = { Text("Description", style = XMaxType.inputLabel) }, maxLines = 3, modifier = Modifier.fillMaxWidth())
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -771,7 +896,7 @@ fun EnhancedConversationInfoSheet(
                                 onUpdateInfo(editTitle.trim(), editDesc.trim(), null)
                                 showEditInfoDialog = false
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                         ) { Text("Save", style = XMaxType.buttonCompact) }
                     }
                 }
@@ -784,18 +909,20 @@ fun EnhancedConversationInfoSheet(
         val inviteUrl = "https://xmax.app/join/$inviteCode"
         val qrBmp = remember(inviteUrl) { ChatQrGenerator.generateQrBitmap(inviteUrl, 520) }
         Dialog(onDismissRequest = { showQrDialog = false }) {
-            Surface(shape = RoundedCornerShape(24.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(24.dp), color = palette.surface, border = BorderStroke(1.dp, palette.outline), modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Scan to Join Group", style = XMaxType.secondaryTitle)
-                    Image(bitmap = qrBmp.asImageBitmap(), contentDescription = "Group QR Code", modifier = Modifier.size(220.dp))
-                    Text(inviteUrl, style = XMaxType.monoTimer, color = StudioTextSecondary)
+                    Text("Scan to Join Group", style = XMaxType.secondaryTitle, color = palette.textPrimary)
+                    Surface(shape = RoundedCornerShape(16.dp), color = PureWhite) {
+                        Image(bitmap = qrBmp.asImageBitmap(), contentDescription = "Group QR Code", modifier = Modifier.padding(8.dp).size(204.dp))
+                    }
+                    Text(inviteUrl, style = XMaxType.monoTimer, color = palette.textSecondary)
                     Button(
                         onClick = { showQrDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) { Text("Done", style = XMaxType.buttonCompact) }
                 }
             }

@@ -61,7 +61,6 @@ fun HomeScreen(
     onNavigateTeam: () -> Unit,
     onNavigatePayments: () -> Unit,
     onNavigateQuotations: () -> Unit = onOpenNewQuote,
-    onNavigateChat: () -> Unit = {},
     onNavigateCompanySettings: () -> Unit = {},
     onNavigateOrgRouting: () -> Unit = {},
     onOpenMenuPanel: () -> Unit = {},
@@ -178,11 +177,12 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .pastelAmbientBackdrop(),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 116.dp),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 1. Overview Section Header + Timeframe Dropdown ("This Week v")
         item {
+            val palette = XMaxTheme.colors
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -191,7 +191,7 @@ fun HomeScreen(
                 Text(
                     text = "Overview",
                     style = XMaxType.sectionHeading,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
                 Box {
                     DropdownPillSelector(
@@ -201,11 +201,11 @@ fun HomeScreen(
                     DropdownMenu(
                         expanded = showWindowMenu,
                         onDismissRequest = { showWindowMenu = false },
-                        containerColor = PureWhite
+                        containerColor = palette.surfaceElevated
                     ) {
                         OverviewWindow.entries.forEach { win ->
                             DropdownMenuItem(
-                                text = { Text(win.label, style = XMaxType.subheadline) },
+                                text = { Text(win.label, style = XMaxType.subheadline, color = palette.textPrimary) },
                                 onClick = {
                                     selectedWindow = win
                                     showWindowMenu = false
@@ -217,8 +217,9 @@ fun HomeScreen(
             }
         }
 
-        // 2. Signature 2x2 Pastel Sparkline KPI Grid (matching dashboard_UI_referance_a887d8be.jpg)
+        // 2. Signature 2x2 Pastel Sparkline KPI Grid
         item {
+            val palette = XMaxTheme.colors
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -227,8 +228,8 @@ fun HomeScreen(
                     PastelKpiSparklineCard(
                         valueText = if (access == AccessLevel.STAFF) "${myAssigned.size}" else "$scopedRequestsCount",
                         label = if (access == AccessLevel.STAFF) "Today" else "Requests",
-                        containerColor = KpiLavenderBg,
-                        strokeColor = KpiLavenderStroke,
+                        containerColor = palette.kpiLavenderBg,
+                        strokeColor = palette.kpiLavenderStroke,
                         sparklinePoints = requestsSeries,
                         onClick = { if (access == AccessLevel.STAFF) onNavigateMyWork() else onNavigateRequests() },
                         modifier = Modifier
@@ -238,8 +239,8 @@ fun HomeScreen(
                     PastelKpiSparklineCard(
                         valueText = if (access == AccessLevel.STAFF) "${reviewQueue.size}" else "$scopedQuotesCount",
                         label = if (access == AccessLevel.STAFF) "In Review" else "Quotations",
-                        containerColor = KpiPeachBg,
-                        strokeColor = KpiPeachStroke,
+                        containerColor = palette.kpiPeachBg,
+                        strokeColor = palette.kpiPeachStroke,
                         sparklinePoints = quotesSeries,
                         onClick = { if (access == AccessLevel.STAFF) onNavigateMyWork() else onNavigateQuotations() },
                         modifier = Modifier
@@ -254,8 +255,8 @@ fun HomeScreen(
                     PastelKpiSparklineCard(
                         valueText = "$scopedProjectsCount",
                         label = "Projects",
-                        containerColor = KpiSkyBg,
-                        strokeColor = KpiSkyStroke,
+                        containerColor = palette.kpiSkyBg,
+                        strokeColor = palette.kpiSkyStroke,
                         sparklinePoints = projectsSeries,
                         onClick = onNavigateProjects,
                         modifier = Modifier
@@ -265,8 +266,8 @@ fun HomeScreen(
                     PastelKpiSparklineCard(
                         valueText = "$scopedTasksCount",
                         label = "All Task",
-                        containerColor = KpiMintBg,
-                        strokeColor = KpiMintStroke,
+                        containerColor = palette.kpiMintBg,
+                        strokeColor = palette.kpiMintStroke,
                         sparklinePoints = tasksSeries,
                         onClick = onNavigateMyWork,
                         modifier = Modifier
@@ -281,6 +282,7 @@ fun HomeScreen(
 
         // 3. Projects Section + Dropdown ("All time v") + Segmented Pills ("Active (X)" / "Requests (Y)" / "Completed (Z)")
         item {
+            val palette = XMaxTheme.colors
             Column(
                 modifier = Modifier.padding(top = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -293,7 +295,7 @@ fun HomeScreen(
                     Text(
                         text = "Projects",
                         style = XMaxType.sectionHeading,
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     Box {
                         DropdownPillSelector(
@@ -303,11 +305,11 @@ fun HomeScreen(
                         DropdownMenu(
                             expanded = showProjectFilterMenu,
                             onDismissRequest = { showProjectFilterMenu = false },
-                            containerColor = PureWhite
+                            containerColor = palette.surfaceElevated
                         ) {
                             listOf("All time", "This month", "Active only").forEach { opt ->
                                 DropdownMenuItem(
-                                    text = { Text(opt, style = XMaxType.subheadline) },
+                                    text = { Text(opt, style = XMaxType.subheadline, color = palette.textPrimary) },
                                     onClick = {
                                         projectFilterWindow = opt
                                         showProjectFilterMenu = false
@@ -332,12 +334,12 @@ fun HomeScreen(
                         }
                         val selected = selectedSegment == seg
                         val pillContainer by animateColorAsState(
-                            targetValue = if (selected) ObsidianCharcoal else PureWhite,
+                            targetValue = if (selected) palette.buttonPrimaryBg else palette.surface,
                             animationSpec = tween(180),
                             label = "seg_bg_${seg.name}"
                         )
                         val pillContent by animateColorAsState(
-                            targetValue = if (selected) PureWhite else ObsidianCharcoal,
+                            targetValue = if (selected) palette.buttonPrimaryFg else palette.textPrimary,
                             animationSpec = tween(180),
                             label = "seg_fg_${seg.name}"
                         )
@@ -345,7 +347,7 @@ fun HomeScreen(
                             onClick = { selectedSegment = seg },
                             shape = RoundedCornerShape(12.dp),
                             color = pillContainer,
-                            border = if (selected) null else BorderStroke(1.dp, SubtleOutline),
+                            border = if (selected) null else BorderStroke(1.dp, palette.outline),
                             modifier = Modifier.defaultMinSize(minHeight = 40.dp)
                         ) {
                             Box(
@@ -464,6 +466,7 @@ fun HomeScreen(
         if (state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) {
             if (activeProjects.isNotEmpty()) {
                 item {
+                    val palette = XMaxTheme.colors
                     val homeReminders = remember(state.projects, state.deliverables, state.quotations) {
                         WorkDistributionEngine.computePaymentReminders(
                             projects = state.projects,
@@ -483,9 +486,9 @@ fun HomeScreen(
                     Surface(
                         onClick = onNavigatePayments,
                         shape = RoundedCornerShape(22.dp),
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
-                        shadowElevation = 2.dp,
+                        color = palette.surface,
+                        border = BorderStroke(1.dp, palette.outline),
+                        shadowElevation = if (XMaxTheme.isDark) 0.dp else 2.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("home_payment_tracker_card")
@@ -507,18 +510,18 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .size(34.dp)
                                             .clip(CircleShape)
-                                            .background(SoftMint),
+                                            .background(palette.mintBg),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, tint = DeepMintInk, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, tint = palette.mintInk, modifier = Modifier.size(18.dp))
                                     }
                                     Text(
                                         text = "Payment Tracker",
                                         style = XMaxType.headline,
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
                                 }
-                                StatusPill("$pct% Collected", SoftMint, DeepMintInk)
+                                StatusPill("$pct% Collected", palette.mintBg, palette.mintInk)
                             }
                             LinearProgressIndicator(
                                 progress = { animatedPct },
@@ -527,12 +530,12 @@ fun HomeScreen(
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(999.dp)),
                                 color = EmeraldApproved,
-                                trackColor = MutedSurface
+                                trackColor = palette.surfaceMuted
                             )
                             if (homeReminders.totalCount > 0) {
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
-                                    color = if (homeReminders.finalCount > 0) SoftBlush else ButterYellow.copy(alpha = 0.72f),
+                                    color = if (homeReminders.finalCount > 0) palette.blushBg else palette.amberBg,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
@@ -543,7 +546,7 @@ fun HomeScreen(
                                         Icon(
                                             Icons.Filled.NotificationsActive,
                                             contentDescription = null,
-                                            tint = if (homeReminders.finalCount > 0) CrimsonBlocked else DeepAmberInk,
+                                            tint = if (homeReminders.finalCount > 0) palette.blushInk else palette.amberInk,
                                             modifier = Modifier.size(15.dp)
                                         )
                                         Text(
@@ -555,7 +558,7 @@ fun HomeScreen(
                                                 append(parts.joinToString(" • "))
                                             },
                                             style = XMaxType.footnoteMedium.tabular(),
-                                            color = if (homeReminders.finalCount > 0) CrimsonBlocked else DeepAmberInk
+                                            color = if (homeReminders.finalCount > 0) palette.blushInk else palette.amberInk
                                         )
                                     }
                                 }
@@ -568,12 +571,12 @@ fun HomeScreen(
                                 Text(
                                     text = "Paid ${MoneyFormatter.formatInr(totalPaid)} • Due ${MoneyFormatter.formatInr(totalDue)}",
                                     style = XMaxType.footnote.tabular(),
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                                 Text(
                                     text = "Open →",
                                     style = XMaxType.footnoteSemibold,
-                                    color = VioletPrimary
+                                    color = palette.accentViolet
                                 )
                             }
                         }
@@ -607,7 +610,7 @@ fun HomeScreen(
             items(recentTasks.take(5), key = { "home_deliv_${it.id}" }) { d ->
                 DeliverableCompactCard(
                     d = d,
-                    cardColor = PureWhite,
+                    cardColor = XMaxTheme.colors.surface,
                     showUpdateButton = access == AccessLevel.STAFF,
                     assigneePhotoBase64 = memberPhotoByUid[d.assignedToUid].orEmpty(),
                     onClick = { onOpenDeliverable(d) },
@@ -618,11 +621,12 @@ fun HomeScreen(
     }
 
     if (showCleanupConfirm) {
+        val palette = XMaxTheme.colors
         AlertDialog(
             onDismissRequest = { showCleanupConfirm = false },
-            containerColor = PureWhite,
-            title = { Text("Clean Old Done Projects?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("This permanently deletes completed and archived projects along with their deliverables.", style = XMaxType.subheadline) },
+            containerColor = palette.surfaceElevated,
+            title = { Text("Clean Old Done Projects?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("This permanently deletes completed and archived projects along with their deliverables.", style = XMaxType.subheadline, color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -633,7 +637,7 @@ fun HomeScreen(
                 ) { Text("Delete All", style = XMaxType.buttonCompact) }
             },
             dismissButton = {
-                TextButton(onClick = { showCleanupConfirm = false }) { Text("Cancel", style = XMaxType.buttonCompact) }
+                TextButton(onClick = { showCleanupConfirm = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textPrimary) }
             }
         )
     }
@@ -644,11 +648,12 @@ private fun DropdownPillSelector(
     label: String,
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline),
         modifier = Modifier.defaultMinSize(minHeight = 34.dp)
     ) {
         Row(
@@ -659,22 +664,18 @@ private fun DropdownPillSelector(
             Text(
                 text = label,
                 style = XMaxType.footnoteMedium,
-                color = StudioTextSecondary
+                color = palette.textSecondary
             )
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = null,
-                tint = StudioTextSecondary,
+                tint = palette.textSecondary,
                 modifier = Modifier.size(16.dp)
             )
         }
     }
 }
 
-/**
- * Clean White Project Card with Lavender Date Pill, 3-dot Edit/Delete Floating Popup Menu,
- * and Violet/Emerald indicator dots matching dashboard_UI_referance_a887d8be.jpg.
- */
 @Composable
 private fun DashboardReferenceProjectCard(
     dateText: String,
@@ -692,14 +693,15 @@ private fun DashboardReferenceProjectCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     var menuExpanded by remember { mutableStateOf(false) }
 
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(22.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
-        shadowElevation = 2.dp,
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline),
+        shadowElevation = if (XMaxTheme.isDark) 0.dp else 2.dp,
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize()
@@ -715,7 +717,7 @@ private fun DashboardReferenceProjectCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = KpiLavenderBg
+                    color = palette.kpiLavenderBg
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -725,13 +727,13 @@ private fun DashboardReferenceProjectCard(
                         Icon(
                             imageVector = Icons.Outlined.DateRange,
                             contentDescription = null,
-                            tint = VioletPrimary,
+                            tint = palette.accentViolet,
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
                             text = dateText,
                             style = XMaxType.caption1Medium.tabular(),
-                            color = ObsidianCharcoal
+                            color = palette.textPrimary
                         )
                     }
                 }
@@ -744,14 +746,14 @@ private fun DashboardReferenceProjectCard(
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = "Project Actions",
-                            tint = StudioTextSecondary,
+                            tint = palette.textSecondary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                     DropdownMenu(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false },
-                        containerColor = PureWhite,
+                        containerColor = palette.surfaceElevated,
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         DropdownMenuItem(
@@ -759,11 +761,11 @@ private fun DashboardReferenceProjectCard(
                                 Icon(
                                     imageVector = Icons.Outlined.Visibility,
                                     contentDescription = null,
-                                    tint = ObsidianCharcoal,
+                                    tint = palette.textPrimary,
                                     modifier = Modifier.size(18.dp)
                                 )
                             },
-                            text = { Text("Open Details", style = XMaxType.subheadlineMedium) },
+                            text = { Text("Open Details", style = XMaxType.subheadlineMedium, color = palette.textPrimary) },
                             onClick = {
                                 menuExpanded = false
                                 onClick()
@@ -775,11 +777,11 @@ private fun DashboardReferenceProjectCard(
                                     Icon(
                                         imageVector = Icons.Outlined.Edit,
                                         contentDescription = null,
-                                        tint = VioletPrimary,
+                                        tint = palette.accentViolet,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
-                                text = { Text("Edit / Quote", style = XMaxType.subheadlineMedium) },
+                                text = { Text("Edit / Quote", style = XMaxType.subheadlineMedium, color = palette.textPrimary) },
                                 onClick = {
                                     menuExpanded = false
                                     onEditQuote()
@@ -811,14 +813,14 @@ private fun DashboardReferenceProjectCard(
                 Text(
                     text = formatTitleCase(title),
                     style = XMaxType.headline,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -839,8 +841,8 @@ private fun DashboardReferenceProjectCard(
                 if (!trailingBadge.isNullOrBlank()) {
                     StatusPill(
                         label = trailingBadge,
-                        containerColor = KpiMintBg,
-                        contentColor = DeepMintInk
+                        containerColor = palette.mintBg,
+                        contentColor = palette.mintInk
                     )
                 }
             }
@@ -863,7 +865,7 @@ private fun DotStatItem(dotColor: Color, label: String) {
         Text(
             text = label,
             style = XMaxType.caption1Medium.tabular(),
-            color = StudioTextSecondary
+            color = XMaxTheme.colors.textSecondary
         )
     }
 }
@@ -914,23 +916,28 @@ private fun formatShortDate(millis: Long): String {
     return SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(millis))
 }
 
-fun statusColorsForDeliverable(st: DeliverableStatus): Pair<Color, Color> = when (st) {
-    DeliverableStatus.APPROVED -> SoftMint to DeepMintInk
-    DeliverableStatus.BLOCKED, DeliverableStatus.CHANGES_REQUESTED -> SoftBlush to DeepBlushInk
-    DeliverableStatus.READY_FOR_REVIEW -> ButterYellow to DeepAmberInk
-    DeliverableStatus.IN_PROGRESS -> KpiSkyBg to InfoPillInk
-    DeliverableStatus.NOT_STARTED -> KpiLavenderBg to VioletPrimary
+@Composable
+fun statusColorsForDeliverable(st: DeliverableStatus): Pair<Color, Color> {
+    val palette = XMaxTheme.colors
+    return when (st) {
+        DeliverableStatus.APPROVED -> palette.mintBg to palette.mintInk
+        DeliverableStatus.BLOCKED, DeliverableStatus.CHANGES_REQUESTED -> palette.blushBg to palette.blushInk
+        DeliverableStatus.READY_FOR_REVIEW -> palette.butterBg to palette.butterInk
+        DeliverableStatus.IN_PROGRESS -> palette.skyBg to palette.skyInk
+        DeliverableStatus.NOT_STARTED -> palette.lavenderBg to palette.lavenderInk
+    }
 }
 
 @Composable
 fun DeliverableCompactCard(
     d: Deliverable,
-    cardColor: Color = PureWhite,
+    cardColor: Color = XMaxTheme.colors.surface,
     showUpdateButton: Boolean = false,
     assigneePhotoBase64: String = "",
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     val st = d.statusEnum()
     val (pillBg, pillFg) = statusColorsForDeliverable(st)
     val totalChecklist = d.totalChecklistCount.coerceAtLeast(1)
@@ -940,7 +947,7 @@ fun DeliverableCompactCard(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
         color = cardColor,
-        border = BorderStroke(1.dp, SubtleOutline),
+        border = BorderStroke(1.dp, palette.outline),
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize()
@@ -952,23 +959,23 @@ fun DeliverableCompactCard(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(KpiLavenderBg),
+                            .background(palette.kpiLavenderBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = palette.accentViolet, modifier = Modifier.size(18.dp))
                     }
                     Column {
                         Text(
                             formatTitleCase(d.title),
                             style = XMaxType.headline,
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             "${formatTitleCase(d.projectTitle)} • ${formatTitleCase(d.clientCompanyName)}",
                             style = XMaxType.footnote,
-                            color = StudioTextSecondary,
+                            color = palette.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -983,8 +990,8 @@ fun DeliverableCompactCard(
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(999.dp)),
-                color = VioletPrimary,
-                trackColor = MutedSurface
+                color = palette.accentViolet,
+                trackColor = palette.surfaceMuted
             )
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -998,15 +1005,15 @@ fun DeliverableCompactCard(
                     }
                     StatusPill(
                         label = MoneyFormatter.formatDate(d.dueDateMillis),
-                        containerColor = MutedSurface,
-                        contentColor = ObsidianCharcoal
+                        containerColor = palette.surfaceMuted,
+                        contentColor = palette.textPrimary
                     )
                 }
                 if (showUpdateButton) {
                     Surface(
                         shape = RoundedCornerShape(999.dp),
-                        color = ObsidianCharcoal,
-                        contentColor = PureWhite
+                        color = palette.buttonPrimaryBg,
+                        contentColor = palette.buttonPrimaryFg
                     ) {
                         Text(
                             "Update",
@@ -1017,8 +1024,8 @@ fun DeliverableCompactCard(
                 } else {
                     StatusPill(
                         label = "${d.completedChecklistCount}/${d.totalChecklistCount}",
-                        containerColor = MutedSurface,
-                        contentColor = ObsidianCharcoal
+                        containerColor = palette.surfaceMuted,
+                        contentColor = palette.textPrimary
                     )
                 }
             }

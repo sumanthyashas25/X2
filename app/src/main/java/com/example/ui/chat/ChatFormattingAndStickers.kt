@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -194,10 +195,54 @@ fun Modifier.animatedChatGlowBackdrop(
     isThread: Boolean,
     wallpaperId: String = "studio_white"
 ): Modifier {
+    val palette = com.example.ui.theme.XMaxTheme.colors
+    if (com.example.ui.theme.XMaxTheme.isDark) {
+        val darkGradient = when (wallpaperId) {
+            "soft_mint" -> listOf(Color(0xFF0E1D19), Color(0xFF132620))
+            "sky_breeze", "soft_light", "ocean_mist" -> listOf(Color(0xFF0E1824), Color(0xFF142233))
+            "warm_linen" -> listOf(Color(0xFF1F1912), Color(0xFF282016))
+            "cool_lavender" -> listOf(Color(0xFF171426), Color(0xFF201B36))
+            "cool_slate", "subtle_zinc" -> listOf(Color(0xFF11151E), Color(0xFF181E2B))
+            else -> listOf(palette.canvas, palette.surface)
+        }
+        return this.background(Brush.verticalGradient(darkGradient))
+    }
     val preset = ChatVisualCatalog.wallpaper(wallpaperId, isThread)
     val startColor = preset.baseColors.firstOrNull() ?: PureWhite
     val endColor = preset.baseColors.lastOrNull() ?: startColor
     return this.background(Brush.verticalGradient(listOf(startColor, endColor)))
+}
+
+@Composable
+fun ChatThreadWallpaperBackground(
+    wallpaperId: String,
+    customImagePath: String?,
+    modifier: Modifier = Modifier
+) {
+    val isDark = com.example.ui.theme.XMaxTheme.isDark
+    val customBitmap = androidx.compose.runtime.remember(customImagePath) {
+        com.example.chat.ChatFileManager.loadWallpaperBitmap(customImagePath)
+    }
+    if (customBitmap != null) {
+        androidx.compose.foundation.layout.Box(modifier = modifier) {
+            androidx.compose.foundation.Image(
+                bitmap = customBitmap.asImageBitmap(),
+                contentDescription = "Chat custom wallpaper",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = androidx.compose.ui.Modifier.matchParentSize()
+            )
+            // Subtle translucent veil keeps both incoming and outgoing bubbles crisp and readable
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier
+                    .matchParentSize()
+                    .background(if (isDark) Color.Black.copy(alpha = 0.34f) else PureWhite.copy(alpha = 0.22f))
+            )
+        }
+    } else {
+        androidx.compose.foundation.layout.Box(
+            modifier = modifier.animatedChatGlowBackdrop(isThread = true, wallpaperId = wallpaperId)
+        )
+    }
 }
 
 private val RICH_TOKEN_REGEX = Regex(
@@ -261,7 +306,7 @@ fun formatChatRichText(
                     withStyle(
                         SpanStyle(
                             fontFamily = MonoFontFamily,
-                            background = SubtleOutline.copy(alpha = 0.65f)
+                            background = Color(0x2E8C95A8)
                         )
                     ) {
                         append(token.substring(1, token.length - 1))

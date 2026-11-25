@@ -199,10 +199,17 @@ class StatusSystemTest {
     }
 
     @Test
-    fun testPrimaryTabStatusExists() {
-        val tabs = PrimaryTab.values()
-        assertTrue("PrimaryTab must include STATUS", tabs.any { it.name == "STATUS" })
-        val statusTab = PrimaryTab.valueOf("STATUS")
-        assertEquals("Status", statusTab.label)
+    fun testStatusMovedInsideChatHubAndRemovedFromPrimaryTab() {
+        assertTrue(
+            "PrimaryTab must NOT include STATUS (Status lives inside Chat panel)",
+            PrimaryTab.entries.none { it.name == "STATUS" }
+        )
+        assertTrue(
+            "PrimaryTab must include CHAT",
+            PrimaryTab.entries.any { it.name == "CHAT" }
+        )
+        val chatStatusTab = com.example.ui.chat.ChatHubBottomTab.entries.firstOrNull { it.name == "STATUS" }
+        assertNotNull("ChatHubBottomTab must include STATUS", chatStatusTab)
+        assertEquals("Updates", chatStatusTab?.label)
     }
 }

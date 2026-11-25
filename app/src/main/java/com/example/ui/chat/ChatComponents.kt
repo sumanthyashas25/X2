@@ -64,6 +64,7 @@ val StudioTickGray = Color(0xFF94A3B8)
 
 @Composable
 fun DateSeparatorPill(label: String) {
+    val palette = XMaxTheme.colors
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -72,13 +73,13 @@ fun DateSeparatorPill(label: String) {
     ) {
         Surface(
             shape = RoundedCornerShape(999.dp),
-            color = Color(0xFFF2F4F7),
-            border = BorderStroke(1.dp, Color(0xFFECEFF2))
+            color = palette.surfaceElevated.copy(alpha = 0.92f),
+            border = BorderStroke(1.dp, palette.outline)
         ) {
             Text(
                 text = label,
                 style = XMaxType.caption1Semibold.tabular(),
-                color = Color(0xFF64748B),
+                color = palette.textSecondary,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
             )
         }
@@ -127,14 +128,15 @@ fun InteractivePollCard(
     myUid: String,
     onVote: (Int) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val totalVotes = remember(message.pollVotes) {
         message.pollVotes.values.flatten().distinct().size
     }
 
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = PureWhite.copy(alpha = 0.85f),
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, palette.outline),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
@@ -151,13 +153,13 @@ fun InteractivePollCard(
                 Text(
                     text = message.pollQuestion,
                     style = XMaxType.headline,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
             }
             Text(
                 text = if (totalVotes == 1) "1 vote" else "$totalVotes votes",
                 style = XMaxType.caption1.tabular(),
-                color = StudioTextSecondary
+                color = palette.textSecondary
             )
 
             message.pollOptions.forEachIndexed { idx, opt ->
@@ -168,8 +170,8 @@ fun InteractivePollCard(
                 Surface(
                     onClick = { onVote(idx) },
                     shape = RoundedCornerShape(10.dp),
-                    color = if (isMyVote) VioletSoftBg else MutedSurface.copy(alpha = 0.6f),
-                    border = BorderStroke(1.dp, if (isMyVote) VioletPrimary.copy(alpha = 0.5f) else SubtleOutline),
+                    color = if (isMyVote) palette.softVioletBg else palette.surfaceMuted.copy(alpha = 0.8f),
+                    border = BorderStroke(1.dp, if (isMyVote) VioletPrimary.copy(alpha = 0.5f) else palette.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -186,19 +188,19 @@ fun InteractivePollCard(
                                 Icon(
                                     imageVector = if (isMyVote) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
                                     contentDescription = null,
-                                    tint = if (isMyVote) VioletPrimary else StudioTextSecondary,
+                                    tint = if (isMyVote) VioletPrimary else palette.textSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
                                     text = opt,
                                     style = if (isMyVote) XMaxType.subheadlineSemibold else XMaxType.subheadlineMedium,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                             }
                             Text(
                                 text = "${voters.size}",
                                 style = XMaxType.caption1Semibold.tabular(),
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                         }
 
@@ -211,7 +213,7 @@ fun InteractivePollCard(
                                     .height(5.dp)
                                     .clip(RoundedCornerShape(999.dp)),
                                 color = if (isMyVote) VioletPrimary else EmeraldApproved,
-                                trackColor = Color(0xFFE2E8F0)
+                                trackColor = palette.outline
                             )
                         }
                     }
@@ -226,15 +228,16 @@ fun BusinessReferenceCard(
     message: ChatMessage,
     onOpen: (String, String) -> Unit = { _, _ -> }
 ) {
+    val palette = XMaxTheme.colors
     val kind = message.businessRefKind.uppercase()
     val (icon, tint, bg) = when (kind) {
-        "STATUS" -> Triple(Icons.Default.AutoAwesome, EmeraldApproved, Color(0xFFECFDF5))
-        "INVOICE" -> Triple(Icons.Default.Receipt, EmeraldApproved, Color(0xFFECFDF5))
-        "QUOTATION" -> Triple(Icons.Default.Work, VioletPrimary, Color(0xFFF5F3FF))
-        "TASK" -> Triple(Icons.Default.TaskAlt, Color(0xFF0288D1), Color(0xFFF0F9FF))
-        "PROJECT" -> Triple(Icons.Default.Folder, Color(0xFFD97706), Color(0xFFFFFBEB))
-        "PAYMENT" -> Triple(Icons.Default.Payment, EmeraldApproved, Color(0xFFECFDF5))
-        else -> Triple(Icons.Default.Bookmark, ObsidianCharcoal, MutedSurface)
+        "STATUS" -> Triple(Icons.Default.AutoAwesome, palette.mintInk, palette.mintBg)
+        "INVOICE" -> Triple(Icons.Default.Receipt, palette.mintInk, palette.mintBg)
+        "QUOTATION" -> Triple(Icons.Default.Work, palette.lavenderInk, palette.lavenderBg)
+        "TASK" -> Triple(Icons.Default.TaskAlt, palette.skyInk, palette.skyBg)
+        "PROJECT" -> Triple(Icons.Default.Folder, palette.butterInk, palette.butterBg)
+        "PAYMENT" -> Triple(Icons.Default.Payment, palette.mintInk, palette.mintBg)
+        else -> Triple(Icons.Default.Bookmark, palette.textPrimary, palette.surfaceMuted)
     }
     val thumbBmp = remember(kind, message.attachmentDataBase64) {
         if (kind == "STATUS" && message.attachmentDataBase64.isNotBlank()) {
@@ -275,7 +278,7 @@ fun BusinessReferenceCard(
                 if (message.businessRefStatus.isNotBlank()) {
                     StatusPill(
                         label = message.businessRefStatus,
-                        containerColor = PureWhite,
+                        containerColor = palette.surface,
                         contentColor = tint
                     )
                 }
@@ -295,14 +298,14 @@ fun BusinessReferenceCard(
             Text(
                 text = message.businessRefTitle.ifBlank { message.body },
                 style = XMaxType.headline,
-                color = ObsidianCharcoal
+                color = palette.textPrimary
             )
 
             if (message.businessRefSubtitle.isNotBlank()) {
                 Text(
                     text = message.businessRefSubtitle,
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
             }
 
@@ -310,7 +313,7 @@ fun BusinessReferenceCard(
                 Text(
                     text = MoneyFormatter.formatInr(message.businessRefAmountPaise),
                     style = XMaxType.numericHeadline,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
             }
 
@@ -333,12 +336,13 @@ fun VoiceNoteBubble(
     message: ChatMessage,
     onPlay: () -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     var isPlaying by remember { mutableStateOf(false) }
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = PureWhite.copy(alpha = 0.85f),
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface.copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, palette.outline),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
@@ -375,7 +379,7 @@ fun VoiceNoteBubble(
             ) {
                 val heights = listOf(8, 14, 22, 12, 18, 24, 16, 20, 10, 15, 22, 8, 16, 12)
                 heights.forEachIndexed { i, h ->
-                    val color = if (isPlaying && i < 7) EmeraldApproved else StudioTextSecondary.copy(alpha = 0.5f)
+                    val color = if (isPlaying && i < 7) EmeraldApproved else palette.textSecondary.copy(alpha = 0.5f)
                     Box(
                         modifier = Modifier
                             .width(3.dp)
@@ -392,7 +396,7 @@ fun VoiceNoteBubble(
                     String.format("%02d:%02d", sec / 60, sec % 60)
                 } else "Voice Note",
                 style = XMaxType.monoTimer,
-                color = StudioTextSecondary
+                color = palette.textSecondary
             )
         }
     }
@@ -419,6 +423,8 @@ fun StudioMessageBubble(
     if (message.isDeletedFor(myUid)) return
 
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     var showActionMenu by remember { mutableStateOf(false) }
 
     val timeLabel = remember(message.createdAt) {
@@ -432,8 +438,17 @@ fun StudioMessageBubble(
         RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 4.dp, bottomEnd = 18.dp)
     }
 
-    val bubbleColor = if (isMe) StudioOutgoingBg else StudioIncomingBg
-    val bubbleBorder = if (isMe) StudioOutgoingBorder else Color(0xFFECEFF2)
+    val bubbleColor = when {
+        isMe && isDark -> Color(0xFF232838)
+        isMe -> StudioOutgoingBg
+        isDark -> palette.surfaceElevated
+        else -> StudioIncomingBg
+    }
+    val bubbleBorder = when {
+        isMe && isDark -> Color(0xFF343B4F)
+        isMe -> StudioOutgoingBorder
+        else -> palette.outline
+    }
 
     Box(
         modifier = Modifier
@@ -472,7 +487,7 @@ fun StudioMessageBubble(
                                 Text(
                                     text = "• ${formatTitleCase(message.senderRole)}",
                                     style = XMaxType.caption1,
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                             }
                         }
@@ -482,8 +497,8 @@ fun StudioMessageBubble(
                     if (message.parentPreview.isNotBlank()) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (isMe) PureWhite.copy(alpha = 0.12f) else PureWhite.copy(alpha = 0.7f),
-                            border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else SubtleOutline),
+                            color = if (isMe) PureWhite.copy(alpha = 0.12f) else palette.surface.copy(alpha = 0.85f),
+                            border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else palette.outline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -501,7 +516,7 @@ fun StudioMessageBubble(
                                 Text(
                                     text = message.parentPreview,
                                     style = XMaxType.caption1,
-                                    color = if (isMe) PureWhite else ObsidianCharcoal,
+                                    color = if (isMe) PureWhite else palette.textPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -514,7 +529,7 @@ fun StudioMessageBubble(
                         Text(
                             text = "🚫 This message was deleted",
                             style = XMaxType.subheadline.copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
-                            color = if (isMe) Color(0xFF94A3B8) else StudioTextSecondary
+                            color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary
                         )
                     } else {
                         // Poll
@@ -537,7 +552,7 @@ fun StudioMessageBubble(
                             Text(
                                 text = message.body,
                                 style = XMaxType.subheadline,
-                                color = if (isMe) PureWhite else ObsidianCharcoal
+                                color = if (isMe) PureWhite else palette.textPrimary
                             )
                         }
 
@@ -546,8 +561,8 @@ fun StudioMessageBubble(
                             Surface(
                                 onClick = onOpenAttachment,
                                 shape = RoundedCornerShape(10.dp),
-                                color = PureWhite.copy(alpha = 0.7f),
-                                border = BorderStroke(1.dp, SubtleOutline),
+                                color = if (isMe) PureWhite.copy(alpha = 0.14f) else palette.surface.copy(alpha = 0.9f),
+                                border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else palette.outline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -558,14 +573,14 @@ fun StudioMessageBubble(
                                     Icon(
                                         imageVector = if (message.attachmentTypeEnum() == ChatAttachmentType.IMAGE) Icons.Default.Image else Icons.Default.Description,
                                         contentDescription = null,
-                                        tint = ObsidianCharcoal,
+                                        tint = if (isMe) PureWhite else palette.textPrimary,
                                         modifier = Modifier.size(24.dp)
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = message.attachmentName.ifBlank { "Attachment" },
                                             style = XMaxType.caption1Semibold,
-                                            color = ObsidianCharcoal,
+                                            color = if (isMe) PureWhite else palette.textPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -573,12 +588,12 @@ fun StudioMessageBubble(
                                             Text(
                                                 text = ChatFileManager.formatFileSize(message.attachmentSizeBytes),
                                                 style = XMaxType.caption1.tabular(),
-                                                color = StudioTextSecondary
+                                                color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary
                                             )
                                         }
                                     }
                                     IconButton(onClick = onDownloadAttachment, modifier = Modifier.size(28.dp)) {
-                                        Icon(Icons.Default.Download, contentDescription = "Download", tint = ObsidianCharcoal, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Download, contentDescription = "Download", tint = if (isMe) PureWhite else palette.textPrimary, modifier = Modifier.size(16.dp))
                                     }
                                 }
                             }
@@ -601,13 +616,13 @@ fun StudioMessageBubble(
                             Text(
                                 text = "edited",
                                 style = XMaxType.caption2,
-                                color = StudioTextSecondary
+                                color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary
                             )
                         }
                         Text(
                             text = timeLabel,
                             style = XMaxType.caption2.tabular(),
-                            color = StudioTextSecondary
+                            color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary
                         )
                         if (isMe) {
                             DeliveryStatusIcon(status = message.deliveryStatus)
@@ -630,14 +645,14 @@ fun StudioMessageBubble(
                         Surface(
                             onClick = { onReact(emoji) },
                             shape = RoundedCornerShape(999.dp),
-                            color = if (isMyReact) VioletSoftBg else PureWhite,
-                            border = BorderStroke(1.dp, if (isMyReact) VioletPrimary else SubtleOutline),
+                            color = if (isMyReact) palette.softVioletBg else palette.surface,
+                            border = BorderStroke(1.dp, if (isMyReact) VioletPrimary else palette.outline),
                             shadowElevation = 0.5.dp
                         ) {
                             Text(
                                 text = "$emoji $count",
                                 style = XMaxType.caption1Semibold.tabular(),
-                                color = ObsidianCharcoal,
+                                color = palette.textPrimary,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -708,10 +723,11 @@ fun MessageActionsBottomSheet(
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -725,7 +741,7 @@ fun MessageActionsBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(999.dp))
-                    .background(MutedSurface)
+                    .background(palette.surfaceMuted)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
@@ -746,7 +762,7 @@ fun MessageActionsBottomSheet(
             // Actions List
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 DropdownMenuItem(
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = ObsidianCharcoal) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = palette.textPrimary) },
                     text = { Text("Reply", style = XMaxType.subheadlineMedium) },
                     onClick = onReply
                 )
@@ -755,27 +771,27 @@ fun MessageActionsBottomSheet(
                         Icon(
                             imageVector = if (message.isStarredBy(myUid)) Icons.Default.Star else Icons.Default.StarBorder,
                             contentDescription = null,
-                            tint = if (message.isStarredBy(myUid)) Color(0xFFF59E0B) else ObsidianCharcoal
+                            tint = if (message.isStarredBy(myUid)) Color(0xFFF59E0B) else palette.textPrimary
                         )
                     },
                     text = { Text(if (message.isStarredBy(myUid)) "Unstar" else "Star", style = XMaxType.subheadlineMedium) },
                     onClick = onToggleStar
                 )
                 DropdownMenuItem(
-                    leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null, tint = ObsidianCharcoal) },
+                    leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null, tint = palette.textPrimary) },
                     text = { Text(if (message.pinned) "Unpin" else "Pin", style = XMaxType.subheadlineMedium) },
                     onClick = onTogglePin
                 )
                 if (message.body.isNotBlank()) {
                     DropdownMenuItem(
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ObsidianCharcoal) },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = palette.textPrimary) },
                         text = { Text("Copy", style = XMaxType.subheadlineMedium) },
                         onClick = onCopy
                     )
                 }
                 if (isMe && !message.isDeletedForEveryone) {
                     DropdownMenuItem(
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = ObsidianCharcoal) },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = palette.textPrimary) },
                         text = { Text("Edit", style = XMaxType.subheadlineMedium) },
                         onClick = onEdit
                     )
@@ -802,6 +818,7 @@ fun CreatePollDialog(
     onSubmit: (String, List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var question by remember { mutableStateOf("") }
     val options = remember { mutableStateListOf("", "") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -809,7 +826,8 @@ fun CreatePollDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = PureWhite,
+            color = palette.surface,
+            border = BorderStroke(1.dp, palette.outline),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -821,7 +839,7 @@ fun CreatePollDialog(
                 Text(
                     text = "Create Poll",
                     style = XMaxType.secondaryTitle,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
 
                 if (!errorMsg.isNullOrBlank()) {
@@ -844,7 +862,7 @@ fun CreatePollDialog(
                 Text(
                     text = "Options",
                     style = XMaxType.caption1Semibold,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
 
                 options.forEachIndexed { i, opt ->
@@ -865,7 +883,7 @@ fun CreatePollDialog(
                         )
                         if (options.size > 2) {
                             IconButton(onClick = { options.removeAt(i) }) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove option", tint = StudioTextSecondary)
+                                Icon(Icons.Default.Close, contentDescription = "Remove option", tint = palette.textSecondary)
                             }
                         }
                     }
@@ -898,7 +916,7 @@ fun CreatePollDialog(
                                 onSubmit(cleanQ, cleanOpts)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) {
                         Text("Create Poll", style = XMaxType.buttonCompact)
                     }
@@ -914,12 +932,14 @@ fun ShareBusinessRecordDialog(
     onShare: (kind: String, refId: String, title: String, subtitle: String, status: String, amountPaise: Long) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var selectedCategory by remember { mutableStateOf("INVOICE") } // INVOICE, QUOTATION, TASK, PROJECT, PAYMENT
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = PureWhite,
+            color = palette.surface,
+            border = BorderStroke(1.dp, palette.outline),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 520.dp)
@@ -931,7 +951,7 @@ fun ShareBusinessRecordDialog(
                 Text(
                     text = "Share Business Record",
                     style = XMaxType.secondaryTitle,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
 
                 // Category selector
@@ -946,12 +966,12 @@ fun ShareBusinessRecordDialog(
                         Surface(
                             onClick = { selectedCategory = cat },
                             shape = RoundedCornerShape(999.dp),
-                            color = if (isSel) ObsidianCharcoal else MutedSurface
+                            color = if (isSel) palette.buttonPrimaryBg else palette.surfaceMuted
                         ) {
                             Text(
                                 text = cat,
                                 style = XMaxType.caption1Semibold,
-                                color = if (isSel) PureWhite else ObsidianCharcoal,
+                                color = if (isSel) palette.buttonPrimaryFg else palette.textPrimary,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
@@ -969,7 +989,7 @@ fun ShareBusinessRecordDialog(
                         "INVOICE" -> {
                             val activeQuotes = state.quotations.filter { it.statusEnum() == QuotationStatus.CLIENT_APPROVED }
                             if (activeQuotes.isEmpty()) {
-                                Text("No approved invoices to share.", style = XMaxType.footnote, color = StudioTextSecondary)
+                                Text("No approved invoices to share.", style = XMaxType.footnote, color = palette.textSecondary)
                             }
                             activeQuotes.forEach { q ->
                                 Surface(
@@ -977,12 +997,12 @@ fun ShareBusinessRecordDialog(
                                         onShare("INVOICE", q.id, "Invoice #${q.quoteNumber}", "Client: ${q.clientSnapshot.companyName}", "DUE", q.totalPaise)
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MutedSurface,
+                                    color = palette.surfaceMuted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
-                                        Text("Invoice #${q.quoteNumber}", style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text(q.clientSnapshot.companyName, style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text("Invoice #${q.quoteNumber}", style = XMaxType.headline, color = palette.textPrimary)
+                                        Text(q.clientSnapshot.companyName, style = XMaxType.footnote, color = palette.textSecondary)
                                         Text(MoneyFormatter.formatInr(q.totalPaise), style = XMaxType.numericHeadline, color = EmeraldApproved)
                                     }
                                 }
@@ -995,12 +1015,12 @@ fun ShareBusinessRecordDialog(
                                         onShare("QUOTATION", q.id, "Quotation: ${q.clientSnapshot.companyName}", q.quoteNumber, q.status, q.totalPaise)
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MutedSurface,
+                                    color = palette.surfaceMuted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
-                                        Text(q.clientSnapshot.companyName, style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text("Ref: ${q.quoteNumber} • ${q.status}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text(q.clientSnapshot.companyName, style = XMaxType.headline, color = palette.textPrimary)
+                                        Text("Ref: ${q.quoteNumber} • ${q.status}", style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                 }
                             }
@@ -1013,12 +1033,12 @@ fun ShareBusinessRecordDialog(
                                         onShare("TASK", d.id, d.title, "Due in ${daysLeft}d", d.status, 0L)
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MutedSurface,
+                                    color = palette.surfaceMuted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
-                                        Text(d.title, style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text(d.status, style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text(d.title, style = XMaxType.headline, color = palette.textPrimary)
+                                        Text(d.status, style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                 }
                             }
@@ -1030,12 +1050,12 @@ fun ShareBusinessRecordDialog(
                                         onShare("PROJECT", p.id, p.title, p.clientCompanyName, p.status, 0L)
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MutedSurface,
+                                    color = palette.surfaceMuted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
-                                        Text(p.title, style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text(p.clientCompanyName, style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text(p.title, style = XMaxType.headline, color = palette.textPrimary)
+                                        Text(p.clientCompanyName, style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                 }
                             }
@@ -1047,12 +1067,12 @@ fun ShareBusinessRecordDialog(
                                         onShare("PAYMENT", pay.id, "Payment: ${MoneyFormatter.formatInr(pay.amountPaise)}", pay.method, "RECEIVED", pay.amountPaise)
                                     },
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MutedSurface,
+                                    color = palette.surfaceMuted,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
                                         Text(MoneyFormatter.formatInr(pay.amountPaise), style = XMaxType.numericHeadline, color = EmeraldApproved)
-                                        Text("${pay.method} • ${pay.reference}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text("${pay.method} • ${pay.reference}", style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                 }
                             }
@@ -1082,14 +1102,15 @@ fun ConversationInfoSheet(
     onClearChat: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val isDirect = channel.channelTypeEnum() == ChatChannelType.DIRECT
     val isMuted = channel.isMutedFor(myUid)
     val isChannelAdmin = isSuperAdmin || myUid in channel.adminUids || myUid == channel.createdByUid
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -1104,26 +1125,26 @@ fun ConversationInfoSheet(
             StudioAvatar(
                 name = channel.title,
                 size = 72.dp,
-                borderColor = PureWhite,
+                borderColor = palette.surface,
                 photoBase64 = ""
             )
 
             Text(
                 text = formatTitleCase(channel.title),
                 style = XMaxType.secondaryTitle,
-                color = ObsidianCharcoal
+                color = palette.textPrimary
             )
             Text(
                 text = channel.topic.ifBlank { "Team workspace channel" },
                 style = XMaxType.subheadline,
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 textAlign = TextAlign.Center
             )
 
             // Quick Actions: Mute Switch
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MutedSurface,
+                color = palette.surfaceMuted,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -1138,7 +1159,7 @@ fun ConversationInfoSheet(
                         Icon(
                             imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                             contentDescription = null,
-                            tint = ObsidianCharcoal
+                            tint = palette.textPrimary
                         )
                         Text(
                             text = "Mute Notifications",
@@ -1163,7 +1184,7 @@ fun ConversationInfoSheet(
                         Text(
                             text = "Members (${channel.participantUids.size.coerceAtLeast(1)})",
                             style = XMaxType.headline.tabular(),
-                            color = ObsidianCharcoal
+                            color = palette.textPrimary
                         )
                     }
 
@@ -1174,8 +1195,8 @@ fun ConversationInfoSheet(
 
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = PureWhite,
-                            border = BorderStroke(1.dp, SubtleOutline),
+                            color = palette.surfaceElevated,
+                            border = BorderStroke(1.dp, palette.outline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -1186,7 +1207,7 @@ fun ConversationInfoSheet(
                                 StudioAvatar(
                                     name = name,
                                     size = 36.dp,
-                                    borderColor = PureWhite,
+                                    borderColor = palette.surface,
                                     photoBase64 = member?.photoBase64.orEmpty()
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
@@ -1197,7 +1218,7 @@ fun ConversationInfoSheet(
                                     Text(
                                         text = if (isAdmin) "Admin" else "Member",
                                         style = XMaxType.caption1,
-                                        color = if (isAdmin) EmeraldApproved else StudioTextSecondary
+                                        color = if (isAdmin) EmeraldApproved else palette.textSecondary
                                     )
                                 }
                                 if (isChannelAdmin && uid != myUid) {
@@ -1217,7 +1238,7 @@ fun ConversationInfoSheet(
             // Destructive Action: Clear Chat
             Button(
                 onClick = onClearChat,
-                colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlocked.copy(alpha = 0.12f), contentColor = CrimsonBlocked),
+                colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlocked.copy(alpha = 0.14f), contentColor = CrimsonBlocked),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))

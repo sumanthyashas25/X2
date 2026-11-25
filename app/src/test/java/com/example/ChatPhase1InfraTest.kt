@@ -213,4 +213,67 @@ class ChatPhase1InfraTest {
         assertTrue(r2Message.isCloudflareStored)
         assertTrue(r2Message.hasAttachment)
     }
+
+    @Test
+    fun `supabase storage signed upload and download tickets parse cleanly and ChatMessage recognizes SUPABASE_STORAGE`() {
+        val signedUpload = WorkerBridgeClient.parseSignedUploadResponse(
+            org.json.JSONObject(
+                """
+                {
+                  "ok": true,
+                  "provider": "SUPABASE_STORAGE",
+                  "signedUrl": "https://demo.supabase.co/storage/v1/object/upload/sign/xmax-media/companies/xmax/chats/ch_1/photo.jpg?token=abc",
+                  "method": "put",
+                  "bucket": "xmax-media",
+                  "storagePath": "companies/xmax/chats/ch_1/photo.jpg",
+                  "byteSize": 543210,
+                  "mimeType": "image/jpeg",
+                  "sha256": "cafebabe"
+                }
+                """.trimIndent()
+            ),
+            fallbackBucket = "xmax-media"
+        )
+        assertEquals("SUPABASE_STORAGE", signedUpload.provider)
+        assertEquals("PUT", signedUpload.method)
+        assertEquals("xmax-media", signedUpload.bucket)
+        assertEquals("companies/xmax/chats/ch_1/photo.jpg", signedUpload.storagePath)
+        assertEquals(543210L, signedUpload.byteSize)
+        assertTrue(signedUpload.signedUrl.startsWith("https://"))
+
+        val signedDownload = WorkerBridgeClient.parseSignedDownloadResponse(
+            org.json.JSONObject(
+                """
+                {
+                  "ok": true,
+                  "provider": "SUPABASE_STORAGE",
+                  "signedUrl": "https://demo.supabase.co/storage/v1/object/sign/xmax-media/companies/xmax/chats/ch_1/photo.jpg?token=xyz",
+                  "bucket": "xmax-media"
+                }
+                """.trimIndent()
+            ),
+            fallbackBucket = "xmax-media"
+        )
+        assertEquals("SUPABASE_STORAGE", signedDownload.provider)
+        assertEquals("xmax-media", signedDownload.bucket)
+        assertTrue(signedDownload.signedUrl.contains("token=xyz"))
+
+        val supaMessage = com.example.model.ChatMessage(
+            id = "msg_supa_1",
+            channelId = "ch_1",
+            senderUid = "u1",
+            attachmentType = com.example.model.ChatAttachmentType.IMAGE.name,
+            attachmentName = "photo.jpg",
+            attachmentMimeType = "image/jpeg",
+            attachmentSizeBytes = 543_210L,
+            attachmentDataBase64 = "",
+            attachmentBucket = "xmax-media",
+            attachmentStoragePath = "companies/xmax/chats/ch_1/photo.jpg",
+            attachmentSha256 = "cafebabe",
+            storageProvider = "SUPABASE_STORAGE"
+        )
+        assertTrue(supaMessage.isCloudStored)
+        assertTrue(supaMessage.isCloudflareStored)
+        assertTrue(supaMessage.hasAttachment)
+    }
 }

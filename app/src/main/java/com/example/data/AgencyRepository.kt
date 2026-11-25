@@ -40,7 +40,7 @@ class AgencyRepository(context: Context) {
             ?: throw IllegalStateException("Authenticated user required.")
 
     companion object {
-        const val TARGET_FIRESTORE_DATABASE_ID = "ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a"
+        const val TARGET_FIRESTORE_DATABASE_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
     }
 
     internal val companyRef get() = db.collection("companies").document(companyId)

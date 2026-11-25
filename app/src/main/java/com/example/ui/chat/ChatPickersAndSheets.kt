@@ -61,11 +61,12 @@ fun EmojiStickerGifSheet(
     onDismiss: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) } // 0=Emoji, 1=Stickers, 2=GIFs
+    val palette = XMaxTheme.colors
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -76,8 +77,8 @@ fun EmojiStickerGifSheet(
         ) {
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = MutedSurface,
-                contentColor = ObsidianCharcoal,
+                containerColor = palette.surfaceMuted,
+                contentColor = palette.textPrimary,
                 modifier = Modifier.clip(RoundedCornerShape(14.dp))
             ) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Emoji", style = XMaxType.footnoteSemibold) })
@@ -243,11 +244,12 @@ fun AttachmentMenuBottomSheet(
     onDismiss: () -> Unit
 ) {
     var showLiveChoices by remember { mutableStateOf(false) }
+    val palette = XMaxTheme.colors
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -285,17 +287,17 @@ fun AttachmentMenuBottomSheet(
             if (showLiveChoices) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFF0FDF4),
+                    color = palette.mintBg,
                     border = BorderStroke(1.dp, EmeraldApproved.copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Live Location Duration", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                        Text("Live Location Duration", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(15, 60).forEach { mins ->
                                 Button(
                                     onClick = { onLiveLocation(mins) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(if (mins == 15) "15 Minutes" else "1 Hour", style = XMaxType.buttonCompact.tabular())
@@ -318,7 +320,7 @@ fun AttachmentMenuBottomSheet(
                 Triple("Live Location", Icons.Default.MyLocation, Color(0xFF059669)) to { showLiveChoices = !showLiveChoices },
                 Triple("Poll", Icons.Default.Poll, Color(0xFF7C3AED)) to onCreatePoll,
                 Triple("Event", Icons.Default.Event, Color(0xFFD97706)) to onCreateEvent,
-                Triple("Agency Ref", Icons.Default.Work, Color(0xFF1E293B)) to onBusinessRecord
+                Triple("Agency Ref", Icons.Default.Work, palette.textPrimary) to onBusinessRecord
             )
 
             items.chunked(4).forEach { row ->
@@ -382,10 +384,12 @@ fun CreateEventDialog(
         )
     }
 
+    val palette = XMaxTheme.colors
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = PureWhite,
+            color = palette.surface,
+            contentColor = palette.textPrimary,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -408,7 +412,7 @@ fun CreateEventDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("When", style = XMaxType.caption1Semibold, color = StudioTextSecondary)
+                Text("When", style = XMaxType.caption1Semibold, color = palette.textSecondary)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -437,7 +441,7 @@ fun CreateEventDialog(
                                 onCreate(title.trim(), location.trim(), presets[presetIndex].second)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) {
                         Text("Create Event", style = XMaxType.buttonCompact)
                     }
@@ -462,10 +466,12 @@ fun ForwardMessageDialog(
         }
     }
 
+    val palette = XMaxTheme.colors
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = PureWhite,
+            color = palette.surface,
+            contentColor = palette.textPrimary,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 480.dp)
@@ -489,7 +495,7 @@ fun ForwardMessageDialog(
                         Surface(
                             onClick = { onSelectChannel(ch) },
                             shape = RoundedCornerShape(14.dp),
-                            color = MutedSurface,
+                            color = palette.surfaceMuted,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -500,20 +506,21 @@ fun ForwardMessageDialog(
                                 StudioAvatar(
                                     name = if (ch.isSelfNotes(myUid)) "Saved Notes" else ch.title,
                                     size = 38.dp,
-                                    borderColor = PureWhite,
+                                    borderColor = palette.surface,
                                     photoBase64 = ch.photoBase64
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = if (ch.isSelfNotes(myUid)) "Message Yourself (Saved)" else formatTitleCase(ch.title),
                                         style = XMaxType.headline,
+                                        color = palette.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = ch.channelTypeEnum().label,
                                         style = XMaxType.caption1,
-                                        color = StudioTextSecondary
+                                        color = palette.textSecondary
                                     )
                                 }
                             }
@@ -540,10 +547,11 @@ fun MessageInfoBottomSheet(
         SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault()).format(Date(ms))
     }
 
+    val palette = XMaxTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -555,13 +563,18 @@ fun MessageInfoBottomSheet(
         ) {
             Text("Message Information", style = XMaxType.secondaryTitle)
 
-            Surface(shape = RoundedCornerShape(14.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(14.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Type: ${message.kindEnum().label}", style = XMaxType.subheadlineSemibold)
-                    Text("Sent: $sentTime", style = XMaxType.numericFootnote, color = StudioTextSecondary)
+                    Text("Sent: $sentTime", style = XMaxType.numericFootnote, color = palette.textSecondary)
                     if (message.storageProvider.isNotBlank()) {
+                        val storageLabel = when (message.storageProvider) {
+                            "SUPABASE_STORAGE" -> "Supabase Storage Free Tier"
+                            "CLOUDFLARE_R2" -> "Cloudflare R2 Free Tier"
+                            else -> "Firestore Inline"
+                        }
                         Text(
-                            text = "Storage: ${if (message.isCloudflareStored) "Cloudflare R2 Free Tier" else "Firestore Inline"}",
+                            text = "Storage: $storageLabel",
                             style = XMaxType.footnoteSemibold,
                             color = VioletPrimary
                         )
@@ -582,7 +595,7 @@ fun MessageInfoBottomSheet(
                 color = StudioBlueAccent
             )
             if (message.readByUids.isEmpty()) {
-                Text("No read receipts yet.", style = XMaxType.footnote, color = StudioTextSecondary)
+                Text("No read receipts yet.", style = XMaxType.footnote, color = palette.textSecondary)
             } else {
                 message.readByUids.forEach { uid ->
                     val name = allMembers.firstOrNull { it.uid == uid }?.fullName ?: uid
@@ -593,10 +606,10 @@ fun MessageInfoBottomSheet(
             Text(
                 text = "Delivered To (${message.deliveredToUids.size})",
                 style = XMaxType.numericHeadline,
-                color = StudioTextSecondary
+                color = palette.textSecondary
             )
             if (message.deliveredToUids.isEmpty()) {
-                Text("Pending recipient delivery receipt.", style = XMaxType.footnote, color = StudioTextSecondary)
+                Text("Pending recipient delivery receipt.", style = XMaxType.footnote, color = palette.textSecondary)
             } else {
                 message.deliveredToUids.forEach { uid ->
                     val name = allMembers.firstOrNull { it.uid == uid }?.fullName ?: uid
@@ -618,14 +631,15 @@ fun ReportContentDialog(
     var selectedReason by remember { mutableStateOf(reasons.first()) }
     var extraNote by remember { mutableStateOf("") }
 
+    val palette = XMaxTheme.colors
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(22.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = RoundedCornerShape(22.dp), color = palette.surface, contentColor = palette.textPrimary, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(title, style = XMaxType.secondaryTitle, color = CrimsonBlocked)
                 Text(
                     "Recent context is sent securely to workspace admins for review.",
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
                 reasons.forEach { r ->
                     Row(
@@ -673,17 +687,18 @@ fun PinUnlockDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     var pin by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(22.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = RoundedCornerShape(22.dp), color = palette.surface, contentColor = palette.textPrimary, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Lock, contentDescription = null, tint = VioletPrimary)
                     Text(title, style = XMaxType.secondaryTitle)
                 }
-                Text(subtitle, style = XMaxType.footnote, color = StudioTextSecondary)
+                Text(subtitle, style = XMaxType.footnote, color = palette.textSecondary)
                 OutlinedTextField(
                     value = pin,
                     onValueChange = {
@@ -723,7 +738,7 @@ fun PinUnlockDialog(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                     ) {
                         Text(if (confirmSetupMode) "Save Code" else "Unlock", style = XMaxType.buttonCompact)
                     }
@@ -740,13 +755,14 @@ fun ChatSettingsAndSecuritySheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     var showPinSetup by remember { mutableStateOf(false) }
     var newListName by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -759,7 +775,7 @@ fun ChatSettingsAndSecuritySheet(
             Text("Chat Settings & Privacy", style = XMaxType.secondaryTitle)
 
             // Chat Lock Secret Code
-            Surface(shape = RoundedCornerShape(16.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(16.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -771,7 +787,7 @@ fun ChatSettingsAndSecuritySheet(
                             Text(
                                 text = if (prefs.hasSecretCode) "Secret PIN active (${prefs.lockedChannelIds.size} locked)" else "Not configured",
                                 style = XMaxType.numericCaption1,
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         TextButton(onClick = { showPinSetup = true }) {
@@ -822,7 +838,7 @@ fun ChatSettingsAndSecuritySheet(
 
             // Media & Auto-Download Settings
             Text("Media & Storage", style = XMaxType.headline)
-            Surface(shape = RoundedCornerShape(16.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = RoundedCornerShape(16.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Auto-download photos", style = XMaxType.subheadline)
@@ -854,7 +870,7 @@ fun ChatSettingsAndSecuritySheet(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Show saved media in device Gallery", style = XMaxType.subheadline)
-                            Text("When off, downloads save privately inside app storage", style = XMaxType.caption1, color = StudioTextSecondary)
+                            Text("When off, downloads save privately inside app storage", style = XMaxType.caption1, color = palette.textSecondary)
                         }
                         Switch(
                             checked = prefs.mediaVisibleInGallery,
@@ -882,7 +898,7 @@ fun ChatSettingsAndSecuritySheet(
                         ChatSettingsStore.addCustomList(context, newListName)
                         newListName = ""
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) {
                     Text("Add", style = XMaxType.buttonCompact)
                 }
@@ -934,11 +950,12 @@ fun StarredMessagesSheet(
     onDismiss: () -> Unit
 ) {
     val starred = remember(messages, myUid) { messages.filter { it.isStarredBy(myUid) } }
+    val palette = XMaxTheme.colors
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -952,7 +969,7 @@ fun StarredMessagesSheet(
                 Text(
                     "Tap any message bubble in this conversation and choose Star to save important messages here.",
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
             } else {
                 LazyColumn(
@@ -960,7 +977,7 @@ fun StarredMessagesSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(starred, key = { it.id }) { msg ->
-                        Surface(shape = RoundedCornerShape(14.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                        Surface(shape = RoundedCornerShape(14.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,

@@ -192,26 +192,28 @@ fun QuoteBuilderScreen(
         }
     }
 
+    val palette = XMaxTheme.colors
     Scaffold(
-        containerColor = CrispCanvas,
+        containerColor = palette.canvas,
+        contentColor = palette.textPrimary,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = CrispCanvas, titleContentColor = ObsidianCharcoal),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.canvas, titleContentColor = palette.textPrimary),
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        XMaxLogoImage(tint = ObsidianCharcoal, height = 14.dp)
+                        XMaxLogoImage(tint = palette.textPrimary, height = 14.dp)
                         Column {
-                            Text(workingQuote.quoteNumber.ifBlank { "New Quotation" }, style = XMaxType.headline.tabular(), color = ObsidianCharcoal)
-                            Text("Rev v${workingQuote.revision} • ${workingQuote.statusEnum().label}", style = XMaxType.caption1.tabular(), color = StudioTextSecondary)
+                            Text(workingQuote.quoteNumber.ifBlank { "New Quotation" }, style = XMaxType.headline.tabular(), color = palette.textPrimary)
+                            Text("Rev v${workingQuote.revision} • ${workingQuote.statusEnum().label}", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
                         }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ObsidianCharcoal)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
                     }
                 },
                 actions = {
@@ -222,13 +224,13 @@ fun QuoteBuilderScreen(
                                 AppHapticsAndNotifier.triggerCompletionVibration(context)
                                 savedFeedbackBanner = "Created Revision v${rev.revision}"
                             }
-                        }) { Text("New Revision", style = XMaxType.footnoteSemibold, color = ObsidianCharcoal) }
+                        }) { Text("New Revision", style = XMaxType.footnoteSemibold, color = palette.textPrimary) }
                     }
                 }
             )
         },
         bottomBar = {
-            Surface(color = PureWhite, border = BorderStroke(1.dp, SubtleOutline), shadowElevation = 8.dp) {
+            Surface(color = palette.surface, border = BorderStroke(1.dp, palette.outline), shadowElevation = 8.dp) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -238,16 +240,16 @@ fun QuoteBuilderScreen(
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column {
-                            Text("Quote Total", style = XMaxType.caption1, color = StudioTextSecondary)
+                            Text("Quote Total", style = XMaxType.caption1, color = palette.textSecondary)
                             Text(
                                 MoneyFormatter.formatInr(calc.totalPaise),
                                 style = XMaxType.numericSection,
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("Advance (${advancePercentText.ifBlank { "50" }}%)", style = XMaxType.caption1.tabular(), color = StudioTextSecondary)
-                            Text(MoneyFormatter.formatInr(calc.advancePaise), style = XMaxType.numericHeadline, color = ObsidianCharcoal)
+                            Text("Advance (${advancePercentText.ifBlank { "50" }}%)", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
+                            Text(MoneyFormatter.formatInr(calc.advancePaise), style = XMaxType.numericHeadline, color = palette.textPrimary)
                         }
                     }
 
@@ -257,8 +259,8 @@ fun QuoteBuilderScreen(
                                 onClick = { ensureRequestThenSave(issueNow = false) },
                                 enabled = selectedClient != null,
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SubtleOutline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = PureWhite, contentColor = ObsidianCharcoal),
+                                border = BorderStroke(1.dp, palette.outline),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface, contentColor = palette.textPrimary),
                                 modifier = Modifier.weight(1f).height(46.dp).testTag("save_quote_draft_button")
                             ) {
                                 Text("Save Draft", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -269,7 +271,7 @@ fun QuoteBuilderScreen(
                                     onClick = { ensureRequestThenSave(issueNow = true) },
                                     enabled = selectedClient != null && calc.computedLines.isNotEmpty() && calc.validationErrors.isEmpty(),
                                     shape = RoundedCornerShape(999.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                     modifier = Modifier.weight(1f).height(46.dp).testTag("issue_quote_button")
                                 ) {
                                     Text("Issue Quote", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -282,8 +284,8 @@ fun QuoteBuilderScreen(
                                     onGeneratePdf(q, false) { file -> previewPdfFile = file }
                                 },
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SubtleOutline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = PureWhite, contentColor = ObsidianCharcoal),
+                                border = BorderStroke(1.dp, palette.outline),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface, contentColor = palette.textPrimary),
                                 modifier = Modifier.weight(1f).height(46.dp).testTag("preview_pdf_button")
                             ) {
                                 Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -296,7 +298,7 @@ fun QuoteBuilderScreen(
                                     onGeneratePdf(q, true) { }
                                 },
                                 shape = RoundedCornerShape(999.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                 modifier = Modifier.weight(1f).height(46.dp).testTag("share_pdf_button")
                             ) {
                                 Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -328,8 +330,8 @@ fun QuoteBuilderScreen(
                                         }
                                     },
                                     shape = RoundedCornerShape(999.dp),
-                                    border = BorderStroke(1.dp, SubtleOutline),
-                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = PureWhite, contentColor = ObsidianCharcoal),
+                                    border = BorderStroke(1.dp, palette.outline),
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface, contentColor = palette.textPrimary),
                                     modifier = Modifier.weight(1f).testTag("mark_quote_sent_button")
                                 ) { Text("Mark Sent", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             }
@@ -337,7 +339,7 @@ fun QuoteBuilderScreen(
                                 Button(
                                     onClick = { showClientApproveDialog = true },
                                     shape = RoundedCornerShape(999.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = InfoPillBg, contentColor = InfoPillInk),
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.skyBg, contentColor = palette.skyInk),
                                     modifier = Modifier.weight(1f).testTag("mark_client_approved_button")
                                 ) { Text("Mark Client Approved", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             }
@@ -347,11 +349,11 @@ fun QuoteBuilderScreen(
             }
         }
     ) { padding ->
-        val tfColors = OutlinedTextFieldDefaults.colors(focusedContainerColor = PureWhite, unfocusedContainerColor = PureWhite)
+        val tfColors = OutlinedTextFieldDefaults.colors(focusedContainerColor = palette.surface, unfocusedContainerColor = palette.surface)
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(CrispCanvas)
+                .background(palette.canvas)
                 .padding(padding)
                 .testTag("quote_builder_list"),
             contentPadding = PaddingValues(16.dp),
@@ -362,8 +364,8 @@ fun QuoteBuilderScreen(
                 item {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = SoftMint,
-                        border = BorderStroke(1.dp, DeepMintInk.copy(alpha = 0.35f)),
+                        color = palette.mintBg,
+                        border = BorderStroke(1.dp, palette.mintInk.copy(alpha = 0.35f)),
                         modifier = Modifier.fillMaxWidth().testTag("quote_saved_banner")
                     ) {
                         Row(
@@ -371,15 +373,15 @@ fun QuoteBuilderScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = DeepMintInk, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = palette.mintInk, modifier = Modifier.size(18.dp))
                             Text(
                                 text = savedFeedbackBanner.orEmpty(),
                                 style = XMaxType.footnoteSemibold,
-                                color = DeepMintInk,
+                                color = palette.mintInk,
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(onClick = { savedFeedbackBanner = null }, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = DeepMintInk, modifier = Modifier.size(14.dp))
+                                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = palette.mintInk, modifier = Modifier.size(14.dp))
                             }
                         }
                     }
@@ -391,7 +393,7 @@ fun QuoteBuilderScreen(
                 item {
                     Surface(
                         shape = RoundedCornerShape(22.dp),
-                        color = ButterYellow,
+                        color = palette.butterBg,
                         border = BorderStroke(1.dp, WarmAlarmAmber.copy(alpha = 0.5f)),
                         shadowElevation = 2.dp,
                         modifier = Modifier.fillMaxWidth().testTag("quote_advance_payment_reminder")
@@ -409,24 +411,24 @@ fun QuoteBuilderScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Filled.Payments, contentDescription = null, tint = DeepAmberInk)
+                                    Icon(Icons.Filled.Payments, contentDescription = null, tint = palette.butterInk)
                                     Text(
                                         text = "Client Approved • Advance Due",
                                         style = XMaxType.subheadlineSemibold,
-                                        color = DeepAmberInk
+                                        color = palette.butterInk
                                     )
                                 }
-                                StatusPill("Advance: ${MoneyFormatter.formatInr(calc.advancePaise)}", PureWhite, DeepAmberInk)
+                                StatusPill("Advance: ${MoneyFormatter.formatInr(calc.advancePaise)}", palette.surface, palette.butterInk)
                             }
                             Text(
                                 text = "The client approved ${workingQuote.quoteNumber}. Track or record the advance deposit (${workingQuote.advancePercent}%) in the Payment Tracker to start work smoothly.",
                                 style = XMaxType.footnote,
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                             Button(
                                 onClick = onOpenPayments,
                                 shape = RoundedCornerShape(999.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                 modifier = Modifier.fillMaxWidth().height(44.dp).testTag("quote_open_payments_button")
                             ) {
                                 Icon(Icons.Filled.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -442,22 +444,22 @@ fun QuoteBuilderScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                    colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Client & Project Details", style = XMaxType.headline, color = ObsidianCharcoal)
+                            Text("Client & Project Details", style = XMaxType.headline, color = palette.textPrimary)
                             if (isEditable) {
                                 TextButton(onClick = { showQuickClientDialog = true }, modifier = Modifier.testTag("quick_add_client_button")) {
-                                    Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp), tint = ObsidianCharcoal)
+                                    Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp), tint = palette.textPrimary)
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Quick Add Client", style = XMaxType.footnoteSemibold, color = ObsidianCharcoal)
+                                    Text("Quick Add Client", style = XMaxType.footnoteSemibold, color = palette.textPrimary)
                                 }
                             }
                         }
                         if (state.clients.isEmpty()) {
-                            Text("No clients added yet. Tap Quick Add Client to create one without losing this draft.", style = XMaxType.footnote, color = StudioTextSecondary)
+                            Text("No clients added yet. Tap Quick Add Client to create one without losing this draft.", style = XMaxType.footnote, color = palette.textSecondary)
                         } else {
                             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 state.clients.forEach { cli ->
@@ -466,10 +468,10 @@ fun QuoteBuilderScreen(
                                         onClick = { if (isEditable) selectedClientId = cli.id },
                                         shape = RoundedCornerShape(999.dp),
                                         colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = ObsidianCharcoal,
-                                            selectedLabelColor = PureWhite,
-                                            containerColor = PureWhite,
-                                            labelColor = ObsidianCharcoal
+                                            selectedContainerColor = palette.buttonPrimaryBg,
+                                            selectedLabelColor = palette.buttonPrimaryFg,
+                                            containerColor = palette.surface,
+                                            labelColor = palette.textPrimary
                                         ),
                                         border = null,
                                         label = { Text(cli.companyName, style = XMaxType.footnoteMedium) }
@@ -510,7 +512,7 @@ fun QuoteBuilderScreen(
                         Button(
                             onClick = { showCataloguePicker = true },
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             modifier = Modifier.weight(1f).height(48.dp).testTag("open_catalogue_picker_button")
                         ) {
                             Icon(Icons.Filled.AddShoppingCart, contentDescription = null)
@@ -520,8 +522,8 @@ fun QuoteBuilderScreen(
                         OutlinedButton(
                             onClick = { showCustomItemDialog = true },
                             shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, SubtleOutline),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = PureWhite, contentColor = ObsidianCharcoal),
+                            border = BorderStroke(1.dp, palette.outline),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface, contentColor = palette.textPrimary),
                             modifier = Modifier.height(48.dp).testTag("add_custom_quote_item_button")
                         ) { Text("+ Custom", style = XMaxType.buttonCompact) }
                     }
@@ -533,18 +535,18 @@ fun QuoteBuilderScreen(
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         calc.overlapWarnings.forEach { w ->
-                            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = ButterYellow)) {
+                            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = palette.butterBg)) {
                                 Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = DeepAmberInk)
-                                    Text(w, style = XMaxType.footnote, color = DeepAmberInk)
+                                    Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = palette.butterInk)
+                                    Text(w, style = XMaxType.footnote, color = palette.butterInk)
                                 }
                             }
                         }
                         calc.validationErrors.forEach { err ->
-                            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = SoftBlush)) {
+                            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = palette.blushBg)) {
                                 Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = CrimsonBlocked)
-                                    Text(err, style = XMaxType.footnote, color = DeepBlushInk)
+                                    Text(err, style = XMaxType.footnote, color = palette.blushInk)
                                 }
                             }
                         }
@@ -568,27 +570,27 @@ fun QuoteBuilderScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                    colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Commercial Adjustments & Terms", style = XMaxType.headline, color = ObsidianCharcoal)
-                        Surface(shape = RoundedCornerShape(14.dp), color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+                        Text("Commercial Adjustments & Terms", style = XMaxType.headline, color = palette.textPrimary)
+                        Surface(shape = RoundedCornerShape(14.dp), color = palette.surface, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                                        Text("Urgent Delivery (+25% Surcharge)", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                                        Text("Urgent Delivery (+25% Surcharge)", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                                         Text(
                                             "Applies to eligible lines (${MoneyFormatter.formatInr(calc.surchargeBasePaise)} base -> +${MoneyFormatter.formatInr(calc.surchargePaise)})",
                                             style = XMaxType.footnote.tabular(),
-                                            color = StudioTextSecondary
+                                            color = palette.textSecondary
                                         )
                                     }
                                     Switch(checked = urgentEnabled, onCheckedChange = { if (isEditable) urgentEnabled = it })
                                 }
-                                HorizontalDivider(color = SubtleOutline)
+                                HorizontalDivider(color = palette.outline)
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Include GST (${workingQuote.gstRatePercent}%): ${MoneyFormatter.formatInr(calc.gstAmountPaise)}", style = XMaxType.subheadlineMedium.tabular(), color = ObsidianCharcoal)
+                                    Text("Include GST (${workingQuote.gstRatePercent}%): ${MoneyFormatter.formatInr(calc.gstAmountPaise)}", style = XMaxType.subheadlineMedium.tabular(), color = palette.textPrimary)
                                     Switch(checked = gstEnabled, onCheckedChange = { if (isEditable) gstEnabled = it })
                                 }
                             }
@@ -699,9 +701,9 @@ fun QuoteBuilderScreen(
         var approvalNote by remember { mutableStateOf("Approved via Email / Messaging") }
         AlertDialog(
             onDismissRequest = { showClientApproveDialog = false },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Record Client Approval", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Record Client Approval", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 OutlinedTextField(
                     value = approvalNote,
@@ -725,10 +727,10 @@ fun QuoteBuilderScreen(
                         showClientApproveDialog = false
                     },
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Confirm Client Approval", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { showClientApproveDialog = false }) { Text("Cancel", style = XMaxType.footnoteSemibold, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { showClientApproveDialog = false }) { Text("Cancel", style = XMaxType.footnoteSemibold, color = palette.textSecondary) } }
         )
     }
 
@@ -751,26 +753,27 @@ private fun QuoteLineCard(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     var priceInput by remember(line.lineId, line.overridePricePaise, line.unitPricePaise) {
         mutableStateOf(MoneyFormatter.paiseToEditableRupees(line.overridePricePaise ?: line.unitPricePaise))
     }
 
     Card(
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MutedSurface),
+        colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier.animateContentSize()
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                    Text(line.title, style = XMaxType.headline, color = ObsidianCharcoal)
-                    Text("${line.category} • ${line.pricingModeEnum().label}", style = XMaxType.caption1, color = StudioTextSecondary)
+                    Text(line.title, style = XMaxType.headline, color = palette.textPrimary)
+                    Text("${line.category} • ${line.pricingModeEnum().label}", style = XMaxType.caption1, color = palette.textSecondary)
                 }
                 Text(
                     if (line.separatelyBilled) "Separately Billed" else MoneyFormatter.formatInr(line.lineTotalPaise),
                     style = XMaxType.numericHeadline,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
             }
 
@@ -778,7 +781,7 @@ private fun QuoteLineCard(
                 Text(
                     "Includes: " + line.inclusions.joinToString(" • ") { if (it.quantity > 1) "${it.quantity}× ${it.title}" else it.title },
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary
+                    color = palette.textSecondary
                 )
             }
 
@@ -786,11 +789,11 @@ private fun QuoteLineCard(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { if (line.quantity > 1) onUpdate(line.copy(quantity = line.quantity - 1)) }) {
-                            Icon(Icons.Filled.RemoveCircleOutline, contentDescription = "Decrease quantity", tint = ObsidianCharcoal)
+                            Icon(Icons.Filled.RemoveCircleOutline, contentDescription = "Decrease quantity", tint = palette.textPrimary)
                         }
-                        Text("${line.quantity}", style = XMaxType.numericHeadline, color = ObsidianCharcoal)
+                        Text("${line.quantity}", style = XMaxType.numericHeadline, color = palette.textPrimary)
                         IconButton(onClick = { onUpdate(line.copy(quantity = line.quantity + 1)) }) {
-                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Increase quantity", tint = ObsidianCharcoal)
+                            Icon(Icons.Filled.AddCircleOutline, contentDescription = "Increase quantity", tint = palette.textPrimary)
                         }
                     }
 
@@ -810,7 +813,7 @@ private fun QuoteLineCard(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = PureWhite, unfocusedContainerColor = PureWhite),
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = palette.surface, unfocusedContainerColor = palette.surface),
                         modifier = Modifier.weight(1f)
                     )
 
@@ -826,10 +829,10 @@ private fun QuoteLineCard(
                             onClick = { onUpdate(line.copy(billingFrequency = freq.name)) },
                             shape = RoundedCornerShape(999.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ObsidianCharcoal,
-                                selectedLabelColor = PureWhite,
-                                containerColor = PureWhite,
-                                labelColor = ObsidianCharcoal
+                                selectedContainerColor = palette.buttonPrimaryBg,
+                                selectedLabelColor = palette.buttonPrimaryFg,
+                                containerColor = palette.surface,
+                                labelColor = palette.textPrimary
                             ),
                             border = null,
                             label = { Text(freq.label, style = XMaxType.footnoteMedium) }
@@ -841,10 +844,10 @@ private fun QuoteLineCard(
                             onClick = { onUpdate(line.copy(separatelyBilled = !line.separatelyBilled)) },
                             shape = RoundedCornerShape(999.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ObsidianCharcoal,
-                                selectedLabelColor = PureWhite,
-                                containerColor = PureWhite,
-                                labelColor = ObsidianCharcoal
+                                selectedContainerColor = palette.buttonPrimaryBg,
+                                selectedLabelColor = palette.buttonPrimaryFg,
+                                containerColor = palette.surface,
+                                labelColor = palette.textPrimary
                             ),
                             border = null,
                             label = { Text("Separately Billed", style = XMaxType.footnoteMedium) }
@@ -890,6 +893,7 @@ private fun CataloguePickerDialog(
     }
     val totalSelected = selectedCounts.keys.size + if (urgentSelected) 1 else 0
 
+    val palette = XMaxTheme.colors
     FullScreenAgencyDialog(onDismissRequest = onDismiss) {
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(
@@ -899,7 +903,8 @@ private fun CataloguePickerDialog(
                 .imePadding()
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = navBottom.coerceAtLeast(16.dp)),
             shape = RoundedCornerShape(28.dp),
-            color = CrispCanvas
+            color = palette.canvas,
+            contentColor = palette.textPrimary
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -907,12 +912,12 @@ private fun CataloguePickerDialog(
                     Surface(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(999.dp),
-                        color = ObsidianCharcoal,
+                        color = palette.buttonPrimaryBg,
                         modifier = Modifier.testTag("catalogue_done_button")
                     ) {
                         Text(
                             text = if (totalSelected > 0) "Done ($totalSelected)" else "Done",
-                            color = PureWhite,
+                            color = palette.buttonPrimaryFg,
                             style = XMaxType.buttonCompact.tabular(),
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
@@ -929,7 +934,7 @@ private fun CataloguePickerDialog(
                         selected = kindFilter == null,
                         onClick = { kindFilter = null },
                         shape = RoundedCornerShape(999.dp),
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ObsidianCharcoal, selectedLabelColor = PureWhite, containerColor = MutedSurface, labelColor = ObsidianCharcoal),
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = palette.buttonPrimaryBg, selectedLabelColor = palette.buttonPrimaryFg, containerColor = palette.surfaceMuted, labelColor = palette.textPrimary),
                         border = null,
                         label = { Text("All (${items.size})", style = XMaxType.footnoteMedium.tabular()) }
                     )
@@ -938,7 +943,7 @@ private fun CataloguePickerDialog(
                             selected = kindFilter == k,
                             onClick = { kindFilter = k },
                             shape = RoundedCornerShape(999.dp),
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ObsidianCharcoal, selectedLabelColor = PureWhite, containerColor = MutedSurface, labelColor = ObsidianCharcoal),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = palette.buttonPrimaryBg, selectedLabelColor = palette.buttonPrimaryFg, containerColor = palette.surfaceMuted, labelColor = palette.textPrimary),
                             border = null,
                             label = { Text("${k.label}s (${items.count { it.kindEnum() == k }})", style = XMaxType.footnoteMedium.tabular()) }
                         )
@@ -952,7 +957,7 @@ private fun CataloguePickerDialog(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = if (lastActionRemoved) ButterYellow else SoftMint,
+                        color = if (lastActionRemoved) palette.butterBg else palette.mintBg,
                         border = BorderStroke(
                             1.dp,
                             if (lastActionRemoved) WarmAlarmAmber.copy(alpha = 0.4f) else EmeraldApproved.copy(alpha = 0.35f)
@@ -969,13 +974,13 @@ private fun CataloguePickerDialog(
                             Icon(
                                 imageVector = if (lastActionRemoved) Icons.Filled.RemoveCircleOutline else Icons.Filled.CheckCircle,
                                 contentDescription = null,
-                                tint = if (lastActionRemoved) DeepAmberInk else EmeraldApproved,
+                                tint = if (lastActionRemoved) palette.butterInk else EmeraldApproved,
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
                                 text = lastActionMessage.orEmpty(),
                                 style = XMaxType.footnoteSemibold,
-                                color = if (lastActionRemoved) DeepAmberInk else DeepMintInk,
+                                color = if (lastActionRemoved) palette.butterInk else palette.mintInk,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1030,11 +1035,12 @@ private fun QuickClientDialog(onSave: (Client) -> Unit, onDismiss: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
+    val palette = XMaxTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(26.dp),
-        title = { Text("Quick Add Client", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        title = { Text("Quick Add Client", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = companyName, onValueChange = { companyName = it }, label = { Text("Client Company *", style = XMaxType.inputLabel) }, textStyle = XMaxType.body, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -1051,10 +1057,10 @@ private fun QuickClientDialog(onSave: (Client) -> Unit, onDismiss: () -> Unit) {
                 },
                 enabled = companyName.isNotBlank() && contactPerson.isNotBlank(),
                 shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
             ) { Text("Save Client", style = XMaxType.buttonCompact) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.footnoteSemibold, color = StudioTextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.footnoteSemibold, color = palette.textSecondary) } }
     )
 }
 
@@ -1064,12 +1070,13 @@ private fun CustomLineItemDialog(onAdd: (QuoteLineItem) -> Unit, onDismiss: () -
     var desc by remember { mutableStateOf("") }
     var priceRupees by remember { mutableStateOf("") }
     var separatelyBilled by remember { mutableStateOf(false) }
+    val palette = XMaxTheme.colors
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(26.dp),
-        title = { Text("Add Custom Quote Line", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        title = { Text("Add Custom Quote Line", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Service / Deliverable Name *", style = XMaxType.inputLabel) }, textStyle = XMaxType.body, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -1086,7 +1093,7 @@ private fun CustomLineItemDialog(onAdd: (QuoteLineItem) -> Unit, onDismiss: () -
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = separatelyBilled, onCheckedChange = { separatelyBilled = it })
-                    Text("Mark as Separately Billed / Actual Cost", style = XMaxType.subheadline, color = ObsidianCharcoal)
+                    Text("Mark as Separately Billed / Actual Cost", style = XMaxType.subheadline, color = palette.textPrimary)
                 }
             }
         },
@@ -1111,10 +1118,10 @@ private fun CustomLineItemDialog(onAdd: (QuoteLineItem) -> Unit, onDismiss: () -
                 },
                 enabled = title.isNotBlank(),
                 shape = RoundedCornerShape(999.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
             ) { Text("Add Line", style = XMaxType.buttonCompact) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.footnoteSemibold, color = StudioTextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.footnoteSemibold, color = palette.textSecondary) } }
     )
 }
 
@@ -1125,6 +1132,7 @@ fun PdfPreviewDialog(
     onShare: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val bitmaps = remember(file.absolutePath) {
         val list = mutableListOf<Bitmap>()
         try {
@@ -1153,7 +1161,7 @@ fun PdfPreviewDialog(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = navBottom.coerceAtLeast(16.dp)),
             shape = RoundedCornerShape(28.dp),
-            color = CrispCanvas
+            color = palette.canvas
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
@@ -1161,23 +1169,23 @@ fun PdfPreviewDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("${quote.quoteNumber} v${quote.revision} Preview", style = XMaxType.headline.tabular(), color = ObsidianCharcoal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                    Text("${quote.quoteNumber} v${quote.revision} Preview", style = XMaxType.headline.tabular(), color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = onShare,
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                         ) {
                             Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Share PDF", style = XMaxType.buttonCompact)
                         }
-                        TextButton(onClick = onDismiss) { Text("Close", style = XMaxType.footnoteSemibold, color = StudioTextSecondary) }
+                        TextButton(onClick = onDismiss) { Text("Close", style = XMaxType.footnoteSemibold, color = palette.textSecondary) }
                     }
                 }
-                HorizontalDivider(color = SubtleOutline)
+                HorizontalDivider(color = palette.outline)
                 LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth().background(MutedSurface),
+                    modifier = Modifier.weight(1f).fillMaxWidth().background(palette.surfaceMuted),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {

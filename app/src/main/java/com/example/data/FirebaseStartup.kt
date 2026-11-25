@@ -13,11 +13,11 @@ import com.google.firebase.FirebaseApp
  */
 object FirebaseStartup {
     private const val TAG = "XMaxFirebaseDiagnostics"
-    const val EXPECTED_PROJECT_ID = "gen-lang-client-0410091917"
-    const val EXPECTED_DATABASE_ID = "ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a"
+    const val EXPECTED_PROJECT_ID = "gen-lang-client-0137668580"
+    const val EXPECTED_DATABASE_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
     const val EXPECTED_PACKAGE_NAME = "com.aistudio.xmax.krmxpq"
-    const val EXPECTED_SHA1 = "96:CB:CB:67:25:85:90:10:4E:63:83:9C:18:86:1F:67:F6:7F:9D:14"
-    const val EXPECTED_SHA256 = "FD:B3:04:55:1F:33:AE:F5:4D:45:CD:85:D1:7A:4D:5C:B5:0F:21:59:C1:07:C8:77:A9:BE:57:33:66:9D:00:F9"
+    const val EXPECTED_SHA1 = "3F:DE:14:FD:31:D8:5B:B2:4D:1C:CB:B9:85:7F:2E:34:CB:40:8C:73"
+    const val EXPECTED_SHA256 = "4D:C6:95:6D:AD:8E:C1:F6:85:74:20:20:B1:D9:A8:8F:D3:6F:0D:27:56:F3:6D:20:7D:A0:87:90:74:A6:59:B8"
 
     @Volatile
     private var initialized = false

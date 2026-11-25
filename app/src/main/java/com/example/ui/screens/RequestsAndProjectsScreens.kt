@@ -61,6 +61,7 @@ fun RequestsScreen(
         }
     }
 
+    val palette = XMaxTheme.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize().pastelAmbientBackdrop(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
@@ -68,12 +69,12 @@ fun RequestsScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Client Requests", style = XMaxType.sectionHeading, color = ObsidianCharcoal)
+                Text("Client Requests", style = XMaxType.sectionHeading, color = palette.textPrimary)
                 if (canCreateReq && state.clients.isNotEmpty()) {
                     Button(
                         onClick = { showNewRequestDialog = true },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.height(42.dp).testTag("new_request_button")
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -97,12 +98,12 @@ fun RequestsScreen(
                     onClick = { filter = null },
                     shape = RoundedCornerShape(999.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ObsidianCharcoal,
-                        selectedLabelColor = PureWhite,
-                        containerColor = PureWhite,
-                        labelColor = ObsidianCharcoal
+                        selectedContainerColor = palette.buttonPrimaryBg,
+                        selectedLabelColor = palette.buttonPrimaryFg,
+                        containerColor = palette.surface,
+                        labelColor = palette.textPrimary
                     ),
-                    border = FilterChipDefaults.filterChipBorder(enabled = true, selected = filter == null, borderColor = SubtleOutline),
+                    border = FilterChipDefaults.filterChipBorder(enabled = true, selected = filter == null, borderColor = palette.outline),
                     label = { Text("All (${state.requests.size})", style = XMaxType.footnoteMedium.tabular()) }
                 )
                 DecisionStatus.entries.forEach { d ->
@@ -111,12 +112,12 @@ fun RequestsScreen(
                         onClick = { filter = d },
                         shape = RoundedCornerShape(999.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ObsidianCharcoal,
-                            selectedLabelColor = PureWhite,
-                            containerColor = PureWhite,
-                            labelColor = ObsidianCharcoal
+                            selectedContainerColor = palette.buttonPrimaryBg,
+                            selectedLabelColor = palette.buttonPrimaryFg,
+                            containerColor = palette.surface,
+                            labelColor = palette.textPrimary
                         ),
-                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = filter == d, borderColor = SubtleOutline),
+                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = filter == d, borderColor = palette.outline),
                         label = { Text("${d.label} (${state.requests.count { it.decisionStatusEnum() == d }})", style = XMaxType.footnoteMedium.tabular()) }
                     )
                 }
@@ -137,26 +138,26 @@ fun RequestsScreen(
             items(filtered, key = { it.id }) { req ->
                 val st = req.decisionStatusEnum()
                 val (bg, fg) = when (st) {
-                    DecisionStatus.ACCEPTED -> SoftMint to DeepMintInk
-                    DecisionStatus.DECLINED -> SoftBlush to DeepBlushInk
-                    DecisionStatus.PENDING -> KpiLavenderBg to VioletPrimary
+                    DecisionStatus.ACCEPTED -> palette.mintBg to palette.mintInk
+                    DecisionStatus.DECLINED -> palette.blushBg to palette.blushInk
+                    DecisionStatus.PENDING -> palette.lavenderBg to palette.lavenderInk
                 }
                 Surface(
                     onClick = { selectedRequest = req },
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(formatTitleCase(req.projectTitle), style = XMaxType.headline, color = ObsidianCharcoal)
+                                Text(formatTitleCase(req.projectTitle), style = XMaxType.headline, color = palette.textPrimary)
                                 Text(
                                     "${formatTitleCase(req.clientCompanyName)} • Lead: ${formatTitleCase(req.responsibleManagerName.ifBlank { "Unassigned" })}",
                                     style = XMaxType.footnote,
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                             }
                             StatusPill(st.label, bg, fg)
@@ -164,10 +165,10 @@ fun RequestsScreen(
                         if (req.latestQuoteNumber.isNotBlank() || req.clientApprovedQuoteId.isNotBlank()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (req.latestQuoteNumber.isNotBlank()) {
-                                    StatusPill("${req.latestQuoteNumber} v${req.latestQuoteRevision}", KpiLavenderBg, VioletPrimary)
+                                    StatusPill("${req.latestQuoteNumber} v${req.latestQuoteRevision}", palette.lavenderBg, palette.lavenderInk)
                                 }
                                 if (req.clientApprovedQuoteId.isNotBlank()) {
-                                    StatusPill("Client Approved", SoftMint, DeepMintInk)
+                                    StatusPill("Client Approved", palette.mintBg, palette.mintInk)
                                 }
                             }
                         }
@@ -252,18 +253,20 @@ fun RequestDecisionDialog(
     var declineNote by remember { mutableStateOf("") }
     var showDeclineConfirm by remember { mutableStateOf(false) }
 
+    val palette = XMaxTheme.colors
     val st = request.decisionStatusEnum()
     val (stBg, stFg) = when (st) {
-        DecisionStatus.ACCEPTED -> SoftMint to DeepMintInk
-        DecisionStatus.DECLINED -> SoftBlush to DeepBlushInk
-        DecisionStatus.PENDING -> InfoPillBg to InfoPillInk
+        DecisionStatus.ACCEPTED -> palette.mintBg to palette.mintInk
+        DecisionStatus.DECLINED -> palette.blushBg to palette.blushInk
+        DecisionStatus.PENDING -> palette.skyBg to palette.skyInk
     }
 
     FullScreenAgencyDialog(onDismissRequest = onDismiss) {
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = CrispCanvas
+            color = palette.canvas,
+            contentColor = palette.textPrimary
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Top Bar anchored safely below status bar
@@ -276,9 +279,9 @@ fun RequestDecisionDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ObsidianCharcoal)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
                     }
-                    Text("Request Details", style = XMaxType.headline, color = ObsidianCharcoal)
+                    Text("Request Details", style = XMaxType.headline, color = palette.textPrimary)
                     Spacer(Modifier.size(48.dp))
                 }
 
@@ -297,17 +300,17 @@ fun RequestDecisionDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Box(
-                                modifier = Modifier.size(44.dp).clip(CircleShape).background(MutedSurface),
+                                modifier = Modifier.size(44.dp).clip(CircleShape).background(palette.surfaceMuted),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Outlined.Description, contentDescription = null, tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Outlined.Description, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Request Title", style = XMaxType.caption1Medium, color = StudioTextSecondary)
+                                Text("Request Title", style = XMaxType.caption1Medium, color = palette.textSecondary)
                                 Text(
                                     text = formatTitleCase(request.projectTitle),
                                     style = XMaxType.headline,
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -330,7 +333,7 @@ fun RequestDecisionDialog(
                         Button(
                             onClick = { onOpenQuoteBuilder(targetQuote) },
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             modifier = Modifier.fillMaxWidth().height(50.dp)
                         ) {
                             Icon(Icons.AutoMirrored.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -360,25 +363,25 @@ fun RequestDecisionDialog(
 
                     if (request.decisionStatusEnum() == DecisionStatus.PENDING && targetQuote != null) {
                         item {
-                            Text("Deliverables & Routing (${drafts.size})", style = XMaxType.secondaryTitle.tabular(), color = ObsidianCharcoal)
+                            Text("Deliverables & Routing (${drafts.size})", style = XMaxType.secondaryTitle.tabular(), color = palette.textPrimary)
                         }
                         items(drafts, key = { it.draftId }) { draft ->
                             var expanded by remember { mutableStateOf(false) }
                             val eligible = state.members.filter { it.statusEnum() == MembershipStatus.APPROVED && it.active }
-                            Surface(shape = RoundedCornerShape(20.dp), color = MutedSurface) {
+                            Surface(shape = RoundedCornerShape(20.dp), color = palette.surfaceMuted) {
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Text("${draft.title} (×${draft.quantity})", style = XMaxType.headline.tabular(), color = ObsidianCharcoal, modifier = Modifier.weight(1f))
+                                        Text("${draft.title} (×${draft.quantity})", style = XMaxType.headline.tabular(), color = palette.textPrimary, modifier = Modifier.weight(1f))
                                         StatusPill(
                                             draft.assignmentStatus.label,
-                                            if (draft.assignmentStatus == AssignmentStatus.ASSIGNED) SoftMint else ButterYellow,
-                                            if (draft.assignmentStatus == AssignmentStatus.ASSIGNED) DeepMintInk else DeepAmberInk
+                                            if (draft.assignmentStatus == AssignmentStatus.ASSIGNED) palette.mintBg else palette.butterBg,
+                                            if (draft.assignmentStatus == AssignmentStatus.ASSIGNED) palette.mintInk else palette.butterInk
                                         )
                                     }
-                                    Text("${draft.departmentName} • ${draft.jobRoleName}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                    Text("${draft.departmentName} • ${draft.jobRoleName}", style = XMaxType.footnote, color = palette.textSecondary)
                                     Box {
                                         TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(0.dp)) {
-                                            Text("Assignee: ${draft.assignedToName.ifBlank { "Pick Employee" }}", style = XMaxType.footnoteSemibold, color = InfoPillInk)
+                                            Text("Assignee: ${draft.assignedToName.ifBlank { "Pick Employee" }}", style = XMaxType.footnoteSemibold, color = palette.skyInk)
                                         }
                                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                                             DropdownMenuItem(text = { Text("Leave Unassigned", style = XMaxType.subheadline) }, onClick = {
@@ -405,8 +408,8 @@ fun RequestDecisionDialog(
                 // Anchored Safe-Inset Bottom Decision Bar (never clipped behind gesture nav or tall headers)
                 if (request.decisionStatusEnum() == DecisionStatus.PENDING && (canAccept || canDecline)) {
                     Surface(
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
+                        color = palette.surface,
+                        border = BorderStroke(1.dp, palette.outline),
                         shadowElevation = 8.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -455,8 +458,9 @@ fun RequestDecisionDialog(
     if (showDeclineConfirm) {
         AlertDialog(
             onDismissRequest = { showDeclineConfirm = false },
-            containerColor = PureWhite,
-            title = { Text("Decline Request", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            containerColor = palette.surface,
+            titleContentColor = palette.textPrimary,
+            title = { Text("Decline Request", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 OutlinedTextField(
                     value = declineNote,
@@ -493,11 +497,13 @@ private fun NewRequestDialog(
     var brief by remember { mutableStateOf("") }
     var daysStr by remember { mutableStateOf("14") }
     var selectedMgr by remember { mutableStateOf(managers.firstOrNull() ?: fallbackManager) }
+    val palette = XMaxTheme.colors
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        title = { Text("Capture Client Request", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        containerColor = palette.surface,
+        titleContentColor = palette.textPrimary,
+        title = { Text("Capture Client Request", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -517,7 +523,7 @@ private fun NewRequestDialog(
                     selectedClient?.let { c -> onCreate(c, title, brief, System.currentTimeMillis() + days * 86_400_000L, selectedMgr) }
                 },
                 enabled = selectedClient != null && title.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
             ) { Text("Save Request", style = XMaxType.buttonCompact) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact) } }
@@ -558,6 +564,7 @@ fun ProjectsScreen(
         }
     }
 
+    val palette = XMaxTheme.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize().pastelAmbientBackdrop(),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
@@ -565,7 +572,7 @@ fun ProjectsScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Projects (${list.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Projects (${list.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 if (canDelete) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (cleanableCount > 0) {
@@ -585,12 +592,12 @@ fun ProjectsScreen(
                             onClick = { showDeleted = !showDeleted },
                             shape = RoundedCornerShape(999.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ObsidianCharcoal,
-                                selectedLabelColor = PureWhite,
-                                containerColor = PureWhite,
-                                labelColor = ObsidianCharcoal
+                                selectedContainerColor = palette.buttonPrimaryBg,
+                                selectedLabelColor = palette.buttonPrimaryFg,
+                                containerColor = palette.surface,
+                                labelColor = palette.textPrimary
                             ),
-                            border = FilterChipDefaults.filterChipBorder(enabled = true, selected = showDeleted, borderColor = SubtleOutline),
+                            border = FilterChipDefaults.filterChipBorder(enabled = true, selected = showDeleted, borderColor = palette.outline),
                             label = { Text(if (showDeleted) "DELETED" else "ACTIVE ONLY", style = XMaxType.caption1Semibold) }
                         )
                     }
@@ -627,21 +634,21 @@ fun ProjectsScreen(
                 Surface(
                     onClick = { selectedProject = proj },
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                             Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(formatTitleCase(proj.title), style = XMaxType.headline, color = ObsidianCharcoal)
-                                Text("${formatTitleCase(proj.clientCompanyName)} • ${proj.approvedQuoteNumber} v${proj.approvedQuoteRevision}", style = XMaxType.footnote.tabular(), color = StudioTextSecondary)
+                                Text(formatTitleCase(proj.title), style = XMaxType.headline, color = palette.textPrimary)
+                                Text("${formatTitleCase(proj.clientCompanyName)} • ${proj.approvedQuoteNumber} v${proj.approvedQuoteRevision}", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                             }
                             StatusPill(
                                 proj.statusEnum().label,
-                                if (allDone) SoftMint else KpiSkyBg,
-                                if (allDone) DeepMintInk else InfoPillInk
+                                if (allDone) palette.mintBg else palette.skyBg,
+                                if (allDone) palette.mintInk else palette.skyInk
                             )
                         }
 
@@ -655,15 +662,15 @@ fun ProjectsScreen(
 
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             if (assigneePairs.isNotEmpty()) {
-                                OverlappingAvatarMembers(members = assigneePairs, avatarSize = 26.dp, borderColor = PureWhite)
+                                OverlappingAvatarMembers(members = assigneePairs, avatarSize = 26.dp, borderColor = palette.surface)
                             } else {
-                                Text(WorkDistributionEngine.summarizeProjectProgress(projDelivs), style = XMaxType.caption1, color = StudioTextSecondary)
+                                Text(WorkDistributionEngine.summarizeProjectProgress(projDelivs), style = XMaxType.caption1, color = palette.textSecondary)
                             }
                             if (state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) {
                                 StatusPill(
                                     "BAL: ${MoneyFormatter.formatInr(proj.outstandingPaise)}",
-                                    KpiMintBg,
-                                    DeepMintInk
+                                    palette.mintBg,
+                                    palette.mintInk
                                 )
                             }
                         }
@@ -676,9 +683,9 @@ fun ProjectsScreen(
     if (showCleanupConfirm) {
         AlertDialog(
             onDismissRequest = { showCleanupConfirm = false },
-            containerColor = PureWhite,
-            title = { Text("DELETE ALL OLD DONE PROJECTS?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("This permanently deletes $cleanableCount completed or archived project(s) and their deliverables.", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary) },
+            containerColor = palette.surface,
+            title = { Text("DELETE ALL OLD DONE PROJECTS?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("This permanently deletes $cleanableCount completed or archived project(s) and their deliverables.", style = XMaxType.subheadline.tabular(), color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -761,11 +768,13 @@ private fun ProjectDetailDialog(
         ).projectReminders.firstOrNull()
     }
 
+    val palette = XMaxTheme.colors
     FullScreenAgencyDialog(onDismissRequest = onDismiss) {
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = CrispCanvas
+            color = palette.canvas,
+            contentColor = palette.textPrimary
         ) {
             Column(
                 modifier = Modifier
@@ -781,9 +790,9 @@ private fun ProjectDetailDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ObsidianCharcoal)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
                     }
-                    Text("Project Details", style = XMaxType.headline, color = ObsidianCharcoal)
+                    Text("Project Details", style = XMaxType.headline, color = palette.textPrimary)
                     Spacer(Modifier.size(48.dp))
                 }
 
@@ -793,25 +802,25 @@ private fun ProjectDetailDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(
-                        modifier = Modifier.size(44.dp).clip(CircleShape).background(MutedSurface),
+                        modifier = Modifier.size(44.dp).clip(CircleShape).background(palette.surfaceMuted),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Project", style = XMaxType.caption1Medium, color = StudioTextSecondary)
+                        Text("Project", style = XMaxType.caption1Medium, color = palette.textSecondary)
                         Text(
                             text = "${project.approvedQuoteNumber.ifBlank { project.id.take(10) }} • ${formatTitleCase(project.title)}",
                             style = XMaxType.headline.tabular(),
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     StatusPill(
                         label = project.statusEnum().label,
-                        containerColor = if (allDone) SoftMint else InfoPillBg,
-                        contentColor = if (allDone) DeepMintInk else InfoPillInk
+                        containerColor = if (allDone) palette.mintBg else palette.skyBg,
+                        contentColor = if (allDone) palette.mintInk else palette.skyInk
                     )
                 }
 
@@ -824,12 +833,12 @@ private fun ProjectDetailDialog(
                     )
                 )
 
-                // Full-width Jet-Black Primary CTA Pill
+                // Full-width Primary CTA Pill
                 if (canQuote) {
                     Button(
                         onClick = onAddOnQuote,
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.fillMaxWidth().height(52.dp)
                     ) {
                         Icon(Icons.Outlined.PostAdd, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -854,31 +863,31 @@ private fun ProjectDetailDialog(
                             Surface(
                                 onClick = { onOpenDeliverable(d) },
                                 shape = RoundedCornerShape(20.dp),
-                                color = MutedSurface
+                                color = palette.surfaceMuted
                             ) {
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                         Box(
-                                            modifier = Modifier.size(34.dp).clip(CircleShape).background(PureWhite),
+                                            modifier = Modifier.size(34.dp).clip(CircleShape).background(palette.surface),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 if (st == DeliverableStatus.APPROVED) Icons.Filled.Check else Icons.Outlined.TaskAlt,
                                                 contentDescription = null,
-                                                tint = ObsidianCharcoal,
+                                                tint = palette.textPrimary,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
                                         Column(Modifier.weight(1f)) {
-                                            Text(d.title, style = XMaxType.headline, color = ObsidianCharcoal)
-                                            Text("${d.departmentName} • ${d.assignedToName.ifBlank { d.assignmentStatusEnum().label }}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                            Text(d.title, style = XMaxType.headline, color = palette.textPrimary)
+                                            Text("${d.departmentName} • ${d.assignedToName.ifBlank { d.assignmentStatusEnum().label }}", style = XMaxType.footnote, color = palette.textSecondary)
                                         }
                                         StatusPill(st.label, pillBg, pillFg)
                                     }
                                     if (canAssign) {
                                         Box {
                                             TextButton(onClick = { assignMenu = true }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                                                Text("Reassign / Set Assignee", style = XMaxType.footnoteSemibold, color = InfoPillInk)
+                                                Text("Reassign / Set Assignee", style = XMaxType.footnoteSemibold, color = palette.skyInk)
                                             }
                                             DropdownMenu(expanded = assignMenu, onDismissRequest = { assignMenu = false }) {
                                                 state.members.filter { it.statusEnum() == MembershipStatus.APPROVED && it.active }.forEach { m ->
@@ -925,10 +934,10 @@ private fun ProjectDetailDialog(
                                 val isFinal = reminder.type != WorkDistributionEngine.PaymentReminderType.ADVANCE_DUE
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
-                                        color = if (isFinal) SoftBlush else ButterYellow.copy(alpha = 0.72f),
+                                        color = if (isFinal) palette.blushBg else palette.butterBg,
                                         border = BorderStroke(
                                             1.dp,
-                                            if (isFinal) CrimsonBlocked.copy(alpha = 0.35f) else DeepAmberInk.copy(alpha = 0.3f)
+                                            if (isFinal) CrimsonBlocked.copy(alpha = 0.35f) else palette.butterInk.copy(alpha = 0.3f)
                                         ),
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -945,24 +954,24 @@ private fun ProjectDetailDialog(
                                                 Icon(
                                                     imageVector = Icons.Filled.NotificationsActive,
                                                     contentDescription = null,
-                                                    tint = if (isFinal) CrimsonBlocked else DeepAmberInk,
+                                                    tint = if (isFinal) CrimsonBlocked else palette.butterInk,
                                                     modifier = Modifier.size(18.dp)
                                                 )
                                                 Text(
                                                     text = reminder.type.label,
                                                     style = XMaxType.subheadlineSemibold,
-                                                    color = ObsidianCharcoal
+                                                    color = palette.textPrimary
                                                 )
                                             }
                                             Text(
                                                 text = "${reminder.detail} • Due ${MoneyFormatter.formatInr(reminder.amountDuePaise)}",
                                                 style = XMaxType.footnote.tabular(),
-                                                color = StudioTextSecondary
+                                                color = palette.textSecondary
                                             )
                                             Button(
                                                 onClick = onOpenPayments,
                                                 shape = RoundedCornerShape(999.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                                 modifier = Modifier.fillMaxWidth().height(42.dp)
                                             ) {
                                                 Text("Track in Payment Tracker →", style = XMaxType.buttonCompact)
@@ -972,11 +981,11 @@ private fun ProjectDetailDialog(
                             }
                         }
 
-                        // Contact / Manager Row Card matching Screen 2 Contact Rider card
+                        // Contact / Manager Row Card
                         item {
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = MutedSurface,
+                                color = palette.surfaceMuted,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -994,12 +1003,12 @@ private fun ProjectDetailDialog(
                                         Text(
                                             text = formatTitleCase(project.responsibleManagerName.ifBlank { "Studio Lead" }),
                                             style = XMaxType.headline,
-                                            color = ObsidianCharcoal
+                                            color = palette.textPrimary
                                         )
                                         Text(
                                             text = WorkDistributionEngine.summarizeProjectProgress(deliverables),
                                             style = XMaxType.footnote.tabular(),
-                                            color = StudioTextSecondary
+                                            color = palette.textSecondary
                                         )
                                     }
                                 }
@@ -1012,9 +1021,9 @@ private fun ProjectDetailDialog(
                                     OutlinedButton(
                                         onClick = { onToggleDelete(!project.deleted) },
                                         shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(1.dp, SubtleOutline),
+                                        border = BorderStroke(1.dp, palette.outline),
                                         modifier = Modifier.fillMaxWidth().height(48.dp).testTag("delete_restore_project_button"),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ObsidianCharcoal)
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.textPrimary)
                                     ) { Text(if (project.deleted) "RESTORE PROJECT" else "ARCHIVE PROJECT", style = XMaxType.button) }
 
                                     Button(
@@ -1035,9 +1044,9 @@ private fun ProjectDetailDialog(
     if (showPermanentDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showPermanentDeleteConfirm = false },
-            containerColor = PureWhite,
-            title = { Text("DELETE PROJECT FOREVER?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("Permanently remove ${project.title.uppercase()} and all ${deliverables.size} deliverable(s)?", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary) },
+            containerColor = palette.surface,
+            title = { Text("DELETE PROJECT FOREVER?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("Permanently remove ${project.title.uppercase()} and all ${deliverables.size} deliverable(s)?", style = XMaxType.subheadline.tabular(), color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {

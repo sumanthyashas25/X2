@@ -29,6 +29,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,13 +73,11 @@ enum class PrimaryTab(val label: String, val icon: ImageVector, val inactiveIcon
     HOME("Home", Icons.Filled.Home, Icons.Outlined.Home),
     REQUESTS("Requests", Icons.Filled.Inbox, Icons.Outlined.Inbox),
     CHAT("Chats", Icons.AutoMirrored.Filled.Chat, Icons.AutoMirrored.Outlined.Chat),
-    STATUS("Status", Icons.Filled.Adjust, Icons.Outlined.Adjust),
     MY_WORK("My Work", Icons.Filled.TaskAlt, Icons.Outlined.TaskAlt)
 }
 
 enum class SecondaryDestination(val label: String, val icon: ImageVector) {
     PROJECTS("Projects", Icons.Filled.Work),
-    CHAT("Team Chat", Icons.AutoMirrored.Filled.Chat),
     NOTIFICATIONS("Notifications", Icons.Filled.Notifications),
     CLIENTS("Clients", Icons.Filled.Contacts),
     QUOTATIONS("Quotations", Icons.AutoMirrored.Filled.ReceiptLong),
@@ -94,12 +93,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         FirebaseStartup.ensureInitialized(applicationContext)
+        AppAppearanceStore.ensureLoaded(applicationContext)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
         )
         setContent {
-            XMaxTheme(darkTheme = false) {
+            val themeMode by AppAppearanceStore.themeModeFlow.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
+            val darkTheme = when (themeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            DisposableEffect(darkTheme) {
+                val style = if (darkTheme) {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose {}
+            }
+            XMaxTheme(darkTheme = darkTheme) {
                 val vm: AgencyViewModel = viewModel()
                 val userVm: UserViewModel = viewModel()
                 val state by vm.uiState.collectAsStateWithLifecycle()
@@ -170,12 +186,10 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                 add(PrimaryTab.MY_WORK)
                 if (canSeeCommercial) add(PrimaryTab.REQUESTS)
                 add(PrimaryTab.CHAT)
-                add(PrimaryTab.STATUS)
             } else {
                 add(PrimaryTab.HOME)
                 add(PrimaryTab.REQUESTS)
                 add(PrimaryTab.CHAT)
-                add(PrimaryTab.STATUS)
                 add(PrimaryTab.MY_WORK)
             }
         }
@@ -205,9 +219,25 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
     var activeDeliverable by remember { mutableStateOf<Deliverable?>(null) }
     var showQuickCreateSheet by remember { mutableStateOf(false) }
     var showProfilePhotoDialog by remember { mutableStateOf(false) }
+    var showCloudStorageSheet by remember { mutableStateOf(false) }
     var planModeRequestKey by remember { mutableIntStateOf(0) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val palette = XMaxTheme.colors
+
+    val themeMode by AppAppearanceStore.themeModeFlow.collectAsStateWithLifecycle()
+    val cloudStorageSummary by viewModel.cloudStorageSummary.collectAsStateWithLifecycle()
+    val isScanningCloudStorage by viewModel.isScanningCloudStorage.collectAsStateWithLifecycle()
+    val isDeletingCloudStorage by viewModel.isDeletingCloudStorage.collectAsStateWithLifecycle()
+
+    LaunchedEffect(member.uid) {
+        viewModel.refreshCloudStorageSummary(context)
+    }
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) {
+            viewModel.refreshCloudStorageSummary(context)
+        }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var activeToastTone by remember { mutableStateOf(ToastTone.INFO) }
@@ -253,10 +283,10 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         BackHandler { scope.launch { drawerState.close() } }
     } else if (secondaryDest != null) {
         BackHandler { secondaryDest = null }
-    } else if (activeTab == PrimaryTab.CHAT || activeTab == PrimaryTab.STATUS) {
+    } else if (activeTab == PrimaryTab.CHAT) {
         BackHandler {
             chatInitialChannelId = null
-            activeTab = visibleTabs.firstOrNull { it != PrimaryTab.CHAT && it != PrimaryTab.STATUS } ?: PrimaryTab.HOME
+            activeTab = visibleTabs.firstOrNull { it != PrimaryTab.CHAT } ?: PrimaryTab.HOME
         }
     }
 
@@ -297,13 +327,27 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                 secondaryDest = secondaryDest,
                 permittedSecondary = permittedSecondary,
                 canCreateQuote = canCreateQuote,
+                themeMode = themeMode,
+                cloudStorageSummary = cloudStorageSummary,
+                isScanningStorage = isScanningCloudStorage,
+                onChangeThemeMode = { mode ->
+                    AppAppearanceStore.setThemeMode(context, mode)
+                },
+                onOpenStorageManager = {
+                    scope.launch { drawerState.close() }
+                    viewModel.refreshCloudStorageSummary(context)
+                    showCloudStorageSheet = true
+                },
+                onRefreshStorage = {
+                    viewModel.refreshCloudStorageSummary(context)
+                },
                 onSelectTab = { tab ->
                     secondaryDest = null
                     activeTab = tab
                     scope.launch { drawerState.close() }
                 },
                 onSelectSecondary = { dest ->
-                    if (dest != SecondaryDestination.CHAT) chatInitialChannelId = null
+                    chatInitialChannelId = null
                     secondaryDest = dest
                     scope.launch { drawerState.close() }
                 },
@@ -325,8 +369,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().pastelAmbientBackdrop()) {
             val isWide = maxWidth >= 600.dp
-            val isChatFullScreen = secondaryDest == SecondaryDestination.CHAT ||
-                (secondaryDest == null && activeTab == PrimaryTab.CHAT)
+            val isChatFullScreen = secondaryDest == null && activeTab == PrimaryTab.CHAT
 
             Box(modifier = Modifier.fillMaxSize()) {
                 Scaffold(
@@ -370,14 +413,14 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                     Text(
                                         formatTitleCase(activeSecondary.label),
                                         style = XMaxType.primaryTitle,
-                                        color = ObsidianCharcoal,
+                                        color = palette.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 },
                                 navigationIcon = {
                                     IconButton(onClick = { secondaryDest = null }) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ObsidianCharcoal)
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
                                     }
                                 },
                                 actions = {
@@ -406,7 +449,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                         name = member.fullName,
                                         photoBase64 = member.photoBase64,
                                         size = 44.dp,
-                                        borderColor = PureWhite,
+                                        borderColor = palette.surface,
                                         showEditBadge = false,
                                         modifier = Modifier.testTag("header_profile_avatar"),
                                         onClick = { scope.launch { drawerState.open() } }
@@ -418,13 +461,13 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                         Text(
                                             text = "Welcome",
                                             style = XMaxType.footnote,
-                                            color = StudioTextSecondary,
+                                            color = palette.textSecondary,
                                             maxLines = 1
                                         )
                                         Text(
                                             text = formatTitleCase(member.fullName.ifBlank { "Member" }),
                                             style = XMaxType.userNameDashboard,
-                                            color = ObsidianCharcoal,
+                                            color = palette.textPrimary,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -474,7 +517,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                         }
                     ) {
                         if (isWide && secondaryDest == null && !isChatFullScreen) {
-                            NavigationRail(containerColor = PureWhite) {
+                            NavigationRail(containerColor = palette.surface) {
                                 visibleTabs.forEach { tab ->
                                     NavigationRailItem(
                                         selected = activeTab == tab,
@@ -508,36 +551,6 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onToggleDeleteProject = { proj, del -> viewModel.toggleDeleteProject(proj, del) },
                                             onPermanentlyDeleteProject = { proj -> viewModel.permanentlyDeleteProject(proj) },
                                             onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() }
-                                        )
-                                        SecondaryDestination.CHAT -> TeamChatScreen(
-                                            state = state,
-                                            initialChannelId = chatInitialChannelId,
-                                            observeMessages = { channelId -> viewModel.observeChatMessages(channelId) },
-                                            onEnsureGeneralChannel = { viewModel.ensureDefaultGeneralChannel() },
-                                            onCreateChannel = { title, topic, type, proj, onReady, onError ->
-                                                viewModel.createOrOpenChatChannel(title, topic, type, proj, onReady, onError)
-                                            },
-                                            onSendMessage = { chId, body, parent, attachment, cb ->
-                                                viewModel.sendChatMessage(chId, body, parent, attachment, cb)
-                                            },
-                                            onReportMessage = { msg, err -> viewModel.reportChatMessage(msg, err) },
-                                            onOpenDirectChat = { targetMember, onReady, onError ->
-                                                viewModel.openDirectChat(targetMember, onReady, onError)
-                                            },
-                                            onOpenDepartmentChat = { dept, onReady, onError ->
-                                                viewModel.openDepartmentChat(dept, onReady, onError)
-                                            },
-                                            onDeleteChannel = { channelId, onDone ->
-                                                viewModel.deleteChatChannel(channelId, onDone)
-                                            },
-                                            onDeleteMessage = { channelId, messageId ->
-                                                viewModel.deleteChatMessage(channelId, messageId)
-                                            },
-                                            onCloseChat = {
-                                                chatInitialChannelId = null
-                                                secondaryDest = null
-                                            },
-                                            chatViewModel = chatViewModel
                                         )
                                         SecondaryDestination.NOTIFICATIONS -> NotificationsScreen(
                                             state = state,
@@ -657,17 +670,9 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             },
                                             onCloseChat = {
                                                 chatInitialChannelId = null
-                                                activeTab = visibleTabs.firstOrNull { it != PrimaryTab.CHAT && it != PrimaryTab.STATUS } ?: PrimaryTab.HOME
+                                                activeTab = visibleTabs.firstOrNull { it != PrimaryTab.CHAT } ?: PrimaryTab.HOME
                                             },
                                             chatViewModel = chatViewModel
-                                        )
-                                        PrimaryTab.STATUS -> com.example.ui.status.StatusTabScreen(
-                                            state = state,
-                                            chatViewModel = chatViewModel,
-                                            onOpenDirectChannel = { ch ->
-                                                chatInitialChannelId = ch.id
-                                                activeTab = PrimaryTab.CHAT
-                                            }
                                         )
                                         PrimaryTab.MY_WORK -> MyWorkScreen(
                                             state = state,
@@ -758,7 +763,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             },
             onOpenSecondary = { dest ->
                 showQuickCreateSheet = false
-                if (dest != SecondaryDestination.CHAT) chatInitialChannelId = null
+                chatInitialChannelId = null
                 secondaryDest = dest
             }
         )
@@ -785,6 +790,21 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                 viewModel.removeMyProfilePhoto(onDone = { showProfilePhotoDialog = false })
             },
             onDismiss = { showProfilePhotoDialog = false }
+        )
+    }
+
+    if (showCloudStorageSheet) {
+        CloudStorageManagerSheet(
+            summary = cloudStorageSummary,
+            isScanning = isScanningCloudStorage,
+            isDeleting = isDeletingCloudStorage,
+            onRefresh = { viewModel.refreshCloudStorageSummary(context) },
+            onDeleteItems = { items, onDone ->
+                viewModel.deleteCloudStorageItems(context, items, onDone)
+            },
+            onDeleteExpiredStatuses = { viewModel.deleteExpiredCloudStatuses(context) },
+            onClearLocalCache = { viewModel.clearLocalMediaCache(context) },
+            onDismiss = { showCloudStorageSheet = false }
         )
     }
 
@@ -815,6 +835,7 @@ private fun CircleHeaderIconButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
@@ -825,15 +846,15 @@ private fun CircleHeaderIconButton(
         Surface(
             modifier = Modifier.size(36.dp),
             shape = CircleShape,
-            color = PureWhite,
-            border = BorderStroke(1.dp, SubtleOutline),
+            color = palette.surface,
+            border = BorderStroke(1.dp, palette.outline),
             shadowElevation = 1.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
-                    tint = ObsidianCharcoal,
+                    tint = palette.textPrimary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -849,6 +870,7 @@ private fun FloatingStudioDock(
     onQuickCreate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     val splitIndex = (visibleTabs.size + 1) / 2
     val leftTabs = visibleTabs.take(splitIndex)
     val rightTabs = visibleTabs.drop(splitIndex)
@@ -858,8 +880,8 @@ private fun FloatingStudioDock(
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 20.dp, vertical = 12.dp),
         shape = RoundedCornerShape(999.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surfaceElevated,
+        border = BorderStroke(1.dp, palette.outline),
         shadowElevation = 14.dp
     ) {
         Row(
@@ -877,11 +899,11 @@ private fun FloatingStudioDock(
                 )
             }
 
-            // Centered Large Jet-Black Circle '+' Quick Workspace FAB
+            // Centered Quick Workspace FAB
             Surface(
                 onClick = onQuickCreate,
                 shape = CircleShape,
-                color = ObsidianCharcoal,
+                color = palette.buttonPrimaryBg,
                 shadowElevation = 4.dp,
                 modifier = Modifier
                     .size(52.dp)
@@ -891,7 +913,7 @@ private fun FloatingStudioDock(
                     Icon(
                         imageVector = Icons.Filled.Add,
                         contentDescription = "Quick Actions",
-                        tint = PureWhite,
+                        tint = palette.buttonPrimaryFg,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -914,13 +936,14 @@ private fun DockTabIconButton(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val bgColor by animateColorAsState(
-        targetValue = if (selected) VioletSoftBg else Color.Transparent,
+        targetValue = if (selected) palette.kpiLavenderBg else Color.Transparent,
         animationSpec = tween(200),
         label = "dock_bg_${tab.name}"
     )
     val iconTint by animateColorAsState(
-        targetValue = if (selected) VioletPrimary else DockIconInactive,
+        targetValue = if (selected) palette.navHighlightColor else palette.iconInactive,
         animationSpec = tween(200),
         label = "dock_tint_${tab.name}"
     )
@@ -979,6 +1002,7 @@ private fun QuickWorkspaceSheet(
     onOpenDailyPlan: () -> Unit,
     onOpenSecondary: (SecondaryDestination) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val firstName = member.fullName.trim().substringBefore(" ").ifBlank { "Member" }
     val tiles = buildList {
         if (canCreateQuote) {
@@ -987,8 +1011,8 @@ private fun QuickWorkspaceSheet(
                     title = "New Quote",
                     subtitle = "56-service PDF",
                     icon = Icons.AutoMirrored.Filled.ReceiptLong,
-                    bg = KpiPeachBg,
-                    tint = KpiPeachStroke,
+                    bg = palette.kpiPeachBg,
+                    tint = palette.kpiPeachStroke,
                     onClick = onNewQuote
                 )
             )
@@ -999,8 +1023,8 @@ private fun QuickWorkspaceSheet(
                     title = "Requests",
                     subtitle = "Client pipeline",
                     icon = Icons.Filled.Inbox,
-                    bg = KpiLavenderBg,
-                    tint = KpiLavenderStroke,
+                    bg = palette.kpiLavenderBg,
+                    tint = palette.kpiLavenderStroke,
                     onClick = onOpenRequests
                 )
             )
@@ -1011,8 +1035,8 @@ private fun QuickWorkspaceSheet(
                     title = "Projects",
                     subtitle = "Live board",
                     icon = Icons.Filled.Work,
-                    bg = KpiSkyBg,
-                    tint = KpiSkyStroke,
+                    bg = palette.kpiSkyBg,
+                    tint = palette.kpiSkyStroke,
                     onClick = onOpenProjects
                 )
             )
@@ -1022,8 +1046,8 @@ private fun QuickWorkspaceSheet(
                 title = "My Tasks",
                 subtitle = "Schedule & checklists",
                 icon = Icons.Filled.TaskAlt,
-                bg = KpiMintBg,
-                tint = KpiMintStroke,
+                bg = palette.kpiMintBg,
+                tint = palette.kpiMintStroke,
                 onClick = onOpenMyWork
             )
         )
@@ -1032,8 +1056,8 @@ private fun QuickWorkspaceSheet(
                 title = "Daily Plan",
                 subtitle = "Calendar & focus",
                 icon = Icons.Filled.CalendarMonth,
-                bg = KpiLavenderBg,
-                tint = KpiLavenderStroke,
+                bg = palette.kpiLavenderBg,
+                tint = palette.kpiLavenderStroke,
                 onClick = onOpenDailyPlan
             )
         )
@@ -1043,8 +1067,8 @@ private fun QuickWorkspaceSheet(
                     title = "Clients",
                     subtitle = "Accounts",
                     icon = Icons.Filled.Contacts,
-                    bg = KpiSkyBg,
-                    tint = KpiSkyStroke,
+                    bg = palette.kpiSkyBg,
+                    tint = palette.kpiSkyStroke,
                     onClick = { onOpenSecondary(SecondaryDestination.CLIENTS) }
                 )
             )
@@ -1055,8 +1079,8 @@ private fun QuickWorkspaceSheet(
                     title = "Payments",
                     subtitle = "Invoices & dues",
                     icon = Icons.Filled.Payments,
-                    bg = KpiMintBg,
-                    tint = KpiMintStroke,
+                    bg = palette.kpiMintBg,
+                    tint = palette.kpiMintStroke,
                     onClick = { onOpenSecondary(SecondaryDestination.PAYMENTS) }
                 )
             )
@@ -1067,8 +1091,8 @@ private fun QuickWorkspaceSheet(
                     title = "Team & Access",
                     subtitle = "Approvals & roles",
                     icon = Icons.Filled.Group,
-                    bg = KpiLavenderBg,
-                    tint = KpiLavenderStroke,
+                    bg = palette.kpiLavenderBg,
+                    tint = palette.kpiLavenderStroke,
                     onClick = { onOpenSecondary(SecondaryDestination.TEAM) }
                 )
             )
@@ -1077,8 +1101,8 @@ private fun QuickWorkspaceSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -1095,19 +1119,19 @@ private fun QuickWorkspaceSheet(
                     name = member.fullName,
                     photoBase64 = member.photoBase64,
                     size = 48.dp,
-                    borderColor = SubtleOutline,
+                    borderColor = palette.outline,
                     showEditBadge = false
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Hi, ${formatTitleCase(firstName)}!",
                         style = XMaxType.subheadline,
-                        color = StudioTextSecondary
+                        color = palette.textSecondary
                     )
                     Text(
                         text = "Quick Workspace Actions",
                         style = XMaxType.secondaryTitle,
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                 }
             }
@@ -1132,7 +1156,7 @@ private fun QuickWorkspaceSheet(
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = PureWhite,
+                                    color = palette.surfaceElevated,
                                     modifier = Modifier.size(40.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -1148,12 +1172,12 @@ private fun QuickWorkspaceSheet(
                                     Text(
                                         text = tile.title,
                                         style = XMaxType.headline,
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
                                     Text(
                                         text = tile.subtitle,
                                         style = XMaxType.footnote,
-                                        color = StudioTextSecondary,
+                                        color = palette.textSecondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )

@@ -12,13 +12,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.chat.ChatFileManager
 import com.example.chat.ChatSettingsStore
 import com.example.chat.StatusOwnerSummary
 import com.example.chat.StatusPrivacyEngine
@@ -47,9 +52,11 @@ fun StatusTabScreen(
     state: AgencyUiState,
     chatViewModel: ChatViewModel,
     onOpenDirectChannel: (ChatChannel) -> Unit,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     val member = state.myMember ?: return
     val companyId = state.company?.id?.ifBlank { CatalogueSeedData.DEFAULT_COMPANY_ID }
         ?: CatalogueSeedData.DEFAULT_COMPANY_ID
@@ -108,73 +115,104 @@ fun StatusTabScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("status_tab_screen"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Section Header + Add & Privacy Controls
+        // Updates Header + Privacy, Blocked & Add Controls (matching WhatsApp Updates structure)
         item(key = "status_header") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Status Updates",
-                        style = XMaxType.sectionHeading,
-                        color = ObsidianCharcoal
-                    )
-                    Text(
-                        text = "24-hour team updates • ${categorized.totalUnviewedContacts} unread",
-                        style = XMaxType.numericFootnote,
-                        color = StudioTextSecondary
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        onClick = { showPrivacyDialog = true },
-                        shape = CircleShape,
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
-                        modifier = Modifier
-                            .size(44.dp)
-                            .testTag("status_privacy_btn")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Lock, contentDescription = "Status Privacy", tint = ObsidianCharcoal, modifier = Modifier.size(18.dp))
+                        if (onBack != null) {
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("status_back_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = palette.textPrimary
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Updates",
+                            style = XMaxType.primaryTitle,
+                            color = palette.textPrimary
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { showPrivacyDialog = true },
+                            shape = CircleShape,
+                            color = palette.surface,
+                            border = BorderStroke(1.dp, palette.outline),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("status_privacy_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Lock, contentDescription = "Status Privacy", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Surface(
+                            onClick = { showBlockedDialog = true },
+                            shape = CircleShape,
+                            color = palette.surface,
+                            border = BorderStroke(1.dp, palette.outline),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("status_blocked_users_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Block, contentDescription = "Blocked Contacts", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        FilledTonalButton(
+                            onClick = { creatorInitialMode = StatusKind.TEXT },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = palette.buttonPrimaryBg,
+                                contentColor = palette.buttonPrimaryFg
+                            ),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("status_tab_add_btn")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add", style = XMaxType.buttonCompact)
                         }
                     }
-                    Surface(
-                        onClick = { showBlockedDialog = true },
-                        shape = CircleShape,
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
-                        modifier = Modifier
-                            .size(44.dp)
-                            .testTag("status_blocked_users_btn")
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Block, contentDescription = "Blocked Contacts", tint = ObsidianCharcoal, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    FilledTonalButton(
-                        onClick = { creatorInitialMode = StatusKind.TEXT },
-                        shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = ObsidianCharcoal,
-                            contentColor = PureWhite
-                        ),
-                        modifier = Modifier
-                            .height(44.dp)
-                            .testTag("status_tab_add_btn")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add", style = XMaxType.buttonCompact)
-                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Status",
+                        style = XMaxType.sectionHeading,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "24h team updates • ${categorized.totalUnviewedContacts} unread",
+                        style = XMaxType.numericFootnote,
+                        color = palette.textSecondary
+                    )
                 }
             }
         }
@@ -191,89 +229,242 @@ fun StatusTabScreen(
             }
         }
 
-        // My Status Card
-        item(key = "my_status_card") {
+        // Horizontal Status Card Strip ("Add status" + Team Update Cards) matching WhatsApp Updates screenshot
+        item(key = "status_cards_strip") {
             val myActive = categorized.myStatuses
-            val latest = myActive.maxByOrNull { it.createdAtMillis }
-            val totalViews = myActive.sumOf { it.viewerUids.size }
-            val totalReactions = myActive.sumOf { it.reactions.size }
-
-            Surface(
-                onClick = {
-                    if (myActive.isNotEmpty()) {
-                        viewerGroups = listOf(member to myActive)
-                        viewerStartOwnerUid = member.uid
-                    } else {
-                        creatorInitialMode = StatusKind.TEXT
-                    }
-                },
-                shape = RoundedCornerShape(22.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
-                shadowElevation = 2.dp,
+            val latestMy = myActive.maxByOrNull { it.createdAtMillis }
+            val allVisibleUpdates = categorized.recentUpdates + categorized.viewedUpdates
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("my_status_card")
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
+                // Card 1: Add status / My Status card
+                val myLatestBmp = remember(latestMy?.id, latestMy?.imageDataBase64) {
+                    latestMy?.imageDataBase64?.takeIf { it.isNotBlank() }?.let {
+                        ChatFileManager.decodeBase64Bitmap(it, 360)
+                    }
+                }
+                Surface(
+                    onClick = {
+                        if (myActive.isNotEmpty()) {
+                            viewerGroups = listOf(member to myActive)
+                            viewerStartOwnerUid = member.uid
+                        } else {
+                            creatorInitialMode = StatusKind.TEXT
+                        }
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    color = palette.surfaceElevated,
+                    border = BorderStroke(1.dp, palette.outline),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        .width(114.dp)
+                        .height(172.dp)
+                        .testTag("my_status_card")
                 ) {
-                    Box(contentAlignment = Alignment.BottomEnd) {
-                        SegmentedStatusAvatar(
-                            name = member.fullName,
-                            size = 54.dp,
-                            borderColor = PureWhite,
-                            photoBase64 = member.photoBase64,
-                            activeStatuses = myActive,
-                            viewerUid = member.uid,
-                            isOwnAvatar = true,
-                            onAvatarClick = if (myActive.isNotEmpty()) {
-                                {
-                                    viewerGroups = listOf(member to myActive)
-                                    viewerStartOwnerUid = member.uid
-                                }
-                            } else null
-                        )
-                        Surface(
-                            onClick = { creatorInitialMode = StatusKind.IMAGE },
-                            shape = CircleShape,
-                            color = VioletPrimary,
-                            border = BorderStroke(2.dp, PureWhite),
-                            modifier = Modifier.size(22.dp)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (myLatestBmp != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = myLatestBmp.asImageBitmap(),
+                                contentDescription = "My latest status",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.65f))
+                                        )
+                                    )
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(bottom = 14.dp),
+                            contentAlignment = Alignment.BottomEnd
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Add, contentDescription = "Quick add photo status", tint = PureWhite, modifier = Modifier.size(13.dp))
+                            SegmentedStatusAvatar(
+                                name = member.fullName,
+                                size = 54.dp,
+                                borderColor = palette.surface,
+                                photoBase64 = member.photoBase64,
+                                activeStatuses = myActive,
+                                viewerUid = member.uid,
+                                isOwnAvatar = true,
+                                onAvatarClick = if (myActive.isNotEmpty()) {
+                                    {
+                                        viewerGroups = listOf(member to myActive)
+                                        viewerStartOwnerUid = member.uid
+                                    }
+                                } else null
+                            )
+                            Surface(
+                                onClick = { creatorInitialMode = StatusKind.IMAGE },
+                                shape = CircleShape,
+                                color = EmeraldApproved,
+                                border = BorderStroke(2.dp, palette.surface),
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Add, contentDescription = "Quick add status", tint = PureWhite, modifier = Modifier.size(13.dp))
+                                }
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (myActive.isEmpty()) "Add status" else "My Status (${myActive.size})",
+                                style = XMaxType.footnoteSemibold,
+                                color = if (myLatestBmp != null) PureWhite else palette.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (myActive.isNotEmpty()) {
+                                Text(
+                                    text = "Tap to view",
+                                    style = XMaxType.caption2Medium,
+                                    color = if (myLatestBmp != null) PureWhite.copy(alpha = 0.85f) else palette.textSecondary,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
+                }
 
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = "My Status",
-                            style = XMaxType.headline,
-                            color = ObsidianCharcoal
-                        )
-                        Text(
-                            text = if (myActive.isEmpty()) {
-                                "Tap to share a 24h text, photo, video or voice update"
-                            } else {
-                                "${myActive.size} active • $totalViews views • $totalReactions reactions • ${formatRelativeStatusTime(latest?.createdAtMillis ?: 0L, nowMillis)}"
-                            },
-                            style = XMaxType.numericFootnote,
-                            color = StudioTextSecondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                // Subsequent Cards: Team Status Cards with Segmented Rings
+                allVisibleUpdates.forEach { summary ->
+                    val latest = summary.statuses.maxByOrNull { it.createdAtMillis }
+                    val thumbBmp = remember(latest?.id, latest?.imageDataBase64) {
+                        latest?.imageDataBase64?.takeIf { it.isNotBlank() }?.let {
+                            ChatFileManager.decodeBase64Bitmap(it, 360)
+                        }
                     }
+                    val cardColors = remember(summary.owner.uid) {
+                        val idx = (summary.owner.uid.hashCode() and 0x7fffffff) % 4
+                        when (idx) {
+                            0 -> listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
+                            1 -> listOf(Color(0xFF0F766E), Color(0xFF0284C7))
+                            2 -> listOf(Color(0xFFBE185D), Color(0xFF7C3AED))
+                            else -> listOf(Color(0xFF1E293B), Color(0xFF334155))
+                        }
+                    }
+                    Surface(
+                        onClick = {
+                            viewerGroups = allVisibleUpdates.map { it.owner to it.statuses }
+                            viewerStartOwnerUid = summary.owner.uid
+                        },
+                        shape = RoundedCornerShape(18.dp),
+                        color = cardColors.first(),
+                        border = BorderStroke(1.dp, palette.outline),
+                        modifier = Modifier
+                            .width(114.dp)
+                            .height(172.dp)
+                            .testTag("status_card_${summary.owner.uid}")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Brush.verticalGradient(cardColors))
+                        ) {
+                            if (thumbBmp != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = thumbBmp.asImageBitmap(),
+                                    contentDescription = "${summary.owner.fullName} status preview",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else if (!latest?.effectiveDisplayText().isNullOrBlank()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = latest?.effectiveDisplayText().orEmpty(),
+                                        style = XMaxType.caption1Medium,
+                                        color = PureWhite,
+                                        maxLines = 4,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color.Black.copy(alpha = 0.25f), Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                                        )
+                                    )
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(10.dp)
+                            ) {
+                                SegmentedStatusAvatar(
+                                    name = summary.owner.fullName,
+                                    size = 38.dp,
+                                    borderColor = PureWhite,
+                                    photoBase64 = summary.owner.photoBase64,
+                                    activeStatuses = summary.statuses,
+                                    viewerUid = member.uid
+                                )
+                            }
+                            Text(
+                                text = formatTitleCase(summary.owner.fullName),
+                                style = XMaxType.footnoteSemibold,
+                                color = PureWhite,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(horizontal = 10.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
-                    if (myActive.isNotEmpty()) {
+        // My Status Summary / Manage Bar (when user has active updates)
+        if (categorized.myStatuses.isNotEmpty()) {
+            item(key = "my_status_manage_bar") {
+                val myActive = categorized.myStatuses
+                val totalViews = myActive.sumOf { it.viewerUids.size }
+                val totalReactions = myActive.sumOf { it.reactions.size }
+                val latest = myActive.maxByOrNull { it.createdAtMillis }
+                Surface(
+                    onClick = { showManageMySheet = true },
+                    shape = RoundedCornerShape(18.dp),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("My Active Statuses (${myActive.size})", style = XMaxType.headline.tabular(), color = palette.textPrimary)
+                            Text(
+                                text = "$totalViews views • $totalReactions reactions • ${formatRelativeStatusTime(latest?.createdAtMillis ?: 0L, nowMillis)}",
+                                style = XMaxType.numericFootnote,
+                                color = palette.textSecondary
+                            )
+                        }
                         OutlinedButton(
                             onClick = { showManageMySheet = true },
                             shape = RoundedCornerShape(999.dp),
@@ -307,8 +498,8 @@ fun StatusTabScreen(
                     Surface(
                         onClick = { creatorInitialMode = kind },
                         shape = RoundedCornerShape(14.dp),
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline),
+                        color = palette.surface,
+                        border = BorderStroke(1.dp, palette.outline),
                         modifier = Modifier.testTag("status_quick_${kind.name.lowercase()}")
                     ) {
                         Row(
@@ -317,7 +508,7 @@ fun StatusTabScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(icon, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(18.dp))
-                            Text(kind.label, style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                            Text(kind.label, style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         }
                     }
                 }
@@ -329,7 +520,7 @@ fun StatusTabScreen(
             Text(
                 text = "Recent Updates (${categorized.recentUpdates.size})",
                 style = XMaxType.sectionHeading.tabular(),
-                color = ObsidianCharcoal,
+                color = palette.textPrimary,
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
@@ -338,14 +529,14 @@ fun StatusTabScreen(
             item(key = "recent_empty") {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = "All caught up! New team updates will appear here.",
                         style = XMaxType.subheadline,
-                        color = StudioTextSecondary,
+                        color = palette.textSecondary,
                         modifier = Modifier.padding(16.dp)
                     )
                 }
@@ -370,7 +561,7 @@ fun StatusTabScreen(
                 Text(
                     text = "Viewed Updates (${categorized.viewedUpdates.size})",
                     style = XMaxType.sectionHeading.tabular(),
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -393,7 +584,7 @@ fun StatusTabScreen(
                 Surface(
                     onClick = { showMutedSection = !showMutedSection },
                     shape = RoundedCornerShape(14.dp),
-                    color = MutedSurface,
+                    color = palette.surfaceMuted,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("muted_updates_toggle")
@@ -406,12 +597,12 @@ fun StatusTabScreen(
                         Text(
                             text = "Muted Updates (${categorized.mutedUpdates.size})",
                             style = XMaxType.headline.tabular(),
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
                         Icon(
                             imageVector = if (showMutedSection) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                             contentDescription = "Toggle muted updates",
-                            tint = StudioTextSecondary
+                            tint = palette.textSecondary
                         )
                     }
                 }
@@ -550,17 +741,18 @@ fun StatusTabScreen(
         Dialog(onDismissRequest = { showBlockedDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = PureWhite,
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
             ) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Blocked Users (${prefs.blockedUserUids.size})", style = XMaxType.secondaryTitle.tabular())
+                    Text("Blocked Users (${prefs.blockedUserUids.size})", style = XMaxType.secondaryTitle.tabular(), color = palette.textPrimary)
                     Text(
                         text = "Blocked users cannot view your statuses or status indicators, and their updates remain hidden from you.",
                         style = XMaxType.footnote,
-                        color = StudioTextSecondary
+                        color = palette.textSecondary
                     )
                     LazyColumn(
                         modifier = Modifier
@@ -610,8 +802,8 @@ fun StatusTabScreen(
                                 )
                                 StudioAvatar(name = peer.fullName, size = 34.dp, photoBase64 = peer.photoBase64)
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(formatTitleCase(peer.fullName), style = XMaxType.headline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(peer.jobRoleName.ifBlank { peer.departmentName }, style = XMaxType.caption1, color = StudioTextSecondary)
+                                    Text(formatTitleCase(peer.fullName), style = XMaxType.headline, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(peer.jobRoleName.ifBlank { peer.departmentName }, style = XMaxType.caption1, color = palette.textSecondary)
                                 }
                             }
                         }
@@ -619,7 +811,7 @@ fun StatusTabScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(
                             onClick = { showBlockedDialog = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                         ) {
                             Text("Done", style = XMaxType.buttonCompact)
                         }
@@ -639,6 +831,7 @@ private fun StatusOwnerRowCard(
     onTrailingAction: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val latest = summary.statuses.maxByOrNull { it.createdAtMillis }
     val previewLabel = latest?.let { st ->
         val timeText = formatRelativeStatusTime(st.createdAtMillis, nowMillis)
@@ -650,8 +843,8 @@ private fun StatusOwnerRowCard(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("status_owner_row_${summary.owner.uid}")
@@ -666,7 +859,7 @@ private fun StatusOwnerRowCard(
             SegmentedStatusAvatar(
                 name = summary.owner.fullName,
                 size = 48.dp,
-                borderColor = PureWhite,
+                borderColor = palette.surface,
                 photoBase64 = summary.owner.photoBase64,
                 activeStatuses = summary.statuses,
                 viewerUid = viewerUid,
@@ -676,14 +869,14 @@ private fun StatusOwnerRowCard(
                 Text(
                     text = formatTitleCase(summary.owner.fullName),
                     style = XMaxType.headline,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = previewLabel,
                     style = XMaxType.numericFootnote,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -695,8 +888,8 @@ private fun StatusOwnerRowCard(
             } else if (summary.unviewedCount > 0) {
                 StatusPill(
                     label = "${summary.unviewedCount} new",
-                    containerColor = Color(0xFFECFDF5),
-                    contentColor = EmeraldApproved
+                    containerColor = palette.mintBg,
+                    contentColor = palette.mintInk
                 )
             }
         }
@@ -710,9 +903,10 @@ private fun StatusUploadJobCard(
     onRetry: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (job.status == StatusUploadJobStatus.FAILED) SoftBlush else VioletSoftBg,
+        color = if (job.status == StatusUploadJobStatus.FAILED) palette.blushBg else palette.softVioletBg,
         border = BorderStroke(
             1.dp,
             if (job.status == StatusUploadJobStatus.FAILED) CrimsonBlocked.copy(alpha = 0.4f) else VioletPrimary.copy(alpha = 0.35f)
@@ -740,7 +934,7 @@ private fun StatusUploadJobCard(
                     Text(
                         text = "${job.kind.label}: ${job.label}",
                         style = XMaxType.headline,
-                        color = ObsidianCharcoal,
+                        color = palette.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -751,7 +945,7 @@ private fun StatusUploadJobCard(
                         StatusUploadJobStatus.FAILED -> job.errorMessage.ifBlank { "Upload failed" }
                         StatusUploadJobStatus.CANCELLED -> "Cancelled"
                     }
-                    Text(subtitle, style = XMaxType.numericCaption1, color = StudioTextSecondary)
+                    Text(subtitle, style = XMaxType.numericCaption1, color = palette.textSecondary)
                 }
 
                 when (job.status) {

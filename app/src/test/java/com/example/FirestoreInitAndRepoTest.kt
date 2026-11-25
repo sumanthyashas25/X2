@@ -70,7 +70,7 @@ class FirestoreInitAndRepoTest {
         assertFalse(initService.isReadyForUser(""))
 
         assertEquals(
-            "ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a",
+            "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed",
             initService.resolveDatabaseId()
         )
         assertEquals(50L * 1024L * 1024L, FirestoreInitializationService.SPARK_FREE_CACHE_BYTES)

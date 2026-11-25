@@ -869,9 +869,12 @@ fun EnhancedFullScreenStatusViewer(
 
     if (showReportDialog) {
         var reason by remember { mutableStateOf("") }
+        val reportPalette = XMaxTheme.colors
         AlertDialog(
             onDismissRequest = { showReportDialog = false },
-            containerColor = PureWhite,
+            containerColor = reportPalette.surface,
+            titleContentColor = reportPalette.textPrimary,
+            textContentColor = reportPalette.textPrimary,
             title = { Text("Report Status", style = XMaxType.secondaryTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -918,14 +921,15 @@ fun MyStatusManagementSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val palette = XMaxTheme.colors
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var selectedStatusId by remember(myStatuses) { mutableStateOf(myStatuses.firstOrNull()?.id.orEmpty()) }
     val activeStatus = myStatuses.firstOrNull { it.id == selectedStatusId } ?: myStatuses.firstOrNull()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -944,12 +948,12 @@ fun MyStatusManagementSheet(
                     Text(
                         text = "My Status (${myStatuses.size})",
                         style = XMaxType.secondaryTitle.tabular(),
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     Text(
                         text = "Viewers, reactions, replies & expiry tracking",
                         style = XMaxType.footnote,
-                        color = StudioTextSecondary
+                        color = palette.textSecondary
                     )
                 }
                 if (myStatuses.isNotEmpty()) {
@@ -968,7 +972,7 @@ fun MyStatusManagementSheet(
                 Text(
                     text = "You have no active status updates.",
                     style = XMaxType.subheadline,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     modifier = Modifier.padding(vertical = 24.dp)
                 )
             } else {
@@ -985,8 +989,8 @@ fun MyStatusManagementSheet(
                         Surface(
                             onClick = { selectedStatusId = st.id },
                             shape = RoundedCornerShape(18.dp),
-                            color = if (isExpanded) VioletSoftBg else MutedSurface,
-                            border = BorderStroke(1.dp, if (isExpanded) VioletPrimary else SubtleOutline),
+                            color = if (isExpanded) palette.softVioletBg else palette.surfaceMuted,
+                            border = BorderStroke(1.dp, if (isExpanded) VioletPrimary else palette.outline),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -996,7 +1000,7 @@ fun MyStatusManagementSheet(
                                 ) {
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
-                                        color = ObsidianCharcoal,
+                                        color = palette.buttonPrimaryBg,
                                         modifier = Modifier.size(44.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -1006,7 +1010,7 @@ fun MyStatusManagementSheet(
                                                 StatusKind.VIDEO -> Icons.Default.Videocam
                                                 StatusKind.VOICE -> Icons.Default.Mic
                                             }
-                                            Icon(icon, contentDescription = st.kindEnum().label, tint = PureWhite, modifier = Modifier.size(20.dp))
+                                            Icon(icon, contentDescription = st.kindEnum().label, tint = palette.buttonPrimaryFg, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
@@ -1019,7 +1023,7 @@ fun MyStatusManagementSheet(
                                         Text(
                                             text = "${formatRelativeStatusTime(st.createdAtMillis)} • ${hoursLeft}h remaining • ${st.privacyModeEnum().label}",
                                             style = XMaxType.numericCaption1,
-                                            color = StudioTextSecondary
+                                            color = palette.textSecondary
                                         )
                                     }
                                     IconButton(
@@ -1045,7 +1049,7 @@ fun MyStatusManagementSheet(
                                         },
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(Icons.Default.Share, contentDescription = "Share status", tint = ObsidianCharcoal, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Default.Share, contentDescription = "Share status", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                                     }
                                     IconButton(
                                         onClick = { onDeleteStatus(st) },
@@ -1065,16 +1069,16 @@ fun MyStatusManagementSheet(
                                 }
 
                                 if (isExpanded) {
-                                    HorizontalDivider(color = SubtleOutline)
+                                    HorizontalDivider(color = palette.outline)
 
                                     // Individual Viewer Names + Viewing Timestamps
                                     Text(
                                         text = "Viewers (${st.viewerUids.size})",
                                         style = XMaxType.caption1Semibold.tabular(),
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
                                     if (st.viewerUids.isEmpty()) {
-                                        Text("No team views yet.", style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text("No team views yet.", style = XMaxType.footnote, color = palette.textSecondary)
                                     } else {
                                         st.viewerUids.forEach { vUid ->
                                             val vm = allMembers.firstOrNull { it.uid == vUid }
@@ -1096,11 +1100,11 @@ fun MyStatusManagementSheet(
                                                     photoBase64 = vm?.photoBase64.orEmpty()
                                                 )
                                                 Column(modifier = Modifier.weight(1f)) {
-                                                    Text(formatTitleCase(vm?.fullName ?: vUid), style = XMaxType.headline)
-                                                    Text(timeText, style = XMaxType.numericCaption1, color = StudioTextSecondary)
+                                                    Text(formatTitleCase(vm?.fullName ?: vUid), style = XMaxType.headline, color = palette.textPrimary)
+                                                    Text(timeText, style = XMaxType.numericCaption1, color = palette.textSecondary)
                                                 }
                                                 if (!reactionEmoji.isNullOrBlank()) {
-                                                    Surface(shape = CircleShape, color = PureWhite) {
+                                                    Surface(shape = CircleShape, color = palette.surface) {
                                                         Text(reactionEmoji, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                                     }
                                                 }
@@ -1114,7 +1118,7 @@ fun MyStatusManagementSheet(
                                         Text(
                                             text = "Reactions (${st.reactions.size})",
                                             style = XMaxType.caption1Semibold.tabular(),
-                                            color = ObsidianCharcoal
+                                            color = palette.textPrimary
                                         )
                                         st.reactions.forEach { (rUid, emoji) ->
                                             val rm = allMembers.firstOrNull { it.uid == rUid }
@@ -1123,7 +1127,7 @@ fun MyStatusManagementSheet(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Text(formatTitleCase(rm?.fullName ?: rUid), style = XMaxType.subheadlineMedium)
+                                                Text(formatTitleCase(rm?.fullName ?: rUid), style = XMaxType.subheadlineMedium, color = palette.textPrimary)
                                                 Text(emoji, fontSize = 18.sp)
                                             }
                                         }
@@ -1150,7 +1154,9 @@ fun MyStatusManagementSheet(
     if (showDeleteAllConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteAllConfirm = false },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
+            titleContentColor = palette.textPrimary,
+            textContentColor = palette.textSecondary,
             title = { Text("Delete All Active Statuses?", style = XMaxType.secondaryTitle) },
             text = { Text("This will permanently delete all ${myStatuses.size} active status updates and remove your ring indicator.", style = XMaxType.body) },
             confirmButton = {
@@ -1173,18 +1179,19 @@ fun MyStatusManagementSheet(
 
 @Composable
 private fun InsightBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    val palette = XMaxTheme.colors
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline)
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = ObsidianCharcoal, modifier = Modifier.size(13.dp))
-            Text(label, style = XMaxType.caption1Semibold.tabular(), color = ObsidianCharcoal)
+            Icon(icon, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(13.dp))
+            Text(label, style = XMaxType.caption1Semibold.tabular(), color = palette.textPrimary)
         }
     }
 }

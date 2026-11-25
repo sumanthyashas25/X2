@@ -18,6 +18,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Base64
+import android.util.LruCache
 import androidx.core.content.FileProvider
 import com.example.chat.local.MediaCacheEntity
 import com.example.chat.local.XMaxChatDatabase
@@ -1081,5 +1082,118 @@ object ChatFileManager {
             }
         }
         decodeBase64Bitmap(status.imageDataBase64, 1280)
+    }
+
+    private val wallpaperLruCache = object : LruCache<String, Bitmap>(6) {}
+
+    fun loadWallpaperBitmap(path: String?): Bitmap? {
+        if (path.isNullOrBlank()) return null
+        wallpaperLruCache.get(path)?.let { if (!it.isRecycled) return it }
+        val file = File(path)
+        if (!file.exists() || file.length() <= 0L) return null
+        return runCatching {
+            val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            BitmapFactory.decodeFile(file.absolutePath, opts)?.also { bmp ->
+                wallpaperLruCache.put(path, bmp)
+            }
+        }.getOrNull()
+    }
+
+    fun deleteWallpaperFile(path: String?) {
+        if (path.isNullOrBlank()) return
+        wallpaperLruCache.remove(path)
+        runCatching { File(path).delete() }
+    }
+
+    suspend fun saveCustomChatWallpaper(
+        context: Context,
+        uri: Uri,
+        channelId: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Unable to open selected wallpaper image.")
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+            val maxDim = max(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
+            var sample = 1
+            while (maxDim / sample > 1600) sample *= 2
+
+            val decoded = BitmapFactory.Options().apply { inSampleSize = sample }
+            val rawBmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decoded)
+                ?: error("Could not decode selected wallpaper image.")
+            val rotated = applyExifOrientation(rawBmp, rawBytes)
+            val edge = max(rotated.width, rotated.height)
+            val scaled = if (edge > 1600) {
+                val r = 1600f / edge.toFloat()
+                Bitmap.createScaledBitmap(
+                    rotated,
+                    (rotated.width * r).roundToInt().coerceAtLeast(1),
+                    (rotated.height * r).roundToInt().coerceAtLeast(1),
+                    true
+                )
+            } else rotated
+
+            val dir = File(context.filesDir, "chat_wallpapers").apply { mkdirs() }
+            val safeId = if (channelId.isNullOrBlank()) {
+                "global"
+            } else {
+                channelId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(48)
+            }
+            // Write to unique versioned filename so Compose state/remember re-decodes cleanly
+            dir.listFiles { f -> f.name.startsWith("wp_${safeId}_") }?.forEach { old ->
+                wallpaperLruCache.remove(old.absolutePath)
+                old.delete()
+            }
+            val outFile = File(dir, "wp_${safeId}_${System.currentTimeMillis()}.jpg")
+            outFile.outputStream().use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 86, out)
+            }
+            wallpaperLruCache.put(outFile.absolutePath, scaled)
+            if (scaled !== rotated) rotated.recycle()
+            if (rotated !== rawBmp) rawBmp.recycle()
+            outFile.absolutePath
+        }
+    }
+
+    data class ChatCacheStats(
+        val fileCount: Int,
+        val totalBytes: Long
+    )
+
+    suspend fun getChatMediaCacheStats(context: Context): ChatCacheStats = withContext(Dispatchers.IO) {
+        val dirs = listOf(
+            File(context.filesDir, "chat_media"),
+            File(context.filesDir, "chat_uploads"),
+            File(context.filesDir, "status_cache"),
+            File(context.filesDir, "status_uploads"),
+            File(context.cacheDir, "chat_media_cache")
+        )
+        var count = 0
+        var bytes = 0L
+        dirs.forEach { d ->
+            if (d.exists()) {
+                d.walkTopDown().filter { it.isFile }.forEach { f ->
+                    count += 1
+                    bytes += f.length()
+                }
+            }
+        }
+        ChatCacheStats(fileCount = count, totalBytes = bytes)
+    }
+
+    suspend fun clearChatMediaCache(context: Context): ChatCacheStats = withContext(Dispatchers.IO) {
+        val dirs = listOf(
+            File(context.filesDir, "chat_media"),
+            File(context.filesDir, "chat_uploads"),
+            File(context.filesDir, "status_cache"),
+            File(context.filesDir, "status_uploads"),
+            File(context.cacheDir, "chat_media_cache")
+        )
+        dirs.forEach { d ->
+            if (d.exists()) d.deleteRecursively()
+        }
+        runCatching { XMaxChatDatabase.getInstance(context).chatDao().clearAllMediaCache() }
+        getChatMediaCacheStats(context)
     }
 }

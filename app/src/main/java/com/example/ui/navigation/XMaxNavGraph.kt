@@ -128,7 +128,7 @@ fun XMaxNavGraph(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
-    val isDarkDestination = false
+    val isDarkDestination = XMaxTheme.isDark
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
@@ -297,6 +297,8 @@ fun LoadingDestinationScreen(
         label = "spinner_rotation"
     )
 
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     val topTransitionY = 0.40f + 0.08f * gradientShift
     val midStop1 = topTransitionY + 0.12f
     val midStop2 = midStop1 + 0.18f
@@ -312,16 +314,21 @@ fun LoadingDestinationScreen(
             val w = size.width
             val h = size.height
 
-            // Smooth animated vertical gradient matching screenshot
+            val topCanvas = if (isDark) palette.canvas else Color.White
+            val stop1 = if (isDark) Color(0xFF172208) else Color(0xFFF7FFC8).copy(alpha = 0.95f)
+            val stop2 = if (isDark) Color(0xFF283E0A) else Color(0xFFE2FF4A)
+            val stop3 = if (isDark) Color(0xFF3E610C) else Color(0xFFCEFF00)
+            val stop4 = if (isDark) Color(0xFF56890E) else Color(0xFFB8F800)
+
             drawRect(
                 brush = Brush.verticalGradient(
                     colorStops = arrayOf(
-                        0.0f to Color.White,
-                        topTransitionY to Color.White,
-                        midStop1.coerceAtMost(0.78f) to Color(0xFFF7FFC8).copy(alpha = 0.95f),
-                        midStop2.coerceAtMost(0.92f) to Color(0xFFE2FF4A),
-                        0.90f to Color(0xFFCEFF00),
-                        1.0f to Color(0xFFB8F800)
+                        0.0f to topCanvas,
+                        topTransitionY to topCanvas,
+                        midStop1.coerceAtMost(0.78f) to stop1,
+                        midStop2.coerceAtMost(0.92f) to stop2,
+                        0.90f to stop3,
+                        1.0f to stop4
                     ),
                     startY = 0f,
                     endY = h
@@ -334,7 +341,7 @@ fun LoadingDestinationScreen(
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFFEDFF6B).copy(alpha = 0.45f + 0.15f * gradientShift),
+                        Color(0xFFEDFF6B).copy(alpha = (if (isDark) 0.25f else 0.45f) + 0.15f * gradientShift),
                         Color.Transparent
                     ),
                     center = Offset(w * 0.5f, glowY),
@@ -345,7 +352,7 @@ fun LoadingDestinationScreen(
             )
         }
 
-        // 2. Foreground content: Typography on top, rotating black arc spinner at bottom
+        // 2. Foreground content: Typography on top, rotating arc spinner at bottom
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -363,13 +370,13 @@ fun LoadingDestinationScreen(
                 Text(
                     text = "Welcome,",
                     style = XMaxType.largeTitle,
-                    color = Color(0xFF0F1015)
+                    color = palette.textPrimary
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = displayFirst,
                     style = XMaxType.largeTitle,
-                    color = Color(0xFF0F1015)
+                    color = palette.textPrimary
                 )
             }
 
@@ -385,8 +392,8 @@ fun LoadingDestinationScreen(
                         .align(Alignment.CenterHorizontally)
                         .testTag("loading_recovery_card"),
                     shape = RoundedCornerShape(22.dp),
-                    color = if (!errorMessage.isNullOrBlank()) SoftBlush else PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = if (!errorMessage.isNullOrBlank()) palette.blushBg else palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 8.dp
                 ) {
                     Column(
@@ -397,7 +404,7 @@ fun LoadingDestinationScreen(
                         Text(
                             text = errorMessage ?: "Still waiting for network sync. Check connectivity or retry.",
                             style = XMaxType.footnote,
-                            color = if (!errorMessage.isNullOrBlank()) DeepBlushInk else StudioTextSecondary,
+                            color = if (!errorMessage.isNullOrBlank()) palette.blushInk else palette.textSecondary,
                             textAlign = TextAlign.Center
                         )
                         Button(
@@ -407,8 +414,8 @@ fun LoadingDestinationScreen(
                             },
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = ObsidianCharcoal,
-                                contentColor = PureWhite
+                                containerColor = palette.buttonPrimaryBg,
+                                contentColor = palette.buttonPrimaryFg
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -422,8 +429,8 @@ fun LoadingDestinationScreen(
                                 onClick = onSignOut,
                                 shape = RoundedCornerShape(999.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFECEDF1),
-                                    contentColor = ObsidianCharcoal
+                                    containerColor = palette.surfaceMuted,
+                                    contentColor = palette.textPrimary
                                 ),
                                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                                 modifier = Modifier
@@ -439,7 +446,7 @@ fun LoadingDestinationScreen(
                 Spacer(Modifier.height(18.dp))
             }
 
-            // Minimalist rotating black arc spinner matching screenshot
+            // Minimalist rotating arc spinner matching screenshot
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -453,7 +460,7 @@ fun LoadingDestinationScreen(
                         .testTag("loading_spinner")
                 ) {
                     drawArc(
-                        color = Color(0xFF0F1015),
+                        color = if (isDark) Color(0xFFD9FF4A) else Color(0xFF0F1015),
                         startAngle = 0f,
                         sweepAngle = 270f,
                         useCenter = false,

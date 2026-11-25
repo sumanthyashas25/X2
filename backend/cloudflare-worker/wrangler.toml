@@ -3,17 +3,22 @@ main = "worker.js"
 compatibility_date = "2026-01-01"
 
 [vars]
-FIREBASE_PROJECT_ID = "gen-lang-client-0410091917"
-FIRESTORE_DB_ID = "ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a"
+FIREBASE_PROJECT_ID = "gen-lang-client-0137668580"
+FIRESTORE_DB_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
 # Leave empty for native mobile clients (prevents wildcard CORS on authenticated endpoints).
 # Add comma-separated origins only if a web dashboard calls this Worker directly.
 ALLOWED_ORIGINS = ""
 
-# Free-Tier Cloudflare R2 Object Storage (10 GB/month, 1M Class A ops, 10M Class B ops, $0 egress)
-# Create once via: npx wrangler r2 bucket create xmax-chat-files
+# Free-Tier Storage Options:
+# Option A: Cloudflare R2 Object Storage (10 GB/month, $0 egress)
+#   Create once via: npx wrangler r2 bucket create xmax-chat-files
 [[r2_buckets]]
 binding = "CHAT_BUCKET"
 bucket_name = "xmax-chat-files"
 
+# Option B: Supabase Free-Tier Storage (set secrets via Wrangler CLI, never commit):
+#   npx wrangler secret put SUPABASE_URL
+#   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#
 # Optional FCM HTTP v1 push notifications secret (set via Wrangler CLI, never commit):
 #   npx wrangler secret put SERVICE_ACCOUNT_JSON

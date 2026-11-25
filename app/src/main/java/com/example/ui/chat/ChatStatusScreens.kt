@@ -91,6 +91,7 @@ fun StatusAvatarBar(
 
     val myStatuses = categorized.myStatuses
     val activeOtherSummaries = categorized.recentUpdates + categorized.viewedUpdates
+    val palette = XMaxTheme.colors
 
     Row(
         modifier = modifier
@@ -116,7 +117,7 @@ fun StatusAvatarBar(
                     com.example.ui.components.SegmentedStatusAvatar(
                         name = myMember.fullName,
                         size = 50.dp,
-                        borderColor = PureWhite,
+                        borderColor = palette.surface,
                         photoBase64 = myMember.photoBase64,
                         activeStatuses = myStatuses,
                         viewerUid = myMember.uid,
@@ -126,14 +127,14 @@ fun StatusAvatarBar(
                     Surface(
                         onClick = onAddStatus,
                         shape = CircleShape,
-                        color = ObsidianCharcoal,
-                        border = BorderStroke(1.5.dp, PureWhite),
+                        color = palette.buttonPrimaryBg,
+                        border = BorderStroke(1.5.dp, palette.surface),
                         modifier = Modifier
                             .size(20.dp)
                             .align(Alignment.BottomEnd)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Add, contentDescription = "Add another status", tint = PureWhite, modifier = Modifier.size(12.dp))
+                            Icon(Icons.Default.Add, contentDescription = "Add another status", tint = palette.buttonPrimaryFg, modifier = Modifier.size(12.dp))
                         }
                     }
                 } else {
@@ -141,13 +142,13 @@ fun StatusAvatarBar(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
-                            .background(PureWhite.copy(alpha = 0.6f))
+                            .background(palette.surface.copy(alpha = 0.72f))
                             .clickable { onAddStatus() },
                         contentAlignment = Alignment.Center
                     ) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             drawCircle(
-                                color = ObsidianCharcoal.copy(alpha = 0.35f),
+                                color = palette.textPrimary.copy(alpha = 0.35f),
                                 style = Stroke(
                                     width = 2.dp.toPx(),
                                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
@@ -157,7 +158,7 @@ fun StatusAvatarBar(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Post status",
-                            tint = ObsidianCharcoal,
+                            tint = palette.textPrimary,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -166,7 +167,7 @@ fun StatusAvatarBar(
             Text(
                 text = if (myStatuses.isNotEmpty()) "My Status" else "Add Status",
                 style = XMaxType.caption1,
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
@@ -189,7 +190,7 @@ fun StatusAvatarBar(
                 com.example.ui.components.SegmentedStatusAvatar(
                     name = person.fullName,
                     size = 50.dp,
-                    borderColor = PureWhite,
+                    borderColor = palette.surface,
                     photoBase64 = person.photoBase64,
                     activeStatuses = list,
                     viewerUid = myMember.uid,
@@ -199,7 +200,7 @@ fun StatusAvatarBar(
                 Text(
                     text = formatTitleCase(person.fullName.substringBefore(" ")),
                     style = if (hasUnseen) XMaxType.caption1Semibold else XMaxType.caption1Medium,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
@@ -257,10 +258,12 @@ fun CreateStatusDialog(
         }
     }
 
+    val palette = XMaxTheme.colors
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = PureWhite,
+            color = palette.surface,
+            contentColor = palette.textPrimary,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -275,10 +278,10 @@ fun CreateStatusDialog(
                     Text(
                         text = "New 24h Status",
                         style = XMaxType.secondaryTitle,
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = palette.textPrimary)
                     }
                 }
 
@@ -334,7 +337,7 @@ fun CreateStatusDialog(
                                 .background(Brush.linearGradient(colors))
                                 .border(
                                     width = if (presetIdx == idx) 3.dp else 1.dp,
-                                    color = if (presetIdx == idx) ObsidianCharcoal else SubtleOutline,
+                                    color = if (presetIdx == idx) palette.textPrimary else palette.outline,
                                     shape = CircleShape
                                 )
                                 .clickable { presetIdx = idx }
@@ -344,7 +347,7 @@ fun CreateStatusDialog(
                     IconButton(onClick = {
                         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Pick photo", tint = ObsidianCharcoal)
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Pick photo", tint = palette.textPrimary)
                     }
                     IconButton(onClick = {
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -355,7 +358,7 @@ fun CreateStatusDialog(
                             cameraPermLauncher.launch(Manifest.permission.CAMERA)
                         }
                     }) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = ObsidianCharcoal)
+                        Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = palette.textPrimary)
                     }
                     if (imageBase64.isNotBlank()) {
                         IconButton(onClick = { imageBase64 = "" }) {
@@ -387,7 +390,7 @@ fun CreateStatusDialog(
                         }
                     },
                     enabled = !isProcessingPhoto,
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -651,10 +654,12 @@ fun FullScreenStatusViewer(
     }
 
     if (showViewersSheet) {
+        val viewerPalette = XMaxTheme.colors
         Dialog(onDismissRequest = { showViewersSheet = false }) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = PureWhite,
+                color = viewerPalette.surface,
+                contentColor = viewerPalette.textPrimary,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 360.dp)
@@ -665,7 +670,7 @@ fun FullScreenStatusViewer(
                         style = XMaxType.secondaryTitle.tabular()
                     )
                     if (current.viewerUids.isEmpty()) {
-                        Text("No viewers yet.", color = StudioTextSecondary, style = XMaxType.footnote)
+                        Text("No viewers yet.", color = viewerPalette.textSecondary, style = XMaxType.footnote)
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(current.viewerUids) { vUid ->
@@ -678,10 +683,10 @@ fun FullScreenStatusViewer(
                                     StudioAvatar(
                                         name = m?.fullName ?: "Member",
                                         size = 34.dp,
-                                        borderColor = PureWhite,
+                                        borderColor = viewerPalette.surface,
                                         photoBase64 = m?.photoBase64.orEmpty()
                                     )
-                                    Text(formatTitleCase(m?.fullName ?: vUid), style = XMaxType.headline)
+                                    Text(formatTitleCase(m?.fullName ?: vUid), style = XMaxType.headline, color = viewerPalette.textPrimary)
                                 }
                             }
                         }

@@ -363,12 +363,14 @@ fun CreateStatusStudioDialog(
         }
     }
 
+    val palette = XMaxTheme.colors
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            color = PureWhite,
+            color = palette.canvas,
+            contentColor = palette.textPrimary,
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
@@ -390,12 +392,12 @@ fun CreateStatusStudioDialog(
                             .size(48.dp)
                             .testTag("status_creator_close")
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close Status Creator", tint = ObsidianCharcoal)
+                        Icon(Icons.Default.Close, contentDescription = "Close Status Creator", tint = palette.textPrimary)
                     }
                     Text(
                         text = "Create 24h Status",
                         style = XMaxType.secondaryTitle,
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     TextButton(
                         onClick = { showPreviewDialog = true },
@@ -439,8 +441,8 @@ fun CreateStatusStudioDialog(
                 Surface(
                     onClick = { showPrivacyDialog = true },
                     shape = RoundedCornerShape(14.dp),
-                    color = MutedSurface,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surfaceMuted,
+                    border = BorderStroke(1.dp, palette.outline),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -458,13 +460,13 @@ fun CreateStatusStudioDialog(
                         ) {
                             Icon(Icons.Default.Lock, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(16.dp))
                             Column {
-                                Text("Who can view", style = XMaxType.caption1, color = StudioTextSecondary)
+                                Text("Who can view", style = XMaxType.caption1, color = palette.textSecondary)
                                 val summary = when (privacyMode) {
                                     StatusPrivacyMode.ALL_APPROVED -> "All approved company members"
                                     StatusPrivacyMode.SELECTED_ONLY -> "Selected only (${allowedUids.size} members)"
                                     StatusPrivacyMode.ALL_EXCEPT -> "All except ${excludedUids.size} hidden"
                                 }
-                                Text(summary, style = XMaxType.footnoteSemibold.tabular(), color = ObsidianCharcoal)
+                                Text(summary, style = XMaxType.footnoteSemibold.tabular(), color = palette.textPrimary)
                             }
                         }
                         Text("Change", style = XMaxType.caption1Semibold, color = VioletPrimary)
@@ -516,7 +518,7 @@ fun CreateStatusStudioDialog(
                                             .background(Brush.linearGradient(colors))
                                             .border(
                                                 width = if (presetIdx == idx) 3.dp else 1.dp,
-                                                color = if (presetIdx == idx) ObsidianCharcoal else SubtleOutline,
+                                                color = if (presetIdx == idx) palette.textPrimary else palette.outline,
                                                 shape = CircleShape
                                             )
                                             .clickable { presetIdx = idx }
@@ -597,8 +599,8 @@ fun CreateStatusStudioDialog(
                             if (photoDrafts.isEmpty()) {
                                 Surface(
                                     shape = RoundedCornerShape(18.dp),
-                                    color = MutedSurface,
-                                    border = BorderStroke(1.dp, SubtleOutline),
+                                    color = palette.surfaceMuted,
+                                    border = BorderStroke(1.dp, palette.outline),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(210.dp)
@@ -608,10 +610,10 @@ fun CreateStatusStudioDialog(
                                         verticalArrangement = Arrangement.Center,
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
-                                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = StudioTextSecondary, modifier = Modifier.size(40.dp))
+                                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(40.dp))
                                         Spacer(Modifier.height(8.dp))
-                                        Text("Pick single or multiple photos", style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text("Supports interactive crop, text overlay & captions", style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text("Pick single or multiple photos", style = XMaxType.headline, color = palette.textPrimary)
+                                        Text("Supports interactive crop, text overlay & captions", style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                 }
                             } else {
@@ -630,7 +632,7 @@ fun CreateStatusStudioDialog(
                                                     .clip(RoundedCornerShape(12.dp))
                                                     .border(
                                                         width = if (isSel) 2.5.dp else 1.dp,
-                                                        color = if (isSel) VioletPrimary else SubtleOutline,
+                                                        color = if (isSel) VioletPrimary else palette.outline,
                                                         shape = RoundedCornerShape(12.dp)
                                                     )
                                                     .clickable { activePhotoIndex = idx }
@@ -754,8 +756,8 @@ fun CreateStatusStudioDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.Crop, contentDescription = "Crop zoom", tint = ObsidianCharcoal, modifier = Modifier.size(18.dp))
-                                    Text("Zoom", style = XMaxType.caption1Semibold)
+                                    Icon(Icons.Default.Crop, contentDescription = "Crop zoom", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                                    Text("Zoom", style = XMaxType.caption1Semibold, color = palette.textPrimary)
                                     Slider(
                                         value = activeDraft.zoom,
                                         onValueChange = { z -> photoDrafts[currentIdx] = activeDraft.copy(zoom = z) },
@@ -796,7 +798,7 @@ fun CreateStatusStudioDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Overlay color:", style = XMaxType.caption1, color = StudioTextSecondary)
+                                    Text("Overlay color:", style = XMaxType.caption1, color = palette.textSecondary)
                                     OverlayColors.forEach { hex ->
                                         Box(
                                             modifier = Modifier
@@ -805,7 +807,7 @@ fun CreateStatusStudioDialog(
                                                 .background(Color(hex))
                                                 .border(
                                                     width = if (activeDraft.overlayColorHex == hex) 2.5.dp else 1.dp,
-                                                    color = if (activeDraft.overlayColorHex == hex) VioletPrimary else SubtleOutline,
+                                                    color = if (activeDraft.overlayColorHex == hex) VioletPrimary else palette.outline,
                                                     shape = CircleShape
                                                 )
                                                 .clickable { photoDrafts[currentIdx] = activeDraft.copy(overlayColorHex = hex) }
@@ -905,7 +907,7 @@ fun CreateStatusStudioDialog(
                                         Text(
                                             text = "Trim: ${formatDurationShort(videoStartMs)} – ${formatDurationShort(videoEndMs)}",
                                             style = XMaxType.monoTimer,
-                                            color = ObsidianCharcoal
+                                            color = palette.textPrimary
                                         )
                                         Text(
                                             text = "Clip ${formatDurationShort(videoEndMs - videoStartMs)} / ${formatDurationShort(info.durationMs)}",
@@ -1029,7 +1031,7 @@ fun CreateStatusStudioDialog(
                                             .size(30.dp)
                                             .clip(CircleShape)
                                             .background(Brush.linearGradient(colors))
-                                            .border(if (presetIdx == idx) 3.dp else 1.dp, if (presetIdx == idx) ObsidianCharcoal else SubtleOutline, CircleShape)
+                                            .border(if (presetIdx == idx) 3.dp else 1.dp, if (presetIdx == idx) palette.textPrimary else palette.outline, CircleShape)
                                             .clickable { presetIdx = idx }
                                     )
                                 }
@@ -1053,14 +1055,14 @@ fun CreateStatusStudioDialog(
                     }
 
                     if (!errorMsg.isNullOrBlank()) {
-                        Surface(shape = RoundedCornerShape(12.dp), color = SoftBlush, modifier = Modifier.fillMaxWidth()) {
-                            Text(errorMsg.orEmpty(), color = DeepBlushInk, style = XMaxType.footnote, modifier = Modifier.padding(10.dp))
+                        Surface(shape = RoundedCornerShape(12.dp), color = palette.blushBg, modifier = Modifier.fillMaxWidth()) {
+                            Text(errorMsg.orEmpty(), color = palette.blushInk, style = XMaxType.footnote, modifier = Modifier.padding(10.dp))
                         }
                     }
                 }
 
                 // Bottom Publish Bar
-                Surface(color = PureWhite, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+                Surface(color = palette.surface, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1090,7 +1092,7 @@ fun CreateStatusStudioDialog(
                                 }
                             },
                             enabled = !isProcessingMedia && !isRecordingVoice,
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
@@ -1188,6 +1190,7 @@ fun CreateStatusStudioDialog(
 
 @Composable
 private fun QuickEmojiRow(onPick: (String) -> Unit) {
+    val palette = XMaxTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1198,7 +1201,7 @@ private fun QuickEmojiRow(onPick: (String) -> Unit) {
             Surface(
                 onClick = { onPick(emoji) },
                 shape = RoundedCornerShape(10.dp),
-                color = MutedSurface,
+                color = palette.surfaceMuted,
                 modifier = Modifier.defaultMinSize(minHeight = 36.dp)
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
@@ -1221,11 +1224,13 @@ fun StatusPrivacySelectorDialog(
     var mode by remember { mutableStateOf(initialMode) }
     var allowed by remember { mutableStateOf(initialAllowedUids) }
     var excluded by remember { mutableStateOf(initialExcludedUids) }
+    val palette = XMaxTheme.colors
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = PureWhite,
+            color = palette.surface,
+            contentColor = palette.textPrimary,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 560.dp)
@@ -1233,13 +1238,13 @@ fun StatusPrivacySelectorDialog(
         ) {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Status Privacy", style = XMaxType.secondaryTitle)
-                Text("Choose which approved company members can see your statuses and ring indicator.", style = XMaxType.footnote, color = StudioTextSecondary)
+                Text("Choose which approved company members can see your statuses and ring indicator.", style = XMaxType.footnote, color = palette.textSecondary)
 
                 StatusPrivacyMode.entries.forEach { m ->
                     Surface(
                         onClick = { mode = m },
                         shape = RoundedCornerShape(14.dp),
-                        color = if (mode == m) VioletSoftBg else MutedSurface,
+                        color = if (mode == m) palette.softVioletBg else palette.surfaceMuted,
                         border = if (mode == m) BorderStroke(1.5.dp, VioletPrimary) else null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1250,8 +1255,8 @@ fun StatusPrivacySelectorDialog(
                         ) {
                             RadioButton(selected = mode == m, onClick = { mode = m })
                             Column {
-                                Text(m.label, style = XMaxType.headline, color = ObsidianCharcoal)
-                                Text(m.subtitle, style = XMaxType.caption1, color = StudioTextSecondary)
+                                Text(m.label, style = XMaxType.headline, color = palette.textPrimary)
+                                Text(m.subtitle, style = XMaxType.caption1, color = palette.textSecondary)
                             }
                         }
                     }
@@ -1266,7 +1271,7 @@ fun StatusPrivacySelectorDialog(
                             "Hide status from (${activeSet.size}):"
                         },
                         style = XMaxType.caption1Semibold.tabular(),
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     LazyColumn(
                         modifier = Modifier
@@ -1304,8 +1309,8 @@ fun StatusPrivacySelectorDialog(
                                 )
                                 StudioAvatar(name = mem.fullName, size = 32.dp, photoBase64 = mem.photoBase64)
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(formatTitleCase(mem.fullName), style = XMaxType.headline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(mem.jobRoleName.ifBlank { mem.departmentName }, style = XMaxType.caption1, color = StudioTextSecondary)
+                                    Text(formatTitleCase(mem.fullName), style = XMaxType.headline, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(mem.jobRoleName.ifBlank { mem.departmentName }, style = XMaxType.caption1, color = palette.textSecondary)
                                 }
                             }
                         }
@@ -1317,7 +1322,7 @@ fun StatusPrivacySelectorDialog(
                     Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { onSave(mode, allowed, excluded) },
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.testTag("status_privacy_save_btn")
                     ) {
                         Text("Save Privacy", style = XMaxType.buttonCompact)

@@ -18,6 +18,9 @@ data class ChatUserPreferences(
     val channelListsMap: Map<String, Set<String>> = emptyMap(),
     val globalWallpaperId: String = "studio_white",
     val channelWallpapers: Map<String, String> = emptyMap(),
+    val globalCustomWallpaperPath: String = "",
+    val channelCustomWallpaperPaths: Map<String, String> = emptyMap(),
+    val statusNote: String = "Working in X.MAX",
     val bubbleThemeId: String = "studio_dark",
     val autoDownloadPhotos: Boolean = true,
     val autoDownloadAudio: Boolean = true,
@@ -28,6 +31,11 @@ data class ChatUserPreferences(
     val statusPrivacyMode: String = "ALL_APPROVED",
     val statusAllowedUids: Set<String> = emptySet(),
     val statusExcludedUids: Set<String> = emptySet()
+)
+
+data class ResolvedThreadWallpaper(
+    val presetId: String,
+    val customImagePath: String?
 )
 
 /**
@@ -44,6 +52,9 @@ object ChatSettingsStore {
     private const val KEY_CHANNEL_LISTS = "channel_lists_json"
     private const val KEY_GLOBAL_WALLPAPER = "global_wallpaper_id"
     private const val KEY_CHANNEL_WALLPAPERS = "channel_wallpapers_json"
+    private const val KEY_GLOBAL_CUSTOM_WALLPAPER = "global_custom_wallpaper_path"
+    private const val KEY_CHANNEL_CUSTOM_WALLPAPERS = "channel_custom_wallpapers_json"
+    private const val KEY_STATUS_NOTE = "you_status_note"
     private const val KEY_BUBBLE_THEME = "bubble_theme_id"
     private const val KEY_AUTO_DL_PHOTOS = "auto_dl_photos"
     private const val KEY_AUTO_DL_AUDIO = "auto_dl_audio"
@@ -91,6 +102,10 @@ object ChatSettingsStore {
         }
         val channelLists = parseStringSetMap(sp.getString(KEY_CHANNEL_LISTS, null))
         val channelWallpapers = parseStringMap(sp.getString(KEY_CHANNEL_WALLPAPERS, null))
+        val globalCustomWp = sp.getString(KEY_GLOBAL_CUSTOM_WALLPAPER, "")?.trim().orEmpty()
+        val channelCustomWps = parseStringMap(sp.getString(KEY_CHANNEL_CUSTOM_WALLPAPERS, null))
+        val statusNote = sp.getString(KEY_STATUS_NOTE, "Working in X.MAX")?.trim().orEmpty()
+            .ifBlank { "Working in X.MAX" }
         val rawGlobalWp = sp.getString(KEY_GLOBAL_WALLPAPER, "studio_white") ?: "studio_white"
         val normalizedGlobalWp = when (rawGlobalWp) {
             "ambient_glow" -> "studio_white"
@@ -108,6 +123,9 @@ object ChatSettingsStore {
             channelListsMap = channelLists,
             globalWallpaperId = normalizedGlobalWp,
             channelWallpapers = channelWallpapers,
+            globalCustomWallpaperPath = globalCustomWp,
+            channelCustomWallpaperPaths = channelCustomWps,
+            statusNote = statusNote,
             bubbleThemeId = normalizedTheme,
             autoDownloadPhotos = sp.getBoolean(KEY_AUTO_DL_PHOTOS, true),
             autoDownloadAudio = sp.getBoolean(KEY_AUTO_DL_AUDIO, true),
@@ -209,14 +227,125 @@ object ChatSettingsStore {
     fun setWallpaper(context: Context, wallpaperId: String, channelId: String? = null) {
         val cur = ensureLoaded(context)
         if (channelId.isNullOrBlank()) {
-            prefs(context).edit().putString(KEY_GLOBAL_WALLPAPER, wallpaperId).apply()
-            _prefsFlow.value = cur.copy(globalWallpaperId = wallpaperId)
+            // Selecting a preset clears global custom image so the user sees the chosen preset immediately
+            prefs(context).edit()
+                .putString(KEY_GLOBAL_WALLPAPER, wallpaperId)
+                .remove(KEY_GLOBAL_CUSTOM_WALLPAPER)
+                .apply()
+            _prefsFlow.value = cur.copy(
+                globalWallpaperId = wallpaperId,
+                globalCustomWallpaperPath = ""
+            )
         } else {
             val next = cur.channelWallpapers.toMutableMap()
+            val nextCustom = cur.channelCustomWallpaperPaths.toMutableMap()
+            nextCustom.remove(channelId)
             if (wallpaperId == "default") next.remove(channelId) else next[channelId] = wallpaperId
-            prefs(context).edit().putString(KEY_CHANNEL_WALLPAPERS, encodeStringMap(next)).apply()
-            _prefsFlow.value = cur.copy(channelWallpapers = next)
+            prefs(context).edit()
+                .putString(KEY_CHANNEL_WALLPAPERS, encodeStringMap(next))
+                .putString(KEY_CHANNEL_CUSTOM_WALLPAPERS, encodeStringMap(nextCustom))
+                .apply()
+            _prefsFlow.value = cur.copy(
+                channelWallpapers = next,
+                channelCustomWallpaperPaths = nextCustom
+            )
         }
+    }
+
+    fun setCustomWallpaperPath(context: Context, path: String, channelId: String? = null) {
+        val clean = path.trim()
+        val cur = ensureLoaded(context)
+        if (channelId.isNullOrBlank()) {
+            prefs(context).edit()
+                .putString(KEY_GLOBAL_CUSTOM_WALLPAPER, clean)
+                .apply()
+            _prefsFlow.value = cur.copy(globalCustomWallpaperPath = clean)
+        } else {
+            val nextCustom = cur.channelCustomWallpaperPaths.toMutableMap()
+            if (clean.isBlank()) nextCustom.remove(channelId) else nextCustom[channelId] = clean
+            prefs(context).edit()
+                .putString(KEY_CHANNEL_CUSTOM_WALLPAPERS, encodeStringMap(nextCustom))
+                .apply()
+            _prefsFlow.value = cur.copy(channelCustomWallpaperPaths = nextCustom)
+        }
+    }
+
+    fun clearCustomWallpaper(context: Context, channelId: String? = null) {
+        val cur = ensureLoaded(context)
+        if (channelId.isNullOrBlank()) {
+            prefs(context).edit().remove(KEY_GLOBAL_CUSTOM_WALLPAPER).apply()
+            _prefsFlow.value = cur.copy(globalCustomWallpaperPath = "")
+        } else {
+            val nextCustom = cur.channelCustomWallpaperPaths.toMutableMap()
+            val nextPresets = cur.channelWallpapers.toMutableMap()
+            nextCustom.remove(channelId)
+            nextPresets.remove(channelId)
+            prefs(context).edit()
+                .putString(KEY_CHANNEL_CUSTOM_WALLPAPERS, encodeStringMap(nextCustom))
+                .putString(KEY_CHANNEL_WALLPAPERS, encodeStringMap(nextPresets))
+                .apply()
+            _prefsFlow.value = cur.copy(
+                channelCustomWallpaperPaths = nextCustom,
+                channelWallpapers = nextPresets
+            )
+        }
+    }
+
+    fun resolveThreadWallpaper(
+        prefs: ChatUserPreferences,
+        channelId: String,
+        companyDefaultWallpaperId: String = "studio_white",
+        companyDefaultWallpaperUrl: String = ""
+    ): ResolvedThreadWallpaper {
+        val perChatCustom = prefs.channelCustomWallpaperPaths[channelId]?.takeIf { it.isNotBlank() }
+        if (perChatCustom != null) {
+            return ResolvedThreadWallpaper(
+                presetId = prefs.channelWallpapers[channelId] ?: prefs.globalWallpaperId,
+                customImagePath = perChatCustom
+            )
+        }
+        val perChatPreset = prefs.channelWallpapers[channelId]?.takeIf { it.isNotBlank() && it != "default" }
+        if (perChatPreset != null) {
+            return ResolvedThreadWallpaper(presetId = perChatPreset, customImagePath = null)
+        }
+        val globalCustom = prefs.globalCustomWallpaperPath.takeIf { it.isNotBlank() }
+        if (globalCustom != null) {
+            return ResolvedThreadWallpaper(
+                presetId = prefs.globalWallpaperId,
+                customImagePath = globalCustom
+            )
+        }
+        // If the user picked a specific personal global wallpaper different from standard studio_white
+        if (prefs.globalWallpaperId.isNotBlank() && prefs.globalWallpaperId != "studio_white") {
+            return ResolvedThreadWallpaper(
+                presetId = prefs.globalWallpaperId,
+                customImagePath = null
+            )
+        }
+        // Fallback to workspace/super-admin default if configured
+        if (companyDefaultWallpaperUrl.isNotBlank()) {
+            return ResolvedThreadWallpaper(
+                presetId = companyDefaultWallpaperId.ifBlank { "custom" },
+                customImagePath = companyDefaultWallpaperUrl
+            )
+        }
+        if (companyDefaultWallpaperId.isNotBlank() && companyDefaultWallpaperId != "studio_white") {
+            return ResolvedThreadWallpaper(
+                presetId = companyDefaultWallpaperId,
+                customImagePath = null
+            )
+        }
+        return ResolvedThreadWallpaper(
+            presetId = prefs.globalWallpaperId.ifBlank { "studio_white" },
+            customImagePath = null
+        )
+    }
+
+    fun setStatusNote(context: Context, note: String) {
+        val clean = note.trim().take(60).ifBlank { "Working in X.MAX" }
+        val cur = ensureLoaded(context)
+        prefs(context).edit().putString(KEY_STATUS_NOTE, clean).apply()
+        _prefsFlow.value = cur.copy(statusNote = clean)
     }
 
     fun setBubbleTheme(context: Context, themeId: String) {

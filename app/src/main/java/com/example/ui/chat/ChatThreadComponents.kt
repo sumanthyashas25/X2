@@ -143,11 +143,12 @@ fun VoiceNotePlayerBubble(
         else listOf(8, 14, 22, 12, 18, 24, 16, 20, 10, 15, 22, 8, 16, 12)
     }
 
+    val palette = XMaxTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = PureWhite.copy(alpha = 0.88f),
-            border = BorderStroke(1.dp, SubtleOutline),
+            color = palette.surface.copy(alpha = 0.92f),
+            border = BorderStroke(1.dp, palette.outline),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 2.dp)
@@ -205,7 +206,7 @@ fun VoiceNotePlayerBubble(
                                     .width(3.dp)
                                     .height(h.coerceIn(5, 24).dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(if (played) accentColor else StudioTextSecondary.copy(alpha = 0.4f))
+                                    .background(if (played) accentColor else palette.textSecondary.copy(alpha = 0.45f))
                             )
                         }
                     }
@@ -215,7 +216,7 @@ fun VoiceNotePlayerBubble(
                         text = if (isThisActive) String.format("%02d:%02d / %02d:%02d", posSec / 60, posSec % 60, totalSec / 60, totalSec % 60)
                         else String.format("%02d:%02d", totalSec / 60, totalSec % 60),
                         style = XMaxType.monoTimer,
-                        color = StudioTextSecondary
+                        color = palette.textSecondary
                     )
                 }
 
@@ -223,7 +224,7 @@ fun VoiceNotePlayerBubble(
                 Surface(
                     onClick = { ChatAudioManager.cycleSpeed() },
                     shape = RoundedCornerShape(999.dp),
-                    color = MutedSurface
+                    color = palette.surfaceMuted
                 ) {
                     val speedLabel = when (playback.speed) {
                         1.5f -> "1.5x"
@@ -233,7 +234,7 @@ fun VoiceNotePlayerBubble(
                     Text(
                         text = speedLabel,
                         style = XMaxType.caption1Semibold.tabular(),
-                        color = ObsidianCharcoal,
+                        color = palette.textPrimary,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -251,11 +252,11 @@ fun VoiceNotePlayerBubble(
                 Text(if (showTranscript) "Hide Transcript" else "Transcript", style = XMaxType.caption2Medium, color = accentColor)
             }
             AnimatedVisibility(visible = showTranscript) {
-                Surface(shape = RoundedCornerShape(10.dp), color = MutedSurface, modifier = Modifier.fillMaxWidth()) {
+                Surface(shape = RoundedCornerShape(10.dp), color = palette.surfaceMuted, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = message.transcript,
                         style = XMaxType.footnote,
-                        color = ObsidianCharcoal,
+                        color = palette.textPrimary,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
@@ -296,6 +297,8 @@ fun RichChatMessageBubble(
     if (message.isDeletedFor(myUid) || message.isExpired()) return
 
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
     var showActionMenu by remember { mutableStateOf(false) }
 
     // Centered System notification message
@@ -306,11 +309,11 @@ fun RichChatMessageBubble(
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
-            Surface(shape = RoundedCornerShape(999.dp), color = MutedSurface.copy(alpha = 0.9f), border = BorderStroke(1.dp, SubtleOutline)) {
+            Surface(shape = RoundedCornerShape(999.dp), color = palette.surfaceMuted.copy(alpha = 0.92f), border = BorderStroke(1.dp, palette.outline)) {
                 Text(
                     text = message.body,
                     style = XMaxType.caption1Medium,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                 )
             }
@@ -319,8 +322,18 @@ fun RichChatMessageBubble(
     }
 
     val theme = ChatVisualCatalog.bubbleTheme(bubbleThemeId)
-    val bubbleColor = if (isMe) theme.outgoingBg else theme.incomingBg
-    val bubbleBorder = if (isMe) theme.outgoingBorder else SubtleOutline
+    val bubbleColor = when {
+        isMe && isDark && (theme.id == "studio_dark" || theme.id == "obsidian_pro") -> Color(0xFF232838)
+        isMe -> theme.outgoingBg
+        isDark -> palette.surfaceElevated
+        else -> theme.incomingBg
+    }
+    val bubbleBorder = when {
+        isMe && isDark && (theme.id == "studio_dark" || theme.id == "obsidian_pro") -> Color(0xFF343B4F)
+        isMe -> theme.outgoingBorder
+        else -> palette.outline
+    }
+    val incomingTextColor = palette.textPrimary
     val timeLabel = remember(message.createdAt) {
         val millis = message.createdAt?.toDate()?.time ?: System.currentTimeMillis()
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(millis))
@@ -368,7 +381,7 @@ fun RichChatMessageBubble(
                                     Text(
                                         text = "• ${formatTitleCase(message.senderRole)}",
                                         style = XMaxType.caption1,
-                                        color = StudioTextSecondary
+                                        color = palette.textSecondary
                                     )
                                 }
                             }
@@ -376,11 +389,11 @@ fun RichChatMessageBubble(
 
                         if (message.forwardedFromName.isNotBlank()) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = null, tint = StudioTextSecondary, modifier = Modifier.size(13.dp))
+                                Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(13.dp))
                                 Text(
                                     text = "Forwarded from ${formatTitleCase(message.forwardedFromName)}",
                                     style = XMaxType.caption1.copy(fontStyle = FontStyle.Italic),
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                             }
                         }
@@ -388,8 +401,8 @@ fun RichChatMessageBubble(
                         if (message.parentPreview.isNotBlank()) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isMe) PureWhite.copy(alpha = 0.12f) else PureWhite.copy(alpha = 0.65f),
-                                border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else SubtleOutline),
+                                color = if (isMe) PureWhite.copy(alpha = 0.12f) else palette.surface.copy(alpha = 0.85f),
+                                border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else palette.outline),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -407,7 +420,7 @@ fun RichChatMessageBubble(
                                     Text(
                                         text = message.parentPreview,
                                         style = XMaxType.caption1,
-                                        color = if (isMe) PureWhite else ObsidianCharcoal,
+                                        color = if (isMe) PureWhite else incomingTextColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -419,15 +432,15 @@ fun RichChatMessageBubble(
                             Text(
                                 text = "🚫 This message was deleted",
                                 style = XMaxType.subheadline.copy(fontStyle = FontStyle.Italic),
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         } else if (message.viewOnce && !isMe && myUid in message.viewedByUids) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Default.MotionPhotosOff, contentDescription = null, tint = StudioTextSecondary, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.MotionPhotosOff, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(18.dp))
                                 Text(
                                     text = "Opened view-once message",
                                     style = XMaxType.footnote.copy(fontStyle = FontStyle.Italic),
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                             }
                         } else if (message.viewOnce && !isMe && myUid !in message.viewedByUids) {
@@ -437,7 +450,7 @@ fun RichChatMessageBubble(
                                     if (message.hasAttachment) onOpenAttachment()
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                color = VioletSoftBg,
+                                color = palette.softVioletBg,
                                 border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.4f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -530,20 +543,20 @@ fun RichChatMessageBubble(
                                 val goingCount = message.eventRsvps.values.count { it == "GOING" }
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFFFFFBEB),
-                                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+                                    color = palette.butterBg,
+                                    border = BorderStroke(1.dp, palette.butterInk.copy(alpha = 0.35f)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Icon(Icons.Default.Event, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
-                                            Text(message.eventTitle, style = XMaxType.headline, color = ObsidianCharcoal)
+                                            Icon(Icons.Default.Event, contentDescription = null, tint = palette.butterInk, modifier = Modifier.size(18.dp))
+                                            Text(message.eventTitle, style = XMaxType.headline, color = palette.textPrimary)
                                         }
-                                        Text(whenLabel, style = XMaxType.caption1Semibold.tabular(), color = Color(0xFFB45309))
+                                        Text(whenLabel, style = XMaxType.caption1Semibold.tabular(), color = palette.butterInk)
                                         if (message.eventLocation.isNotBlank()) {
-                                            Text("📍 ${message.eventLocation}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                            Text("📍 ${message.eventLocation}", style = XMaxType.footnote, color = palette.textSecondary)
                                         }
-                                        Text("$goingCount going", style = XMaxType.numericCaption1, color = StudioTextSecondary)
+                                        Text("$goingCount going", style = XMaxType.numericCaption1, color = palette.textSecondary)
                                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             FilterChip(
                                                 selected = myRsvp == "GOING",
@@ -569,7 +582,7 @@ fun RichChatMessageBubble(
                                                 },
                                                 modifier = Modifier.size(34.dp)
                                             ) {
-                                                Icon(Icons.Default.NotificationAdd, contentDescription = "Calendar Reminder", tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
+                                                Icon(Icons.Default.NotificationAdd, contentDescription = "Calendar Reminder", tint = palette.butterInk, modifier = Modifier.size(18.dp))
                                             }
                                         }
                                     }
@@ -580,8 +593,8 @@ fun RichChatMessageBubble(
                             if (message.isContactCard) {
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFFF0F9FF),
-                                    border = BorderStroke(1.dp, Color(0xFFBAE6FD)),
+                                    color = palette.skyBg,
+                                    border = BorderStroke(1.dp, palette.skyInk.copy(alpha = 0.35f)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
@@ -589,11 +602,11 @@ fun RichChatMessageBubble(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        Icon(Icons.Default.ContactPhone, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(26.dp))
+                                        Icon(Icons.Default.ContactPhone, contentDescription = null, tint = palette.skyInk, modifier = Modifier.size(26.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(message.contactName, style = XMaxType.headline, color = ObsidianCharcoal)
+                                            Text(message.contactName, style = XMaxType.headline, color = palette.textPrimary)
                                             if (message.contactPhone.isNotBlank()) {
-                                                Text(message.contactPhone, style = XMaxType.numericFootnote, color = StudioTextSecondary)
+                                                Text(message.contactPhone, style = XMaxType.numericFootnote, color = palette.textSecondary)
                                             }
                                         }
                                         if (message.contactPhone.isNotBlank()) {
@@ -629,7 +642,7 @@ fun RichChatMessageBubble(
                                         )
                                     },
                                     shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFFECFDF5),
+                                    color = palette.mintBg,
                                     border = BorderStroke(1.dp, EmeraldApproved.copy(alpha = 0.35f)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -650,14 +663,14 @@ fun RichChatMessageBubble(
                                         Text(
                                             text = message.locationLabel.ifBlank { "${message.locationLat}, ${message.locationLng}" },
                                             style = XMaxType.footnote,
-                                            color = ObsidianCharcoal
+                                            color = palette.textPrimary
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("Tap to open in Maps →", style = XMaxType.caption1Semibold, color = Color(0xFF0284C7))
+                                            Text("Tap to open in Maps →", style = XMaxType.caption1Semibold, color = palette.skyInk)
                                             if (stillLive && isMe) {
                                                 TextButton(onClick = onStopLiveLocation, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
                                                     Text("Stop Sharing", style = XMaxType.caption1Semibold, color = CrimsonBlocked)
@@ -722,8 +735,8 @@ fun RichChatMessageBubble(
                                 Surface(
                                     onClick = onOpenAttachment,
                                     shape = RoundedCornerShape(10.dp),
-                                    color = if (isMe) PureWhite.copy(alpha = 0.12f) else PureWhite.copy(alpha = 0.78f),
-                                    border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else SubtleOutline),
+                                    color = if (isMe) PureWhite.copy(alpha = 0.12f) else palette.surface.copy(alpha = 0.9f),
+                                    border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else palette.outline),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -738,14 +751,14 @@ fun RichChatMessageBubble(
                                                     else -> Icons.Default.Description
                                                 },
                                                 contentDescription = null,
-                                                tint = if (isMe) PureWhite else ObsidianCharcoal,
+                                                tint = if (isMe) PureWhite else incomingTextColor,
                                                 modifier = Modifier.size(22.dp)
                                             )
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = message.attachmentName.ifBlank { "Attachment" },
                                                     style = XMaxType.caption1Semibold,
-                                                    color = if (isMe) PureWhite else ObsidianCharcoal,
+                                                    color = if (isMe) PureWhite else incomingTextColor,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
@@ -754,11 +767,11 @@ fun RichChatMessageBubble(
                                                     if (message.isHd) append(" • HD")
                                                 }
                                                 if (meta.isNotBlank()) {
-                                                    Text(meta, style = XMaxType.numericCaption1, color = if (isMe) Color(0xFF94A3B8) else StudioTextSecondary)
+                                                    Text(meta, style = XMaxType.numericCaption1, color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary)
                                                 }
                                             }
                                             IconButton(onClick = onDownloadAttachment, modifier = Modifier.size(30.dp)) {
-                                                Icon(Icons.Default.Download, contentDescription = "Download", tint = if (isMe) PureWhite else ObsidianCharcoal, modifier = Modifier.size(18.dp))
+                                                Icon(Icons.Default.Download, contentDescription = "Download", tint = if (isMe) PureWhite else incomingTextColor, modifier = Modifier.size(18.dp))
                                             }
                                         }
                                         if (activeTransferProgress != null && activeTransferProgress in 0.01f..0.99f) {
@@ -788,7 +801,7 @@ fun RichChatMessageBubble(
 
                             if (showBody) {
                                 if (message.kindEnum() == ChatMessageKind.ANNOUNCEMENT) {
-                                    Surface(shape = RoundedCornerShape(8.dp), color = VioletSoftBg) {
+                                    Surface(shape = RoundedCornerShape(8.dp), color = palette.softVioletBg) {
                                         Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             Icon(Icons.Default.Campaign, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(14.dp))
                                             Text("ANNOUNCEMENT", style = XMaxType.caption2Medium, color = VioletPrimary)
@@ -800,10 +813,10 @@ fun RichChatMessageBubble(
                                         body = message.body,
                                         mentions = message.mentions,
                                         mentionColor = if (isMe) Color(0xFF38BDF8) else theme.accent,
-                                        linkColor = if (isMe) Color(0xFF38BDF8) else Color(0xFF0284C7)
+                                        linkColor = if (isMe) Color(0xFF38BDF8) else palette.skyInk
                                     ),
                                     style = XMaxType.subheadline,
-                                    color = if (isMe) PureWhite else ObsidianCharcoal
+                                    color = if (isMe) PureWhite else incomingTextColor
                                 )
                                 val firstUrl = message.linkUrl.ifBlank { ChatFileManager.extractHttpsUrls(message.body).firstOrNull().orEmpty() }
                                 if (firstUrl.isNotBlank()) {
@@ -816,13 +829,13 @@ fun RichChatMessageBubble(
                                             }
                                         },
                                         shape = RoundedCornerShape(10.dp),
-                                        color = if (isMe) PureWhite.copy(alpha = 0.15f) else PureWhite.copy(alpha = 0.8f),
-                                        border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else SubtleOutline),
+                                        color = if (isMe) PureWhite.copy(alpha = 0.15f) else palette.surface.copy(alpha = 0.9f),
+                                        border = BorderStroke(1.dp, if (isMe) PureWhite.copy(alpha = 0.2f) else palette.outline),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Icon(Icons.Default.Link, contentDescription = null, tint = if (isMe) Color(0xFF38BDF8) else Color(0xFF0284C7), modifier = Modifier.size(18.dp))
-                                            Text(firstUrl, style = XMaxType.caption1, color = if (isMe) Color(0xFF38BDF8) else Color(0xFF0284C7), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Icon(Icons.Default.Link, contentDescription = null, tint = if (isMe) Color(0xFF38BDF8) else palette.skyInk, modifier = Modifier.size(18.dp))
+                                            Text(firstUrl, style = XMaxType.caption1, color = if (isMe) Color(0xFF38BDF8) else palette.skyInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
                                 }
@@ -845,9 +858,9 @@ fun RichChatMessageBubble(
                                 Icon(Icons.Default.Star, contentDescription = "Starred", tint = Color(0xFFF59E0B), modifier = Modifier.size(12.dp))
                             }
                             if (message.isEdited) {
-                                Text("edited", style = XMaxType.caption2, color = if (isMe) Color(0xFF94A3B8) else StudioTextSecondary)
+                                Text("edited", style = XMaxType.caption2, color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary)
                             }
-                            Text(timeLabel, style = XMaxType.caption2.tabular(), color = if (isMe) Color(0xFF94A3B8) else StudioTextSecondary)
+                            Text(timeLabel, style = XMaxType.caption2.tabular(), color = if (isMe) Color(0xFF94A3B8) else palette.textSecondary)
                             if (isMe) {
                                 DeliveryStatusIcon(status = message.effectiveStatusForSender(otherParticipantCount))
                             }
@@ -869,13 +882,13 @@ fun RichChatMessageBubble(
                             Surface(
                                 onClick = { onReact(emoji) },
                                 shape = RoundedCornerShape(999.dp),
-                                color = if (isMyReact) VioletSoftBg else PureWhite,
-                                border = BorderStroke(1.dp, if (isMyReact) VioletPrimary else SubtleOutline)
+                                color = if (isMyReact) palette.softVioletBg else palette.surface,
+                                border = BorderStroke(1.dp, if (isMyReact) VioletPrimary else palette.outline)
                             ) {
                                 Text(
                                     text = "$emoji $count",
                                     style = XMaxType.caption1Semibold.tabular(),
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -965,10 +978,11 @@ private fun RichMessageActionsBottomSheet(
     onDeleteForMe: () -> Unit,
     onDeleteForEveryone: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -981,7 +995,7 @@ private fun RichMessageActionsBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(999.dp))
-                    .background(MutedSurface)
+                    .background(palette.surfaceMuted)
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
@@ -996,7 +1010,7 @@ private fun RichMessageActionsBottomSheet(
                     ) { Text(emoji, fontSize = 21.sp) }
                 }
                 IconButton(onClick = onOpenMoreEmojis, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.AddCircleOutline, contentDescription = "More emojis", tint = ObsidianCharcoal)
+                    Icon(Icons.Default.AddCircleOutline, contentDescription = "More emojis", tint = palette.textPrimary)
                 }
             }
 
@@ -1012,7 +1026,7 @@ private fun RichMessageActionsBottomSheet(
                     onClick = onForward
                 )
                 DropdownMenuItem(
-                    leadingIcon = { Icon(if (message.isStarredBy(myUid)) Icons.Default.Star else Icons.Default.StarBorder, null, tint = if (message.isStarredBy(myUid)) Color(0xFFF59E0B) else ObsidianCharcoal) },
+                    leadingIcon = { Icon(if (message.isStarredBy(myUid)) Icons.Default.Star else Icons.Default.StarBorder, null, tint = if (message.isStarredBy(myUid)) Color(0xFFF59E0B) else palette.textPrimary) },
                     text = { Text(if (message.isStarredBy(myUid)) "Unstar" else "Star", style = XMaxType.subheadlineMedium) },
                     onClick = onToggleStar
                 )

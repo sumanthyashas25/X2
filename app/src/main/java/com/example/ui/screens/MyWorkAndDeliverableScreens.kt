@@ -89,6 +89,7 @@ fun MyWorkScreen(
     onSetFocusPreset: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     val member = state.myMember
     val uid = member?.uid.orEmpty()
     val myDeptId = member?.departmentId.orEmpty()
@@ -143,9 +144,9 @@ fun MyWorkScreen(
                 val key = startOfDayMillis(d.dueDateMillis)
                 val dotColor = when (d.statusEnum()) {
                     DeliverableStatus.BLOCKED, DeliverableStatus.CHANGES_REQUESTED -> CrimsonBlocked
-                    DeliverableStatus.APPROVED -> KpiMintStroke
-                    DeliverableStatus.READY_FOR_REVIEW -> KpiPeachStroke
-                    else -> VioletPrimary
+                    DeliverableStatus.APPROVED -> EmeraldApproved
+                    DeliverableStatus.READY_FOR_REVIEW -> WarmAlarmAmber
+                    else -> palette.lavenderInk
                 }
                 if (!map.containsKey(key) || dotColor == CrimsonBlocked) {
                     map[key] = dotColor
@@ -297,12 +298,12 @@ fun MyWorkScreen(
                     Text(
                         text = if (selectedDayMillis != null) "Day Schedule (${myDeliverables.size})" else "My Work (${myDeliverables.size})",
                         style = XMaxType.sectionHeading.tabular(),
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     Text(
                         text = "$inProgressCount active • $approvedCount done",
                         style = XMaxType.footnoteMedium.tabular(),
-                        color = StudioTextSecondary
+                        color = palette.textSecondary
                     )
                 }
 
@@ -320,13 +321,13 @@ fun MyWorkScreen(
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("Reset", style = XMaxType.footnoteSemibold, color = VioletPrimary)
+                            Text("Reset", style = XMaxType.footnoteSemibold, color = palette.lavenderInk)
                         }
                     }
                     Surface(
                         shape = RoundedCornerShape(999.dp),
-                        color = PureWhite,
-                        border = BorderStroke(1.dp, SubtleOutline)
+                        color = palette.surface,
+                        border = BorderStroke(1.dp, palette.outline)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -340,14 +341,14 @@ fun MyWorkScreen(
                                 Canvas(modifier = Modifier.fillMaxSize()) {
                                     val strokeWidth = 3.2.dp.toPx()
                                     drawArc(
-                                        color = VioletSoftBg,
+                                        color = palette.softVioletBg,
                                         startAngle = 140f,
                                         sweepAngle = 260f,
                                         useCenter = false,
                                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                     )
                                     drawArc(
-                                        color = VioletPrimary,
+                                        color = palette.lavenderInk,
                                         startAngle = 140f,
                                         sweepAngle = 260f * (completionPct / 100f),
                                         useCenter = false,
@@ -359,12 +360,12 @@ fun MyWorkScreen(
                                 Text(
                                     text = "Productivity",
                                     style = XMaxType.caption1Medium,
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                                 Text(
                                     text = "$completionPct%",
                                     style = XMaxType.footnoteSemibold.tabular(),
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                             }
                         }
@@ -393,8 +394,8 @@ fun MyWorkScreen(
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = CrimsonBlocked,
                         selectedLabelColor = PureWhite,
-                        containerColor = if (overdueCount > 0) SoftBlush else SoftMint,
-                        labelColor = if (overdueCount > 0) DeepBlushInk else DeepMintInk
+                        containerColor = if (overdueCount > 0) palette.blushBg else palette.mintBg,
+                        labelColor = if (overdueCount > 0) palette.blushInk else palette.mintInk
                     ),
                     border = null,
                     label = {
@@ -412,10 +413,10 @@ fun MyWorkScreen(
                     },
                     shape = RoundedCornerShape(999.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ObsidianCharcoal,
-                        selectedLabelColor = PureWhite,
-                        containerColor = if (dueTodayCount > 0) ButterYellow else MutedSurface,
-                        labelColor = if (dueTodayCount > 0) DeepAmberInk else ObsidianCharcoal
+                        selectedContainerColor = palette.buttonPrimaryBg,
+                        selectedLabelColor = palette.buttonPrimaryFg,
+                        containerColor = if (dueTodayCount > 0) palette.butterBg else palette.surfaceMuted,
+                        labelColor = if (dueTodayCount > 0) palette.butterInk else palette.textPrimary
                     ),
                     border = null,
                     label = { Text("Due Today ($dueTodayCount)", style = XMaxType.footnoteMedium.tabular()) }
@@ -423,15 +424,15 @@ fun MyWorkScreen(
                 if (urgentIssueCount > 0) {
                     StatusPill(
                         label = "Attention ($urgentIssueCount)",
-                        containerColor = SoftBlush,
-                        contentColor = DeepBlushInk
+                        containerColor = palette.blushBg,
+                        contentColor = palette.blushInk
                     )
                 }
                 if (deptQueueTasks.isNotEmpty()) {
                     StatusPill(
                         label = "Dept Queue (${deptQueueTasks.size})",
-                        containerColor = KpiLavenderBg,
-                        contentColor = VioletPrimary
+                        containerColor = palette.lavenderBg,
+                        contentColor = palette.lavenderInk
                     )
                 }
             }
@@ -440,8 +441,8 @@ fun MyWorkScreen(
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -457,12 +458,12 @@ fun MyWorkScreen(
                             Text(
                                 text = "$headerDateText • $headerWeekdayText",
                                 style = XMaxType.subheadlineSemibold.tabular(),
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                             Text(
                                 text = "Tap Plan tab above for monthly task blocks",
                                 style = XMaxType.caption1,
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         Row(
@@ -475,12 +476,12 @@ fun MyWorkScreen(
                                     showPlanMode = true
                                 },
                                 shape = RoundedCornerShape(999.dp),
-                                color = KpiLavenderBg
+                                color = palette.lavenderBg
                             ) {
                                 Text(
                                     text = "Plan →",
                                     style = XMaxType.footnoteSemibold,
-                                    color = VioletPrimary,
+                                    color = palette.lavenderInk,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                 )
                             }
@@ -490,7 +491,7 @@ fun MyWorkScreen(
                                     showQuickWeekStrip = !showQuickWeekStrip
                                 },
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (showQuickWeekStrip) ObsidianCharcoal else MutedSurface,
+                                color = if (showQuickWeekStrip) palette.buttonPrimaryBg else palette.surfaceMuted,
                                 modifier = Modifier
                                     .size(36.dp)
                                     .testTag("toggle_calendar_view_button")
@@ -499,7 +500,7 @@ fun MyWorkScreen(
                                     Icon(
                                         imageVector = if (showQuickWeekStrip) Icons.Filled.ExpandLess else Icons.Filled.DateRange,
                                         contentDescription = if (showQuickWeekStrip) "Hide due dates" else "Filter by due date",
-                                        tint = if (showQuickWeekStrip) PureWhite else ObsidianCharcoal,
+                                        tint = if (showQuickWeekStrip) palette.buttonPrimaryFg else palette.textPrimary,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -521,20 +522,20 @@ fun MyWorkScreen(
                                 Text(
                                     text = "Filter tasks by due day",
                                     style = XMaxType.caption1Medium,
-                                    color = StudioTextSecondary
+                                    color = palette.textSecondary
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                     IconButton(
                                         onClick = { calendarMonthOffset -= 1 },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous", tint = ObsidianCharcoal)
+                                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous", tint = palette.textPrimary)
                                     }
                                     IconButton(
                                         onClick = { calendarMonthOffset += 1 },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next", tint = ObsidianCharcoal)
+                                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next", tint = palette.textPrimary)
                                     }
                                 }
                             }
@@ -543,7 +544,7 @@ fun MyWorkScreen(
                                     Text(
                                         text = dLabel,
                                         style = XMaxType.caption1Medium,
-                                        color = StudioTextSecondary,
+                                        color = palette.textSecondary,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -572,13 +573,13 @@ fun MyWorkScreen(
                                     Text(
                                         text = "Due on ${MoneyFormatter.formatDate(selectedDayMillis!!)}",
                                         style = XMaxType.caption1Semibold.tabular(),
-                                        color = VioletPrimary
+                                        color = palette.lavenderInk
                                     )
                                     TextButton(
                                         onClick = { selectedDayMillis = null },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
-                                        Text("Show All Dates", style = XMaxType.caption1Semibold, color = ObsidianCharcoal)
+                                        Text("Show All Dates", style = XMaxType.caption1Semibold, color = palette.textPrimary)
                                     }
                                 }
                             }
@@ -607,15 +608,15 @@ fun MyWorkScreen(
                     onClick = { filter = null },
                     shape = RoundedCornerShape(999.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ObsidianCharcoal,
-                        selectedLabelColor = PureWhite,
-                        containerColor = PureWhite,
-                        labelColor = ObsidianCharcoal
+                        selectedContainerColor = palette.buttonPrimaryBg,
+                        selectedLabelColor = palette.buttonPrimaryFg,
+                        containerColor = palette.surface,
+                        labelColor = palette.textPrimary
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         enabled = true,
                         selected = filter == null,
-                        borderColor = SubtleOutline
+                        borderColor = palette.outline
                     ),
                     label = { Text("All", style = XMaxType.footnoteMedium) }
                 )
@@ -632,15 +633,15 @@ fun MyWorkScreen(
                         onClick = { filter = st },
                         shape = RoundedCornerShape(999.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ObsidianCharcoal,
-                            selectedLabelColor = PureWhite,
-                            containerColor = PureWhite,
-                            labelColor = ObsidianCharcoal
+                            selectedContainerColor = palette.buttonPrimaryBg,
+                            selectedLabelColor = palette.buttonPrimaryFg,
+                            containerColor = palette.surface,
+                            labelColor = palette.textPrimary
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = filter == st,
-                            borderColor = SubtleOutline
+                            borderColor = palette.outline
                         ),
                         label = { Text(st.label, style = XMaxType.footnoteMedium) }
                     )
@@ -657,8 +658,8 @@ fun MyWorkScreen(
                 val qTask = deptQueueTasks[idx]
                 Surface(
                     shape = RoundedCornerShape(18.dp),
-                    color = KpiLavenderBg.copy(alpha = 0.72f),
-                    border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.25f)),
+                    color = palette.lavenderBg,
+                    border = BorderStroke(1.dp, palette.lavenderInk.copy(alpha = 0.28f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -675,14 +676,14 @@ fun MyWorkScreen(
                             Text(
                                 text = formatTitleCase(qTask.title),
                                 style = XMaxType.headline,
-                                color = ObsidianCharcoal,
+                                color = palette.textPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "${formatTitleCase(qTask.projectTitle)} • ${MoneyFormatter.formatDate(qTask.dueDateMillis)}",
                                 style = XMaxType.footnote.tabular(),
-                                color = StudioTextSecondary,
+                                color = palette.textSecondary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -693,7 +694,7 @@ fun MyWorkScreen(
                                 onClaimDepartmentTask(qTask)
                             },
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                             modifier = Modifier
                                 .height(42.dp)
@@ -719,11 +720,11 @@ fun MyWorkScreen(
             items(myDeliverables.size, key = { idx -> myDeliverables[idx].id }) { idx ->
                 val d = myDeliverables[idx]
                 val tintBg = when (d.statusEnum()) {
-                    DeliverableStatus.BLOCKED, DeliverableStatus.CHANGES_REQUESTED -> SoftBlush.copy(alpha = 0.72f)
-                    DeliverableStatus.APPROVED -> KpiMintBg
-                    DeliverableStatus.READY_FOR_REVIEW -> KpiPeachBg
-                    DeliverableStatus.IN_PROGRESS -> KpiSkyBg
-                    DeliverableStatus.NOT_STARTED -> KpiLavenderBg
+                    DeliverableStatus.BLOCKED, DeliverableStatus.CHANGES_REQUESTED -> palette.blushBg
+                    DeliverableStatus.APPROVED -> palette.mintBg
+                    DeliverableStatus.READY_FOR_REVIEW -> palette.peachBg
+                    DeliverableStatus.IN_PROGRESS -> palette.skyBg
+                    DeliverableStatus.NOT_STARTED -> palette.lavenderBg
                 }
                 val elapsedSecs = state.timerSecondsByDeliverable[d.id] ?: 0L
                 val isTimerRunning = state.activeTimerDeliverableId == d.id
@@ -752,10 +753,11 @@ private fun MyWorkPlanSwitcher(
     planCount: Int,
     onSelectPlan: (Boolean) -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("my_work_plan_switcher")
@@ -769,7 +771,7 @@ private fun MyWorkPlanSwitcher(
             Surface(
                 onClick = { onSelectPlan(false) },
                 shape = RoundedCornerShape(999.dp),
-                color = if (!showPlanMode) ObsidianCharcoal else Color.Transparent,
+                color = if (!showPlanMode) palette.buttonPrimaryBg else Color.Transparent,
                 modifier = Modifier
                     .weight(1f)
                     .height(44.dp)
@@ -783,14 +785,14 @@ private fun MyWorkPlanSwitcher(
                     Icon(
                         imageVector = Icons.Filled.TaskAlt,
                         contentDescription = null,
-                        tint = if (!showPlanMode) PureWhite else ObsidianCharcoal,
+                        tint = if (!showPlanMode) palette.buttonPrimaryFg else palette.textPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = if (taskCount > 0) "Tasks ($taskCount)" else "Tasks",
                         style = XMaxType.buttonCompact.tabular(),
-                        color = if (!showPlanMode) PureWhite else ObsidianCharcoal
+                        color = if (!showPlanMode) palette.buttonPrimaryFg else palette.textPrimary
                     )
                 }
             }
@@ -812,14 +814,14 @@ private fun MyWorkPlanSwitcher(
                     Icon(
                         imageVector = Icons.Filled.CalendarMonth,
                         contentDescription = null,
-                        tint = if (showPlanMode) PureWhite else ObsidianCharcoal,
+                        tint = if (showPlanMode) PureWhite else palette.textPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = if (planCount > 0) "Plan ($planCount)" else "Plan",
                         style = XMaxType.buttonCompact.tabular(),
-                        color = if (showPlanMode) PureWhite else ObsidianCharcoal
+                        color = if (showPlanMode) PureWhite else palette.textPrimary
                     )
                 }
             }
@@ -835,6 +837,7 @@ private fun CalendarDayItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
@@ -847,13 +850,13 @@ private fun CalendarDayItem(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .background(if (isSelected) ObsidianCharcoal else Color.Transparent),
+                .background(if (isSelected) palette.buttonPrimaryBg else Color.Transparent),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = cell.dayOfMonth.toString(),
                 style = (if (isSelected) XMaxType.footnoteSemibold else XMaxType.footnoteMedium).tabular(),
-                color = if (isSelected) PureWhite else ObsidianCharcoal
+                color = if (isSelected) palette.buttonPrimaryFg else palette.textPrimary
             )
         }
         Box(
@@ -897,6 +900,7 @@ private fun PastelDeliverableScheduleCard(
     onQuickSubmitReview: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val st = deliverable.statusEnum()
     val (pillBg, pillFg) = statusColorsForDeliverable(st)
     val doneCount = deliverable.checklist.count { it.done }
@@ -934,14 +938,14 @@ private fun PastelDeliverableScheduleCard(
                         Text(
                             text = formatTitleCase(deliverable.title),
                             style = XMaxType.headline,
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "${formatTitleCase(deliverable.projectTitle)} • ${formatTitleCase(deliverable.departmentName)}",
                             style = XMaxType.footnote,
-                            color = StudioTextSecondary,
+                            color = palette.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -952,8 +956,8 @@ private fun PastelDeliverableScheduleCard(
                         if (st != DeliverableStatus.APPROVED) {
                             StatusPill(
                                 label = countdownText,
-                                containerColor = if (isOverdue) CrimsonBlocked else PureWhite,
-                                contentColor = if (isOverdue) PureWhite else ObsidianCharcoal
+                                containerColor = if (isOverdue) CrimsonBlocked else palette.surface,
+                                contentColor = if (isOverdue) PureWhite else palette.textPrimary
                             )
                         }
                     }
@@ -971,14 +975,14 @@ private fun PastelDeliverableScheduleCard(
                         Icon(
                             imageVector = Icons.Outlined.Schedule,
                             contentDescription = null,
-                            tint = ObsidianCharcoal,
+                            tint = palette.textPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = MoneyFormatter.formatDate(deliverable.dueDateMillis) +
                                 if (totalCount > 0) " • $doneCount/$totalCount steps" else "",
                             style = XMaxType.footnoteMedium.tabular(),
-                            color = ObsidianCharcoal
+                            color = palette.textPrimary
                         )
                     }
                     if (avatarMembers.isNotEmpty()) {
@@ -1006,8 +1010,8 @@ private fun PastelDeliverableScheduleCard(
                     Surface(
                         onClick = onToggleTimer,
                         shape = RoundedCornerShape(999.dp),
-                        color = if (isTimerRunning) ObsidianCharcoal else PureWhite,
-                        border = if (isTimerRunning) null else BorderStroke(1.dp, SubtleOutline),
+                        color = if (isTimerRunning) palette.buttonPrimaryBg else palette.surface,
+                        border = if (isTimerRunning) null else BorderStroke(1.dp, palette.outline),
                         modifier = Modifier
                             .height(38.dp)
                             .testTag("timer_toggle_${deliverable.id}")
@@ -1020,13 +1024,13 @@ private fun PastelDeliverableScheduleCard(
                             Icon(
                                 imageVector = if (isTimerRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                 contentDescription = if (isTimerRunning) "Pause timer" else "Start timer",
-                                tint = if (isTimerRunning) PureWhite else ObsidianCharcoal,
+                                tint = if (isTimerRunning) palette.buttonPrimaryFg else palette.textPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
                                 text = if (isTimerRunning || elapsedTimerSeconds > 0L) formatElapsedTimer(elapsedTimerSeconds) else "Start Timer",
                                 style = if (isTimerRunning || elapsedTimerSeconds > 0L) XMaxType.monoTimer else XMaxType.footnoteSemibold,
-                                color = if (isTimerRunning) PureWhite else ObsidianCharcoal
+                                color = if (isTimerRunning) palette.buttonPrimaryFg else palette.textPrimary
                             )
                         }
                     }
@@ -1035,7 +1039,7 @@ private fun PastelDeliverableScheduleCard(
                         Button(
                             onClick = onQuickSubmitReview,
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                             modifier = Modifier
                                 .height(38.dp)
@@ -1063,6 +1067,7 @@ fun DeliverableDetailDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     val updatesSynced by updatesFlow.collectAsStateWithLifecycle(initialValue = SyncedData(emptyList(), false))
     val uid = state.myMember?.uid.orEmpty()
     val isAssignee = deliverable.assignedToUid == uid
@@ -1110,7 +1115,7 @@ fun DeliverableDetailDialog(
         val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = CrispCanvas
+            color = palette.canvas
         ) {
             Column(
                 modifier = Modifier
@@ -1126,9 +1131,9 @@ fun DeliverableDetailDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ObsidianCharcoal)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = palette.textPrimary)
                     }
-                    Text("Deliverable Details", style = XMaxType.headline, color = ObsidianCharcoal)
+                    Text("Deliverable Details", style = XMaxType.headline, color = palette.textPrimary)
                     Spacer(Modifier.size(48.dp))
                 }
 
@@ -1139,7 +1144,7 @@ fun DeliverableDetailDialog(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = SoftMint,
+                        color = palette.mintBg,
                         border = BorderStroke(1.dp, EmeraldApproved.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1154,7 +1159,7 @@ fun DeliverableDetailDialog(
                             Text(
                                 text = savedFeedbackBanner.orEmpty(),
                                 style = XMaxType.footnoteSemibold,
-                                color = DeepMintInk,
+                                color = palette.mintInk,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -1167,17 +1172,17 @@ fun DeliverableDetailDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Box(
-                        modifier = Modifier.size(44.dp).clip(CircleShape).background(MutedSurface),
+                        modifier = Modifier.size(44.dp).clip(CircleShape).background(palette.surfaceMuted),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Deliverable", style = XMaxType.caption1Medium, color = StudioTextSecondary)
+                        Text("Deliverable", style = XMaxType.caption1Medium, color = palette.textSecondary)
                         Text(
                             text = formatTitleCase(deliverable.title),
                             style = XMaxType.headline,
-                            color = ObsidianCharcoal,
+                            color = palette.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1247,7 +1252,7 @@ fun DeliverableDetailDialog(
                             val ownerName = deliverable.assignedToName.ifBlank { deliverable.assignmentStatusEnum().label }
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = MutedSurface,
+                                color = palette.surfaceMuted,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1257,17 +1262,17 @@ fun DeliverableDetailDialog(
                                 ) {
                                     StudioAvatar(name = ownerName, size = 44.dp, photoBase64 = ownerPhoto)
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(formatTitleCase(ownerName), style = XMaxType.headline, color = ObsidianCharcoal)
-                                        Text("${formatTitleCase(deliverable.jobRoleName)} • Assignee", style = XMaxType.footnote, color = StudioTextSecondary)
+                                        Text(formatTitleCase(ownerName), style = XMaxType.headline, color = palette.textPrimary)
+                                        Text("${formatTitleCase(deliverable.jobRoleName)} • Assignee", style = XMaxType.footnote, color = palette.textSecondary)
                                     }
                                     Surface(
                                         onClick = { detailTab = 1 },
                                         shape = CircleShape,
-                                        color = PureWhite,
+                                        color = palette.surface,
                                         modifier = Modifier.size(40.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Update or Review", tint = ObsidianCharcoal, modifier = Modifier.size(18.dp))
+                                            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Update or Review", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
@@ -1309,10 +1314,10 @@ fun DeliverableDetailDialog(
                     } else {
                         if (deliverable.projectBrief.isNotBlank() || deliverable.latestFeedback.isNotBlank()) {
                             item {
-                                Surface(shape = RoundedCornerShape(20.dp), color = MutedSurface) {
+                                Surface(shape = RoundedCornerShape(20.dp), color = palette.surfaceMuted) {
                                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         if (deliverable.projectBrief.isNotBlank()) {
-                                            Text("Brief: ${deliverable.projectBrief}", style = XMaxType.footnote, color = StudioTextSecondary)
+                                            Text("Brief: ${deliverable.projectBrief}", style = XMaxType.footnote, color = palette.textSecondary)
                                         }
                                         if (deliverable.latestFeedback.isNotBlank()) {
                                             Text("Latest Feedback: ${deliverable.latestFeedback}", style = XMaxType.footnoteSemibold, color = CrimsonBlocked)
@@ -1324,13 +1329,13 @@ fun DeliverableDetailDialog(
 
                         item {
                             val doneCount = checklist.count { it.done }
-                            Text("Checklist ($doneCount of ${checklist.size} complete)", style = XMaxType.secondaryTitle.tabular(), color = ObsidianCharcoal)
+                            Text("Checklist ($doneCount of ${checklist.size} complete)", style = XMaxType.secondaryTitle.tabular(), color = palette.textPrimary)
                             Spacer(Modifier.height(6.dp))
                             checklist.forEachIndexed { idx, item ->
                                 Surface(
                                     shape = RoundedCornerShape(16.dp),
-                                    color = PureWhite,
-                                    border = BorderStroke(1.dp, SubtleOutline),
+                                    color = palette.surface,
+                                    border = BorderStroke(1.dp, palette.outline),
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                                 ) {
                                     Row(
@@ -1340,13 +1345,16 @@ fun DeliverableDetailDialog(
                                         Checkbox(
                                             checked = item.done,
                                             enabled = isAssignee,
-                                            colors = CheckboxDefaults.colors(checkedColor = ObsidianCharcoal),
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = palette.buttonPrimaryBg,
+                                                checkmarkColor = palette.buttonPrimaryFg
+                                            ),
                                             onCheckedChange = { checked ->
                                                 AppHapticsAndNotifier.triggerTickHaptic(context)
                                                 checklist = checklist.mapIndexed { i, c -> if (i == idx) c.copy(done = checked) else c }
                                             }
                                         )
-                                        Text(item.title, style = XMaxType.subheadline, color = ObsidianCharcoal, modifier = Modifier.weight(1f))
+                                        Text(item.title, style = XMaxType.subheadline, color = palette.textPrimary, modifier = Modifier.weight(1f))
                                     }
                                 }
                             }
@@ -1357,7 +1365,7 @@ fun DeliverableDetailDialog(
                                 item {
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
-                                        color = KpiLavenderBg,
+                                        color = palette.lavenderBg,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
@@ -1369,12 +1377,12 @@ fun DeliverableDetailDialog(
                                                 Text(
                                                     text = "Focus Work Timer",
                                                     style = XMaxType.caption1Medium,
-                                                    color = VioletPrimary
+                                                    color = palette.lavenderInk
                                                 )
                                                 Text(
                                                     text = formatElapsedTimer(elapsedSecs),
                                                     style = XMaxType.numericSection.copy(fontFamily = MonoFontFamily),
-                                                    color = ObsidianCharcoal
+                                                    color = palette.textPrimary
                                                 )
                                             }
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1384,7 +1392,7 @@ fun DeliverableDetailDialog(
                                                         onToggleTimer(deliverable.id)
                                                     },
                                                     shape = RoundedCornerShape(999.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                                     modifier = Modifier.height(40.dp).testTag("dialog_timer_toggle_button")
                                                 ) {
@@ -1407,7 +1415,7 @@ fun DeliverableDetailDialog(
                                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                                         modifier = Modifier.height(40.dp)
                                                     ) {
-                                                        Text("Log Time", style = XMaxType.caption1Semibold)
+                                                        Text("Log Time", style = XMaxType.caption1Semibold, color = palette.textPrimary)
                                                     }
                                                 }
                                             }
@@ -1417,9 +1425,9 @@ fun DeliverableDetailDialog(
                             }
 
                             item {
-                                Surface(shape = RoundedCornerShape(22.dp), color = MutedSurface) {
+                                Surface(shape = RoundedCornerShape(22.dp), color = palette.surfaceMuted) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Update Progress", style = XMaxType.headline, color = ObsidianCharcoal)
+                                        Text("Update Progress", style = XMaxType.headline, color = palette.textPrimary)
                                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             listOf(
                                                 DeliverableStatus.NOT_STARTED,
@@ -1435,10 +1443,10 @@ fun DeliverableDetailDialog(
                                                     },
                                                     shape = RoundedCornerShape(999.dp),
                                                     colors = FilterChipDefaults.filterChipColors(
-                                                        selectedContainerColor = ObsidianCharcoal,
-                                                        selectedLabelColor = PureWhite,
-                                                        containerColor = PureWhite,
-                                                        labelColor = ObsidianCharcoal
+                                                        selectedContainerColor = palette.buttonPrimaryBg,
+                                                        selectedLabelColor = palette.buttonPrimaryFg,
+                                                        containerColor = palette.surface,
+                                                        labelColor = palette.textPrimary
                                                     ),
                                                     border = null,
                                                     label = { Text(opt.label, style = XMaxType.footnoteMedium) }
@@ -1493,8 +1501,8 @@ fun DeliverableDetailDialog(
                                     enabled = selectedStatus != DeliverableStatus.BLOCKED || blockedReason.isNotBlank(),
                                     shape = RoundedCornerShape(999.dp),
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (justSavedButton) EmeraldApproved else ObsidianCharcoal,
-                                        contentColor = PureWhite
+                                        containerColor = if (justSavedButton) EmeraldApproved else palette.buttonPrimaryBg,
+                                        contentColor = if (justSavedButton) PureWhite else palette.buttonPrimaryFg
                                     ),
                                     modifier = Modifier.fillMaxWidth().height(50.dp).testTag("submit_progress_button")
                                 ) {
@@ -1508,9 +1516,9 @@ fun DeliverableDetailDialog(
 
                         if (canApprove) {
                             item {
-                                Surface(shape = RoundedCornerShape(22.dp), color = MutedSurface) {
+                                Surface(shape = RoundedCornerShape(22.dp), color = palette.surfaceMuted) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Manager Review & Client Revisions", style = XMaxType.headline, color = ObsidianCharcoal)
+                                        Text("Manager Review & Client Revisions", style = XMaxType.headline, color = palette.textPrimary)
                                         OutlinedTextField(
                                             value = reviewFeedback,
                                             onValueChange = { reviewFeedback = it },
@@ -1527,9 +1535,9 @@ fun DeliverableDetailDialog(
                                                     reviewFeedback = ""
                                                 },
                                                 shape = RoundedCornerShape(999.dp),
-                                                border = BorderStroke(1.dp, SubtleOutline),
+                                                border = BorderStroke(1.dp, palette.outline),
                                                 modifier = Modifier.weight(1f).height(48.dp).testTag("request_changes_button")
-                                            ) { Text("Request Changes", style = XMaxType.buttonCompact, color = ObsidianCharcoal, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                            ) { Text("Request Changes", style = XMaxType.buttonCompact, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                                             Button(
                                                 onClick = {
                                                     AppHapticsAndNotifier.triggerCompletionVibration(context)
@@ -1538,7 +1546,7 @@ fun DeliverableDetailDialog(
                                                     reviewFeedback = ""
                                                 },
                                                 shape = RoundedCornerShape(999.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                                 modifier = Modifier.weight(1f).height(48.dp).testTag("approve_deliverable_button")
                                             ) { Text("Approve", style = XMaxType.buttonCompact) }
                                         }
@@ -1550,7 +1558,7 @@ fun DeliverableDetailDialog(
                                                 reviewFeedback = ""
                                             },
                                             modifier = Modifier.fillMaxWidth()
-                                        ) { Text("Log Client Revision (+1 of ${deliverable.clientRevisionLimit} rounds)", style = XMaxType.footnoteSemibold.tabular(), color = InfoPillInk) }
+                                        ) { Text("Log Client Revision (+1 of ${deliverable.clientRevisionLimit} rounds)", style = XMaxType.footnoteSemibold.tabular(), color = palette.skyInk) }
                                     }
                                 }
                             }

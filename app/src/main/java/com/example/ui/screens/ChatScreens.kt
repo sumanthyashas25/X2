@@ -73,6 +73,7 @@ import com.example.data.SendMessageOptions
 import com.example.data.SyncedData
 import android.widget.Toast
 import com.example.chat.StatusPrivacyEngine
+import com.example.ui.chat.ChatVideoCallDialog
 import com.example.domain.CatalogueSeedData
 import com.example.model.*
 import com.example.system.AppHapticsAndNotifier
@@ -303,6 +304,8 @@ fun TeamChatScreen(
     ) { currentMode ->
         if (currentMode == ChatScreenMode.HUB) {
             ChatHubScreen(
+                state = state,
+                chatViewModel = chatViewModel,
                 member = member,
                 isSuperAdmin = state.isSuperAdmin,
                 channels = state.chatChannels,
@@ -807,6 +810,7 @@ private fun EnhancedChatThreadView(
     var reportTargetPair by remember { mutableStateOf<Pair<ChatChannel, ChatMessage?>?>(null) }
     var showPinSetupDialog by remember { mutableStateOf(false) }
     var showDeleteThreadConfirm by remember { mutableStateOf(false) }
+    var showVideoCallDialog by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf<Int?>(null) } // null=none, 0=current, 15/60=live
 
     val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -937,7 +941,12 @@ private fun EnhancedChatThreadView(
         }
     }
 
-    val threadWallpaper = prefs.channelWallpapers[channel.id] ?: prefs.globalWallpaperId
+    val resolvedWallpaper = ChatSettingsStore.resolveThreadWallpaper(
+        prefs = prefs,
+        channelId = channel.id,
+        companyDefaultWallpaperId = state.company?.defaultChatWallpaperId ?: "studio_white",
+        companyDefaultWallpaperUrl = state.company?.defaultChatWallpaperUrl ?: ""
+    )
     val otherParticipantsCount = (channel.participantUids.size - 1).coerceAtLeast(0)
     val canPostInChannel = !channel.onlyAdminsCanMessage || channel.isChannelAdmin(member.uid, state.isSuperAdmin)
     val mentionCandidates = remember(composerText, state.members) {
@@ -949,10 +958,11 @@ private fun EnhancedChatThreadView(
         } else emptyList()
     }
 
+    val palette = XMaxTheme.colors
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(PureWhite)
+            .background(palette.canvas)
             .testTag("chat_thread_screen")
     ) {
         Column(
@@ -963,8 +973,8 @@ private fun EnhancedChatThreadView(
                 .widthIn(max = 640.dp)
                 .align(Alignment.Center)
         ) {
-            // Top Bar (always crisp white, separate from message wallpaper)
-            Surface(color = PureWhite, modifier = Modifier.fillMaxWidth()) {
+            // Top Bar (adapts to light/dark theme, separate from message wallpaper)
+            Surface(color = palette.surface, modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
@@ -1070,7 +1080,7 @@ private fun EnhancedChatThreadView(
                                         else -> formatTitleCase(channel.title)
                                     },
                                     style = XMaxType.headline,
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -1093,7 +1103,7 @@ private fun EnhancedChatThreadView(
                                         ephemeral.typingNames.isNotEmpty() || ephemeral.recordingNames.isNotEmpty() -> EmeraldApproved
                                         otherPeer != null && peerPresence.online && peerPresence.availability == MemberAvailability.BUSY -> CrimsonBlocked
                                         otherPeer != null && peerPresence.online -> EmeraldApproved
-                                        else -> StudioTextSecondary
+                                        else -> palette.textSecondary
                                     },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1102,18 +1112,26 @@ private fun EnhancedChatThreadView(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { showVideoCallDialog = true },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .testTag("chat_thread_video_call_button")
+                            ) {
+                                Icon(Icons.Default.Videocam, contentDescription = "Start Video Call", tint = palette.accentViolet, modifier = Modifier.size(22.dp))
+                            }
                             IconButton(onClick = { showInThreadSearch = !showInThreadSearch }, modifier = Modifier.size(44.dp)) {
-                                Icon(Icons.Default.Search, contentDescription = "Search thread", tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Search, contentDescription = "Search thread", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
                             IconButton(onClick = { showStarredSheet = true }, modifier = Modifier.size(44.dp)) {
-                                Icon(Icons.Default.StarBorder, contentDescription = "Starred messages", tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.StarBorder, contentDescription = "Starred messages", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
                             IconButton(onClick = { showInfoSheet = true }, modifier = Modifier.size(44.dp)) {
-                                Icon(Icons.Default.Info, contentDescription = "Chat info", tint = ObsidianCharcoal, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Info, contentDescription = "Chat info", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
-                    HorizontalDivider(color = Color(0xFFECEFF2))
+                    HorizontalDivider(color = palette.outline)
                 }
             }
 
@@ -1132,7 +1150,7 @@ private fun EnhancedChatThreadView(
                         textStyle = XMaxType.body,
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = PureWhite, unfocusedContainerColor = PureWhite),
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = palette.surface, unfocusedContainerColor = palette.surface),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1155,8 +1173,8 @@ private fun EnhancedChatThreadView(
                         val idx = filteredMessages.indexOfFirst { it.id == topPinned.id }
                         if (idx >= 0) scope.launch { listState.animateScrollToItem(idx) }
                     },
-                    color = PureWhite.copy(alpha = 0.88f),
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, palette.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1168,12 +1186,13 @@ private fun EnhancedChatThreadView(
                         Text(
                             text = topPinned.body.ifBlank { topPinned.attachmentName.ifBlank { topPinned.kindEnum().label } },
                             style = XMaxType.footnoteMedium,
+                            color = palette.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { chatViewModel.togglePin(channel.id, topPinned.id) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Unpin", modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Unpin", tint = palette.textSecondary, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -1186,26 +1205,30 @@ private fun EnhancedChatThreadView(
                     604_800L -> "7 days"
                     else -> "90 days"
                 }
-                Surface(color = Color(0xFFFFFBEB), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = palette.butterBg, modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.Timer, null, tint = Color(0xFFD97706), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Timer, null, tint = palette.butterInk, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Disappearing messages active ($timerText)", style = XMaxType.caption1.tabular(), color = Color(0xFFB45309))
+                        Text("Disappearing messages active ($timerText)", style = XMaxType.caption1.tabular(), color = palette.butterInk)
                     }
                 }
             }
 
-            // Messages Stream (applies active chat wallpaper)
+            // Messages Stream (applies active custom image or preset chat wallpaper)
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .animatedChatGlowBackdrop(isThread = true, wallpaperId = threadWallpaper)
             ) {
+                ChatThreadWallpaperBackground(
+                    wallpaperId = resolvedWallpaper.presetId,
+                    customImagePath = resolvedWallpaper.customImagePath,
+                    modifier = Modifier.matchParentSize()
+                )
                 if (filteredMessages.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -1217,7 +1240,7 @@ private fun EnhancedChatThreadView(
                         Text(
                             text = if (messages.isEmpty()) "No messages yet. Say hello or share media below!" else "No messages match your search filter.",
                             style = XMaxType.callout,
-                            color = ObsidianCharcoal.copy(alpha = 0.85f),
+                            color = palette.textPrimary.copy(alpha = 0.85f),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -1294,7 +1317,7 @@ private fun EnhancedChatThreadView(
             channelFailed.forEach { failItem ->
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = SoftBlush,
+                    color = palette.blushBg,
                     border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.4f)),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1306,10 +1329,10 @@ private fun EnhancedChatThreadView(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.ErrorOutline, null, tint = CrimsonBlocked, modifier = Modifier.size(18.dp))
-                        Text("Failed: ${failItem.body.ifBlank { failItem.reason }}", style = XMaxType.caption1, color = DeepBlushInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text("Failed: ${failItem.body.ifBlank { failItem.reason }}", style = XMaxType.caption1, color = palette.blushInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         TextButton(onClick = { chatViewModel.retryFailedMessage(failItem, member) }) { Text("Retry", style = XMaxType.buttonCompact) }
                         IconButton(onClick = { chatViewModel.dismissFailedMessage(failItem.id) }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = palette.blushInk, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -1318,7 +1341,7 @@ private fun EnhancedChatThreadView(
             // Bottom Composer Stack
             if (!canPostInChannel) {
                 Surface(
-                    color = MutedSurface.copy(alpha = 0.94f),
+                    color = palette.surfaceMuted.copy(alpha = 0.94f),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(14.dp),
@@ -1327,7 +1350,7 @@ private fun EnhancedChatThreadView(
                     Text(
                         text = "Only group administrators can send messages in this channel.",
                         style = XMaxType.footnote,
-                        color = StudioTextSecondary,
+                        color = palette.textSecondary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(14.dp)
                     )
@@ -1367,12 +1390,13 @@ private fun EnhancedChatThreadView(
                     // Reply / Edit Preview Banner
                     val bannerTarget = replyTarget ?: editingMsg
                     if (bannerTarget != null) {
-                        Surface(shape = RoundedCornerShape(12.dp), color = PureWhite.copy(alpha = 0.92f), border = BorderStroke(1.dp, SubtleOutline), modifier = Modifier.fillMaxWidth()) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = palette.surface.copy(alpha = 0.95f), border = BorderStroke(1.dp, palette.outline), modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(if (editingMsg != null) Icons.Default.Edit else Icons.AutoMirrored.Filled.Reply, null, tint = VioletPrimary, modifier = Modifier.size(16.dp))
                                 Text(
                                     text = if (editingMsg != null) "Editing: ${editingMsg!!.body}" else "Replying to ${bannerTarget.senderName.substringBefore(" ")}: ${bannerTarget.body.ifBlank { bannerTarget.attachmentName }}",
                                     style = XMaxType.caption1,
+                                    color = palette.textPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
@@ -1387,7 +1411,7 @@ private fun EnhancedChatThreadView(
                                     },
                                     modifier = Modifier.size(24.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = palette.textSecondary, modifier = Modifier.size(14.dp))
                                 }
                             }
                         }
@@ -1402,12 +1426,12 @@ private fun EnhancedChatThreadView(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             stagedAttachments.forEach { att ->
-                                Surface(shape = RoundedCornerShape(12.dp), color = PureWhite, border = BorderStroke(1.dp, SubtleOutline)) {
+                                Surface(shape = RoundedCornerShape(12.dp), color = palette.surface, border = BorderStroke(1.dp, palette.outline)) {
                                     Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("${att.fileName.take(18)} (${ChatFileManager.formatFileSize(att.sizeBytes)})", style = XMaxType.caption1Semibold.tabular())
+                                        Text("${att.fileName.take(18)} (${ChatFileManager.formatFileSize(att.sizeBytes)})", style = XMaxType.caption1Semibold.tabular(), color = palette.textPrimary)
                                         if (att.isHd) Text("HD", style = XMaxType.caption2Medium, color = VioletPrimary)
                                         IconButton(onClick = { chatViewModel.removeStagedAttachment(att.id) }, modifier = Modifier.size(20.dp)) {
-                                            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = palette.textSecondary, modifier = Modifier.size(14.dp))
                                         }
                                     }
                                 }
@@ -1417,18 +1441,18 @@ private fun EnhancedChatThreadView(
 
                     // Active Voice Recording OR Voice Preview & Transcription Bar
                     if (isRecordingAudio) {
-                        Surface(shape = RoundedCornerShape(18.dp), color = SoftBlush, border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
+                        Surface(shape = RoundedCornerShape(18.dp), color = palette.blushBg, border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Icon(Icons.Default.Mic, null, tint = CrimsonBlocked)
                                 Text(
                                     text = "Recording ${String.format("%02d:%02d", recordingSec / 60, recordingSec % 60)}…",
                                     style = XMaxType.monoTimer,
-                                    color = DeepBlushInk,
+                                    color = palette.blushInk,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Button(
                                     onClick = { chatViewModel.stopRecordingForPreview(channel.id, member.uid, member.fullName) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                                 ) { Text("Stop & Preview", style = XMaxType.buttonCompact) }
                             }
                         }
@@ -1436,13 +1460,13 @@ private fun EnhancedChatThreadView(
                         val draft = voicePreview!!
                         val playback by ChatAudioManager.playbackState.collectAsStateWithLifecycle()
                         val previewPlaying = playback.activeKey == "draft_preview" && playback.isPlaying
-                        Surface(shape = RoundedCornerShape(18.dp), color = PureWhite, border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
+                        Surface(shape = RoundedCornerShape(18.dp), color = palette.surface, border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     IconButton(onClick = { ChatAudioManager.togglePlay("draft_preview", draft.file) }) {
                                         Icon(if (previewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Preview", tint = EmeraldApproved)
                                     }
-                                    Text("Voice Preview (${(draft.durationMs / 1000L).coerceAtLeast(1L)}s)", style = XMaxType.subheadlineSemibold.tabular(), modifier = Modifier.weight(1f))
+                                    Text("Voice Preview (${(draft.durationMs / 1000L).coerceAtLeast(1L)}s)", style = XMaxType.subheadlineSemibold.tabular(), color = palette.textPrimary, modifier = Modifier.weight(1f))
                                     TextButton(onClick = { chatViewModel.transcribeVoiceIntoDraft(context) }, enabled = !isTranscribing) {
                                         Text(if (isTranscribing) "Listening…" else "Transcribe", style = XMaxType.buttonCompact)
                                     }
@@ -1457,16 +1481,16 @@ private fun EnhancedChatThreadView(
                                             }
                                         },
                                         shape = CircleShape,
-                                        color = ObsidianCharcoal,
+                                        color = palette.buttonPrimaryBg,
                                         modifier = Modifier.size(38.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send Voice Note", tint = PureWhite, modifier = Modifier.size(18.dp))
+                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send Voice Note", tint = palette.buttonPrimaryFg, modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
                                 if (draft.transcript.isNotBlank()) {
-                                    Text("Transcript: ${draft.transcript}", style = XMaxType.caption1, color = StudioTextSecondary)
+                                    Text("Transcript: ${draft.transcript}", style = XMaxType.caption1, color = palette.textSecondary)
                                 }
                             }
                         }
@@ -1476,7 +1500,8 @@ private fun EnhancedChatThreadView(
                     val canSend = composerText.isNotBlank() || stagedAttachments.isNotEmpty()
                     Surface(
                         shape = RoundedCornerShape(26.dp),
-                        color = Color(0xFFF2F4F7),
+                        color = palette.surfaceMuted,
+                        border = BorderStroke(1.dp, palette.outline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -1498,16 +1523,20 @@ private fun EnhancedChatThreadView(
 
                             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                                 if (composerText.isEmpty()) {
-                                    Text("Message", style = XMaxType.body, color = Color(0xFF94A3B8))
+                                    Text("Message", style = XMaxType.body, color = palette.textSecondary)
                                 }
                                 BasicTextField(
                                     value = composerText,
                                     onValueChange = { next ->
                                         composerText = next
-                                        if (next.isNotBlank()) chatViewModel.notifyTyping(channel.id, member.uid, member.fullName)
+                                        if (next.isNotBlank()) {
+                                            chatViewModel.notifyTyping(channel.id, member.uid, member.fullName)
+                                        } else {
+                                            chatViewModel.setTyping(channel.id, member.uid, member.fullName, false)
+                                        }
                                     },
-                                    textStyle = XMaxType.body.copy(color = ObsidianCharcoal),
-                                    cursorBrush = SolidColor(ObsidianCharcoal),
+                                    textStyle = XMaxType.body.copy(color = palette.textPrimary),
+                                    cursorBrush = SolidColor(palette.textPrimary),
                                     maxLines = 4,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1522,10 +1551,10 @@ private fun EnhancedChatThreadView(
                                 },
                                 modifier = Modifier.size(34.dp)
                             ) {
-                                Icon(Icons.Default.Face, contentDescription = "Emoji", tint = Color(0xFF64748B), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Face, contentDescription = "Emoji", tint = palette.textSecondary, modifier = Modifier.size(20.dp))
                             }
                             IconButton(onClick = onCamera, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = Color(0xFF64748B), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = palette.textSecondary, modifier = Modifier.size(20.dp))
                             }
 
                             if (!canSend && editingMsg == null) {
@@ -1548,6 +1577,7 @@ private fun EnhancedChatThreadView(
                                     onClick = {
                                         if (canSend && !isProcessingFile && !isUploading) {
                                             val mentionUids = mentionCandidates.map { it.uid }
+                                            chatViewModel.setTyping(channel.id, member.uid, member.fullName, false)
                                             chatViewModel.sendMessage(
                                                 channelId = channel.id,
                                                 body = composerText,
@@ -1563,7 +1593,7 @@ private fun EnhancedChatThreadView(
                                     },
                                     enabled = canSend && !isProcessingFile && !isUploading,
                                     shape = CircleShape,
-                                    color = ObsidianCharcoal,
+                                    color = palette.buttonPrimaryBg,
                                     modifier = Modifier
                                         .size(38.dp)
                                         .testTag("chat_thread_send_button")
@@ -1572,7 +1602,7 @@ private fun EnhancedChatThreadView(
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.Send,
                                             contentDescription = "Send",
-                                            tint = PureWhite,
+                                            tint = palette.buttonPrimaryFg,
                                             modifier = Modifier.size(17.dp)
                                         )
                                     }
@@ -1791,9 +1821,9 @@ private fun EnhancedChatThreadView(
     if (showDeleteThreadConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteThreadConfirm = false },
-            containerColor = PureWhite,
-            title = { Text("Delete chat thread?", style = XMaxType.secondaryTitle) },
-            text = { Text("Permanently delete ${formatTitleCase(channel.title)} and every message in it?", style = XMaxType.body) },
+            containerColor = palette.surface,
+            title = { Text("Delete chat thread?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("Permanently delete ${formatTitleCase(channel.title)} and every message in it?", style = XMaxType.body, color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = { showDeleteThreadConfirm = false; onDeleteChannel() },
@@ -1801,6 +1831,33 @@ private fun EnhancedChatThreadView(
                 ) { Text("Delete Thread", style = XMaxType.buttonCompact) }
             },
             dismissButton = { TextButton(onClick = { showDeleteThreadConfirm = false }) { Text("Cancel", style = XMaxType.buttonCompact) } }
+        )
+    }
+
+    if (showVideoCallDialog) {
+        val peerMembers = remember(channel.participantUids, state.members, member.uid) {
+            state.members.filter { it.uid != member.uid && it.uid in channel.participantUids }
+        }
+        ChatVideoCallDialog(
+            channel = channel,
+            myMember = member,
+            peerMembers = peerMembers,
+            onDismiss = { showVideoCallDialog = false },
+            onCallCompleted = { durationSec ->
+                val durationLabel = if (durationSec > 0) {
+                    val m = durationSec / 60
+                    val s = durationSec % 60
+                    if (m > 0) "${m}m ${s}s" else "${s}s"
+                } else "Missed"
+                chatViewModel.sendRichOptions(
+                    channel.id,
+                    "Video call ended • $durationLabel",
+                    member,
+                    SendMessageOptions(
+                        kind = ChatMessageKind.SYSTEM
+                    )
+                )
+            }
         )
     }
 }
@@ -1816,10 +1873,11 @@ private fun ChannelPickerBottomSheet(
     onNewChannel: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
-        contentColor = ObsidianCharcoal
+        containerColor = palette.surface,
+        contentColor = palette.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -1835,13 +1893,13 @@ private fun ChannelPickerBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Workspace Channels", style = XMaxType.secondaryTitle)
-                    Text("General, groups, projects, departments & DMs", style = XMaxType.footnote, color = StudioTextSecondary)
+                    Text("Workspace Channels", style = XMaxType.secondaryTitle, color = palette.textPrimary)
+                    Text("General, groups, projects, departments & DMs", style = XMaxType.footnote, color = palette.textSecondary)
                 }
                 FilledTonalButton(
                     onClick = onNewChannel,
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
@@ -1860,7 +1918,7 @@ private fun ChannelPickerBottomSheet(
                 Surface(
                     onClick = { onSelectChannel(ch) },
                     shape = RoundedCornerShape(18.dp),
-                    color = if (selected) VioletSoftBg else MutedSurface,
+                    color = if (selected) palette.softVioletBg else palette.surfaceMuted,
                     border = if (selected) BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.45f)) else null,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1873,17 +1931,17 @@ private fun ChannelPickerBottomSheet(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(CircleShape)
-                                .background(if (selected) ObsidianCharcoal else PureWhite),
+                                .background(if (selected) palette.buttonPrimaryBg else palette.surface),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(symbol, style = XMaxType.headline, color = if (selected) PureWhite else ObsidianCharcoal)
+                            Text(symbol, style = XMaxType.headline, color = if (selected) palette.buttonPrimaryFg else palette.textPrimary)
                         }
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(formatTitleCase(ch.title), style = XMaxType.headline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(ch.lastMessagePreview.ifBlank { ch.topic }, style = XMaxType.footnote, color = StudioTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(formatTitleCase(ch.title), style = XMaxType.headline, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(ch.lastMessagePreview.ifBlank { ch.topic }, style = XMaxType.footnote, color = palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         if (ch.messageCount > 0) {
-                            StatusPill(label = "${ch.messageCount}", containerColor = PureWhite, contentColor = ObsidianCharcoal)
+                            StatusPill(label = "${ch.messageCount}", containerColor = palette.surface, contentColor = palette.textPrimary)
                         }
                         if (isSuperAdmin && ch.id != ChatRepository.GENERAL_CHANNEL_ID) {
                             IconButton(
@@ -1909,6 +1967,7 @@ private fun CreateChatChannelDialog(
     onCreate: (title: String, topic: String, type: ChatChannelType, project: Project?, onCreated: () -> Unit, onError: (String) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     var title by remember { mutableStateOf("") }
     var topic by remember { mutableStateOf("") }
     var selectedProject by remember { mutableStateOf<Project?>(null) }
@@ -1917,13 +1976,13 @@ private fun CreateChatChannelDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
-        containerColor = PureWhite,
-        title = { Text("New Team Channel", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+        containerColor = palette.surface,
+        title = { Text("New Team Channel", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (!errorMessage.isNullOrBlank()) {
-                    Surface(shape = RoundedCornerShape(12.dp), color = SoftBlush, modifier = Modifier.fillMaxWidth()) {
-                        Text(errorMessage.orEmpty(), style = XMaxType.footnote, color = DeepBlushInk, modifier = Modifier.padding(10.dp))
+                    Surface(shape = RoundedCornerShape(12.dp), color = palette.blushBg, modifier = Modifier.fillMaxWidth()) {
+                        Text(errorMessage.orEmpty(), style = XMaxType.footnote, color = palette.blushInk, modifier = Modifier.padding(10.dp))
                     }
                 }
                 OutlinedTextField(
@@ -1947,7 +2006,7 @@ private fun CreateChatChannelDialog(
                     modifier = Modifier.fillMaxWidth().testTag("new_channel_topic_input")
                 )
                 if (projects.isNotEmpty()) {
-                    Text("Or link a Project:", style = XMaxType.caption1Semibold, color = StudioTextSecondary)
+                    Text("Or link a Project:", style = XMaxType.caption1Semibold, color = palette.textSecondary)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1989,11 +2048,11 @@ private fun CreateChatChannelDialog(
                     )
                 },
                 enabled = !isSubmitting && (title.isNotBlank() || selectedProject != null),
-                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                 modifier = Modifier.testTag("confirm_create_channel_button")
             ) {
                 if (isSubmitting) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PureWhite)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = palette.buttonPrimaryFg)
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(if (isSubmitting) "Creating…" else "Create", style = XMaxType.buttonCompact)

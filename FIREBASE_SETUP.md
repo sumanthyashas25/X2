@@ -2,8 +2,8 @@
 
 ## 1. Firebase Project & Database Configuration
 - **Package Name (`applicationId`)**: `com.aistudio.xmax.krmxpq`
-- **Firebase Project ID**: `gen-lang-client-0410091917`
-- **Named Firestore Database ID**: `ai-studio-android-xteam-52a1be4f-f358-4190-91b3-cc887128007a`
+- **Firebase Project ID**: `gen-lang-client-0137668580`
+- **Named Firestore Database ID**: `ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed`
   (Configured in `app/src/main/res/values/firebase_applet_config.xml` and `app/google-services.json`).
 - **Authentication**: Google Sign-In via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`) + Firebase Authentication (`GoogleAuthProvider`). Anonymous sign-in is disabled and prohibited.
 - **Database Initialization**: Every Firestore call resolves the named database via `FirebaseFirestore.getInstance(context.getString(R.string.firestore_database_id))`.

@@ -233,6 +233,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         rtdb.setTyping(coreRepo.companyId, channelId, uid, senderName, true)
     }
 
+    fun setTyping(channelId: String, myUid: String, senderName: String, isTyping: Boolean) {
+        val uid = myUid.ifBlank { currentMyUid }
+        if (uid.isBlank() || channelId.isBlank()) return
+        rtdb.setTyping(coreRepo.companyId, channelId, uid, senderName, isTyping)
+    }
+
     fun startVoiceRecording(context: Context, channelId: String, myUid: String, senderName: String) {
         val res = ChatAudioManager.startRecording(context)
         res.onSuccess {

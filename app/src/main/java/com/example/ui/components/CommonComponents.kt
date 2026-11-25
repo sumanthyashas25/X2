@@ -88,6 +88,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -167,7 +168,7 @@ fun formatTitleCase(text: String): String {
 @Composable
 fun XMaxLogoImage(
     modifier: Modifier = Modifier,
-    tint: Color? = ObsidianCharcoal,
+    tint: Color? = XMaxTheme.colors.textPrimary,
     height: Dp = 20.dp,
     contentDescription: String? = "X.MAX Logo"
 ) {
@@ -184,7 +185,7 @@ fun XMaxLogoImage(
 fun XMaxWordmarkBadge(
     companyName: String,
     modifier: Modifier = Modifier,
-    tint: Color = ObsidianCharcoal
+    tint: Color = XMaxTheme.colors.textPrimary
 ) {
     val clean = companyName.trim()
     val suffix = when {
@@ -210,24 +211,24 @@ fun XMaxWordmarkBadge(
     }
 }
 
-private val AvatarPalette = listOf(
-    Color(0xFF1D1F26) to PureWhite,
-    InfoPillBg to InfoPillInk,
-    SoftMint to DeepMintInk,
-    ButterYellow to DeepAmberInk,
-    MutedSurface to ObsidianCharcoal
-)
-
 @Composable
 fun StudioAvatar(
     name: String,
     size: Dp = 38.dp,
-    borderColor: Color = PureWhite,
+    borderColor: Color = XMaxTheme.colors.surface,
     photoBase64: String = "",
     showEditBadge: Boolean = false,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
+    val avatarPalette = listOf(
+        Color(0xFF1D1F26) to PureWhite,
+        palette.infoBg to palette.infoInk,
+        palette.mintBg to palette.mintInk,
+        palette.butterBg to palette.butterInk,
+        palette.surfaceMuted to palette.textPrimary
+    )
     val clean = name.trim().ifBlank { "X" }
     val parts = clean.split(" ").filter { it.isNotBlank() }
     val initials = when {
@@ -235,7 +236,7 @@ fun StudioAvatar(
         clean.length >= 2 -> clean.take(2).uppercase()
         else -> clean.uppercase()
     }
-    val (bg, fg) = AvatarPalette[abs(clean.hashCode()) % AvatarPalette.size]
+    val (bg, fg) = avatarPalette[abs(clean.hashCode()) % avatarPalette.size]
     val decodedBitmap = remember(photoBase64) {
         ChatFileManager.decodeBase64Bitmap(photoBase64)?.asImageBitmap()
     }
@@ -275,14 +276,14 @@ fun StudioAvatar(
                     .align(Alignment.BottomEnd)
                     .size(16.dp)
                     .clip(CircleShape)
-                    .background(PureWhite)
-                    .border(1.dp, SubtleOutline, CircleShape),
+                    .background(palette.surface)
+                    .border(1.dp, palette.outline, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Filled.Edit,
                     contentDescription = null,
-                    tint = ObsidianCharcoal,
+                    tint = palette.textPrimary,
                     modifier = Modifier.size(9.dp)
                 )
             }
@@ -488,7 +489,7 @@ fun OverlappingAvatarMembers(
             Text(
                 text = "+$overflow",
                 style = XMaxType.caption1Semibold.tabular(),
-                color = ObsidianCharcoal
+                color = XMaxTheme.colors.textPrimary
             )
         }
     }
@@ -662,6 +663,7 @@ fun ProfilePhotoDialog(
     onRemovePhoto: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = XMaxTheme.colors
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -672,12 +674,12 @@ fun ProfilePhotoDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = PureWhite,
+        containerColor = palette.surfaceElevated,
         title = {
             Text(
                 text = "Profile Photo",
                 style = XMaxType.secondaryTitle,
-                color = ObsidianCharcoal
+                color = palette.textPrimary
             )
         },
         text = {
@@ -689,26 +691,26 @@ fun ProfilePhotoDialog(
                 StudioAvatar(
                     name = member.fullName,
                     size = 104.dp,
-                    borderColor = SubtleOutline,
+                    borderColor = palette.outline,
                     photoBase64 = member.photoBase64
                 )
                 Text(
                     text = formatTitleCase(member.fullName.ifBlank { "Member" }),
                     style = XMaxType.headline,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     textAlign = TextAlign.Center
                 )
                 if (member.jobRoleName.isNotBlank()) {
                     StatusPill(
                         label = formatTitleCase(member.jobRoleName),
-                        containerColor = MutedSurface,
-                        contentColor = ObsidianCharcoal
+                        containerColor = palette.surfaceMuted,
+                        contentColor = palette.textPrimary
                     )
                 }
                 Text(
                     text = "Update your avatar across chats, project cards, and team directories.",
                     style = XMaxType.footnote,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     textAlign = TextAlign.Center
                 )
                 Button(
@@ -719,8 +721,8 @@ fun ProfilePhotoDialog(
                     },
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ObsidianCharcoal,
-                        contentColor = PureWhite
+                        containerColor = palette.buttonPrimaryBg,
+                        contentColor = palette.buttonPrimaryFg
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -735,8 +737,8 @@ fun ProfilePhotoDialog(
                     OutlinedButton(
                         onClick = onRemovePhoto,
                         shape = RoundedCornerShape(999.dp),
-                        border = BorderStroke(1.dp, DeepBlushInk.copy(alpha = 0.4f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DeepBlushInk),
+                        border = BorderStroke(1.dp, palette.blushInk.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.blushInk),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
@@ -751,7 +753,7 @@ fun ProfilePhotoDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", style = XMaxType.buttonCompact, color = ObsidianCharcoal)
+                Text("Close", style = XMaxType.buttonCompact, color = palette.textPrimary)
             }
         }
     )
@@ -776,6 +778,7 @@ fun ProfileOverviewDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val palette = XMaxTheme.colors
 
     var step by remember { mutableStateOf(ProfileDialogStep.OVERVIEW) }
     var loadingSourceLabel by remember { mutableStateOf("image") }
@@ -853,7 +856,7 @@ fun ProfileOverviewDialog(
 
     AlertDialog(
         onDismissRequest = { onDismiss() },
-        containerColor = PureWhite,
+        containerColor = palette.surface,
         shape = RoundedCornerShape(28.dp),
         title = {
             Row(
@@ -870,7 +873,7 @@ fun ProfileOverviewDialog(
                         ProfileDialogStep.SUCCESS -> "Photo Updated"
                     },
                     style = XMaxType.secondaryTitle,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
                 if (step == ProfileDialogStep.OVERVIEW) {
                     IconButton(
@@ -882,7 +885,7 @@ fun ProfileOverviewDialog(
                         Icon(
                             imageVector = Icons.Filled.Edit,
                             contentDescription = "Edit Profile Photo",
-                            tint = if (showPhotoControls) VioletPrimary else ObsidianCharcoal,
+                            tint = if (showPhotoControls) VioletPrimary else palette.textPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -900,7 +903,7 @@ fun ProfileOverviewDialog(
                 if (!validationError.isNullOrBlank()) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = SoftBlush,
+                        color = palette.blushBg,
                         border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.35f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -910,7 +913,7 @@ fun ProfileOverviewDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = CrimsonBlocked, modifier = Modifier.size(16.dp))
-                            Text(validationError.orEmpty(), style = XMaxType.footnote, color = DeepBlushInk)
+                            Text(validationError.orEmpty(), style = XMaxType.footnote, color = palette.blushInk)
                         }
                     }
                 }
@@ -937,14 +940,14 @@ fun ProfileOverviewDialog(
                             StudioAvatar(
                                 name = member.fullName,
                                 size = 96.dp,
-                                borderColor = SubtleOutline,
+                                borderColor = palette.outline,
                                 photoBase64 = member.photoBase64,
                                 onClick = { showPhotoControls = !showPhotoControls }
                             )
                             Surface(
                                 onClick = { showPhotoControls = !showPhotoControls },
                                 shape = CircleShape,
-                                color = ObsidianCharcoal,
+                                color = palette.buttonPrimaryBg,
                                 shadowElevation = 4.dp,
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -955,7 +958,7 @@ fun ProfileOverviewDialog(
                                     Icon(
                                         imageVector = Icons.Filled.CameraAlt,
                                         contentDescription = "Edit Photo",
-                                        tint = PureWhite,
+                                        tint = palette.buttonPrimaryFg,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -969,14 +972,14 @@ fun ProfileOverviewDialog(
                             Text(
                                 text = formatTitleCase(member.fullName.ifBlank { "Member" }),
                                 style = XMaxType.headline,
-                                color = ObsidianCharcoal,
+                                color = palette.textPrimary,
                                 textAlign = TextAlign.Center
                             )
                             if (emailOrPhone.isNotBlank()) {
                                 Text(
                                     text = emailOrPhone,
                                     style = XMaxType.footnote,
-                                    color = StudioTextSecondary,
+                                    color = palette.textSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -988,13 +991,13 @@ fun ProfileOverviewDialog(
                         ) {
                             StatusPill(
                                 label = member.accessLevelEnum().label,
-                                containerColor = ObsidianCharcoal,
-                                contentColor = PureWhite
+                                containerColor = palette.buttonPrimaryBg,
+                                contentColor = palette.buttonPrimaryFg
                             )
                             if (member.jobRoleName.isNotBlank()) {
                                 StatusPill(
                                     label = formatTitleCase(member.jobRoleName),
-                                    containerColor = KpiLavenderBg,
+                                    containerColor = palette.lavenderBg,
                                     contentColor = VioletPrimary
                                 )
                             }
@@ -1002,7 +1005,7 @@ fun ProfileOverviewDialog(
 
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = MutedSurface,
+                            color = palette.surfaceMuted,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -1010,27 +1013,27 @@ fun ProfileOverviewDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Department", style = XMaxType.footnote, color = StudioTextSecondary)
+                                    Text("Department", style = XMaxType.footnote, color = palette.textSecondary)
                                     Text(
                                         member.departmentName.ifBlank { "Studio General" },
                                         style = XMaxType.footnoteSemibold,
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Workspace Scope", style = XMaxType.footnote, color = StudioTextSecondary)
+                                    Text("Workspace Scope", style = XMaxType.footnote, color = palette.textSecondary)
                                     Text(
                                         member.scopeTypeEnum().label,
                                         style = XMaxType.footnoteSemibold,
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Status", style = XMaxType.footnote, color = StudioTextSecondary)
+                                    Text("Status", style = XMaxType.footnote, color = palette.textSecondary)
                                     Text(
                                         member.statusEnum().label,
                                         style = XMaxType.footnoteSemibold,
-                                        color = DeepMintInk
+                                        color = palette.mintInk
                                     )
                                 }
                             }
@@ -1054,8 +1057,8 @@ fun ProfileOverviewDialog(
                                         shape = RoundedCornerShape(999.dp),
                                         contentPadding = PaddingValues(horizontal = 10.dp),
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = ObsidianCharcoal,
-                                            contentColor = PureWhite
+                                            containerColor = palette.buttonPrimaryBg,
+                                            contentColor = palette.buttonPrimaryFg
                                         ),
                                         modifier = Modifier
                                             .weight(1f)
@@ -1093,8 +1096,8 @@ fun ProfileOverviewDialog(
                                     OutlinedButton(
                                         onClick = onRemovePhoto,
                                         shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(1.dp, DeepBlushInk.copy(alpha = 0.4f)),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DeepBlushInk),
+                                        border = BorderStroke(1.dp, palette.blushInk.copy(alpha = 0.4f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.blushInk),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(44.dp)
@@ -1129,26 +1132,26 @@ fun ProfileOverviewDialog(
                                 ) {
                                     CircularProgressIndicator(
                                         color = VioletPrimary,
-                                        trackColor = VioletSoftBg,
+                                        trackColor = palette.softVioletBg,
                                         strokeWidth = 3.dp,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                     Icon(
                                         imageVector = Icons.Filled.CameraAlt,
                                         contentDescription = null,
-                                        tint = ObsidianCharcoal.copy(alpha = pulseAlpha),
+                                        tint = palette.textPrimary.copy(alpha = pulseAlpha),
                                         modifier = Modifier.size(26.dp)
                                     )
                                 }
                                 Text(
                                     text = "Optimizing $loadingSourceLabel…",
                                     style = XMaxType.subheadlineSemibold,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                                 Text(
                                     text = "Correcting orientation and preparing square crop",
                                     style = XMaxType.footnote,
-                                    color = StudioTextSecondary,
+                                    color = palette.textSecondary,
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(Modifier.height(6.dp))
@@ -1194,8 +1197,8 @@ fun ProfileOverviewDialog(
 
                                     StatusPill(
                                         label = "Square Crop • ${preview.width}×${preview.height} px • Ready",
-                                        containerColor = SoftMint,
-                                        contentColor = DeepMintInk
+                                        containerColor = palette.mintBg,
+                                        contentColor = palette.mintInk
                                     )
 
                                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1203,14 +1206,14 @@ fun ProfileOverviewDialog(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Zoom", style = XMaxType.caption1Medium, color = StudioTextSecondary)
-                                            Text("${"%.1f".format(cropZoom)}×", style = XMaxType.caption1Semibold.tabular(), color = ObsidianCharcoal)
+                                            Text("Zoom", style = XMaxType.caption1Medium, color = palette.textSecondary)
+                                            Text("${"%.1f".format(cropZoom)}×", style = XMaxType.caption1Semibold.tabular(), color = palette.textPrimary)
                                         }
                                         Slider(
                                             value = cropZoom,
                                             onValueChange = { cropZoom = it },
                                             valueRange = 1f..2.5f,
-                                            colors = SliderDefaults.colors(thumbColor = ObsidianCharcoal, activeTrackColor = VioletPrimary)
+                                            colors = SliderDefaults.colors(thumbColor = palette.textPrimary, activeTrackColor = VioletPrimary)
                                         )
                                     }
 
@@ -1225,9 +1228,9 @@ fun ProfileOverviewDialog(
                                             },
                                             shape = RoundedCornerShape(999.dp),
                                             contentPadding = PaddingValues(horizontal = 10.dp),
-                                            border = BorderStroke(1.dp, SubtleOutline),
+                                            border = BorderStroke(1.dp, palette.outline),
                                             modifier = Modifier.weight(1f).height(46.dp)
-                                        ) { Text("Back", style = XMaxType.buttonCompact, color = ObsidianCharcoal, maxLines = 1) }
+                                        ) { Text("Back", style = XMaxType.buttonCompact, color = palette.textPrimary, maxLines = 1) }
 
                                         Button(
                                             onClick = {
@@ -1254,7 +1257,7 @@ fun ProfileOverviewDialog(
                                             },
                                             shape = RoundedCornerShape(999.dp),
                                             contentPadding = PaddingValues(horizontal = 10.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .height(46.dp)
@@ -1272,18 +1275,18 @@ fun ProfileOverviewDialog(
                                 Spacer(Modifier.height(8.dp))
                                 CircularProgressIndicator(
                                     color = VioletPrimary,
-                                    trackColor = VioletSoftBg,
+                                    trackColor = palette.softVioletBg,
                                     modifier = Modifier.testTag("profile_photo_uploading_indicator")
                                 )
                                 Text(
                                     text = "Saving your profile photo…",
                                     style = XMaxType.subheadlineSemibold,
-                                    color = ObsidianCharcoal
+                                    color = palette.textPrimary
                                 )
                                 Text(
                                     text = "Compressing & updating workspace profile record…",
                                     style = XMaxType.footnote,
-                                    color = StudioTextSecondary,
+                                    color = palette.textSecondary,
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(Modifier.height(6.dp))
@@ -1292,7 +1295,7 @@ fun ProfileOverviewDialog(
                             ProfileDialogStep.SUCCESS -> {
                                 Surface(
                                     shape = CircleShape,
-                                    color = SoftMint,
+                                    color = palette.mintBg,
                                     modifier = Modifier.size(58.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -1302,12 +1305,12 @@ fun ProfileOverviewDialog(
                                 Text(
                                     text = "Photo updated successfully",
                                     style = XMaxType.subheadlineSemibold,
-                                    color = DeepMintInk
+                                    color = palette.mintInk
                                 )
                                 Text(
                                     text = "Refreshed across your workspace.",
                                     style = XMaxType.footnote,
-                                    color = StudioTextSecondary,
+                                    color = palette.textSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -1328,18 +1331,18 @@ fun ProfileOverviewDialog(
                             }
                         }
                         TextButton(onClick = onDismiss) {
-                            Text("Close", style = XMaxType.buttonCompact, color = ObsidianCharcoal)
+                            Text("Close", style = XMaxType.buttonCompact, color = palette.textPrimary)
                         }
                     }
                 }
                 ProfileDialogStep.LOADING_PHOTO -> {
                     TextButton(onClick = { step = ProfileDialogStep.OVERVIEW }) {
-                        Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary)
+                        Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary)
                     }
                 }
                 ProfileDialogStep.UPLOADING -> {
                     TextButton(onClick = { step = ProfileDialogStep.CROP_PREVIEW }) {
-                        Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary)
+                        Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary)
                     }
                 }
                 else -> Unit
@@ -1354,11 +1357,12 @@ fun LavenderGridCard(
     cornerRadius: Dp = 24.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(cornerRadius),
-        color = MutedSurface,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surfaceMuted,
+        border = BorderStroke(1.dp, palette.outline),
         shadowElevation = 0.dp
     ) {
         Column(
@@ -1379,11 +1383,12 @@ fun MonochromeSearchBar(
     filterActive: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(999.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline)
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline)
     ) {
         Row(
             modifier = Modifier
@@ -1396,7 +1401,7 @@ fun MonochromeSearchBar(
             Icon(
                 imageVector = Icons.Filled.Search,
                 contentDescription = "Search",
-                tint = StudioTextSecondary,
+                tint = palette.textSecondary,
                 modifier = Modifier.size(20.dp)
             )
             Box(
@@ -1407,7 +1412,7 @@ fun MonochromeSearchBar(
                     Text(
                         text = placeholder,
                         style = XMaxType.body,
-                        color = StudioTextSecondary,
+                        color = palette.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1416,8 +1421,8 @@ fun MonochromeSearchBar(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
-                    textStyle = XMaxType.body.copy(color = ObsidianCharcoal),
-                    cursorBrush = SolidColor(ObsidianCharcoal),
+                    textStyle = XMaxType.body.copy(color = palette.textPrimary),
+                    cursorBrush = SolidColor(palette.textPrimary),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -1426,7 +1431,7 @@ fun MonochromeSearchBar(
                     Surface(
                         onClick = onFilterClick,
                         shape = CircleShape,
-                        color = ObsidianCharcoal,
+                        color = palette.buttonPrimaryBg,
                         modifier = Modifier
                             .size(40.dp)
                             .testTag("search_filter_button")
@@ -1435,7 +1440,7 @@ fun MonochromeSearchBar(
                             Icon(
                                 imageVector = Icons.Filled.Tune,
                                 contentDescription = "Filter",
-                                tint = PureWhite,
+                                tint = palette.buttonPrimaryFg,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1447,7 +1452,7 @@ fun MonochromeSearchBar(
                                 .padding(2.dp)
                                 .size(9.dp)
                                 .clip(CircleShape)
-                                .background(InfoPillInk)
+                                .background(palette.accentViolet)
                         )
                     }
                 }
@@ -1468,8 +1473,9 @@ fun StepProgressTimeline(
     modifier: Modifier = Modifier
 ) {
     if (steps.isEmpty()) return
+    val palette = XMaxTheme.colors
     val lastCompletedIdx = steps.indexOfLast { it.completed }
-    val inactiveColor = Color(0xFFD5D8DF)
+    val inactiveColor = palette.outline
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1496,7 +1502,7 @@ fun StepProgressTimeline(
                         val x2 = (i + 1) * stepW
                         val activeSeg = i < lastCompletedIdx
                         drawLine(
-                            color = if (activeSeg) ObsidianCharcoal else inactiveColor,
+                            color = if (activeSeg) palette.buttonPrimaryBg else inactiveColor,
                             start = Offset(x1, cy),
                             end = Offset(x2, cy),
                             strokeWidth = 2.6.dp.toPx(),
@@ -1527,21 +1533,21 @@ fun StepProgressTimeline(
                                 modifier = Modifier
                                     .size(22.dp)
                                     .clip(CircleShape)
-                                    .background(PureWhite)
-                                    .border(2.2.dp, ObsidianCharcoal, CircleShape),
+                                    .background(palette.surface)
+                                    .border(2.2.dp, palette.buttonPrimaryBg, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(14.dp)
                                         .clip(CircleShape)
-                                        .background(ObsidianCharcoal),
+                                        .background(palette.buttonPrimaryBg),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Check,
                                         contentDescription = null,
-                                        tint = PureWhite,
+                                        tint = palette.buttonPrimaryFg,
                                         modifier = Modifier.size(9.dp)
                                     )
                                 }
@@ -1581,7 +1587,7 @@ fun StepProgressTimeline(
                     Text(
                         text = step.label,
                         style = if (step.completed) XMaxType.caption1Semibold else XMaxType.caption1Medium,
-                        color = if (step.completed) ObsidianCharcoal else StudioTextSecondary,
+                        color = if (step.completed) palette.textPrimary else palette.textSecondary,
                         textAlign = textAlign,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -1590,7 +1596,7 @@ fun StepProgressTimeline(
                         Text(
                             text = step.subLabel,
                             style = XMaxType.caption2,
-                            color = StudioTextSecondary,
+                            color = palette.textSecondary,
                             textAlign = textAlign,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1615,10 +1621,11 @@ fun DetailKeyValueCard(
     rows: List<DetailKeyValueRow>,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = MutedSurface
+        color = palette.surfaceMuted
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -1632,20 +1639,20 @@ fun DetailKeyValueCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = StudioTextSecondary,
+                    tint = palette.textSecondary,
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = formatTitleCase(title),
                     style = XMaxType.headline,
-                    color = ObsidianCharcoal
+                    color = palette.textPrimary
                 )
             }
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                color = PureWhite
+                color = palette.surface
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1660,7 +1667,7 @@ fun DetailKeyValueCard(
                             Text(
                                 text = row.label,
                                 style = XMaxType.footnote,
-                                color = StudioTextSecondary,
+                                color = palette.textSecondary,
                                 modifier = Modifier.padding(end = 12.dp)
                             )
                             if (row.isWarning) {
@@ -1685,7 +1692,7 @@ fun DetailKeyValueCard(
                                 Text(
                                     text = row.value,
                                     style = XMaxType.subheadlineSemibold.tabular(),
-                                    color = ObsidianCharcoal,
+                                    color = palette.textPrimary,
                                     textAlign = TextAlign.End,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -1713,10 +1720,11 @@ fun VerticalTimelineLog(
     entries: List<VerticalTimelineEntry>,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        color = MutedSurface
+        color = palette.surfaceMuted
     ) {
         Column(
             modifier = Modifier
@@ -1730,7 +1738,7 @@ fun VerticalTimelineLog(
                     .width(38.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xFFC5C7CE))
+                    .background(palette.outline)
             )
 
             entries.forEachIndexed { idx, item ->
@@ -1746,13 +1754,13 @@ fun VerticalTimelineLog(
                         Text(
                             text = item.timeLabel,
                             style = XMaxType.footnoteSemibold.tabular(),
-                            color = ObsidianCharcoal
+                            color = palette.textPrimary
                         )
                         if (item.dateLabel.isNotBlank()) {
                             Text(
                                 text = item.dateLabel,
                                 style = XMaxType.caption1.tabular(),
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                     }
@@ -1765,13 +1773,13 @@ fun VerticalTimelineLog(
                             modifier = Modifier
                                 .size(18.dp)
                                 .clip(CircleShape)
-                                .background(if (item.highlightRed) CrimsonBlocked else ObsidianCharcoal),
+                                .background(if (item.highlightRed) CrimsonBlocked else palette.buttonPrimaryBg),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = null,
-                                tint = PureWhite,
+                                tint = if (item.highlightRed) PureWhite else palette.buttonPrimaryFg,
                                 modifier = Modifier.size(11.dp)
                             )
                         }
@@ -1783,7 +1791,7 @@ fun VerticalTimelineLog(
                                     .padding(vertical = 3.dp)
                             ) {
                                 drawLine(
-                                    color = Color(0xFFB4B7C0),
+                                    color = palette.outline,
                                     start = Offset(size.width / 2f, 0f),
                                     end = Offset(size.width / 2f, size.height),
                                     strokeWidth = 1.5.dp.toPx(),
@@ -1796,7 +1804,7 @@ fun VerticalTimelineLog(
                     Text(
                         text = item.description,
                         style = XMaxType.subheadline,
-                        color = if (item.highlightRed) DeepBlushInk else ObsidianCharcoal,
+                        color = if (item.highlightRed) palette.blushInk else palette.textPrimary,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1853,10 +1861,11 @@ fun SegmentedPillTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(999.dp),
-        color = MutedSurface
+        color = palette.surfaceMuted
     ) {
         Row(
             modifier = Modifier.padding(4.dp),
@@ -1871,13 +1880,13 @@ fun SegmentedPillTabs(
                         .clip(RoundedCornerShape(999.dp))
                         .clickable { onSelect(idx) },
                     shape = RoundedCornerShape(999.dp),
-                    color = if (selected) ObsidianCharcoal else Color.Transparent
+                    color = if (selected) palette.buttonPrimaryBg else Color.Transparent
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = label,
                             style = if (selected) XMaxType.subheadlineSemibold else XMaxType.subheadlineMedium,
-                            color = if (selected) PureWhite else StudioTextSecondary,
+                            color = if (selected) palette.buttonPrimaryFg else palette.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1916,6 +1925,7 @@ fun SyncFeedbackChip(
     syncFeedback: SyncFeedback,
     hasPendingWrites: Boolean
 ) {
+    val palette = XMaxTheme.colors
     val effective = when {
         syncFeedback == SyncFeedback.ERROR -> SyncFeedback.ERROR
         syncFeedback == SyncFeedback.SAVING -> SyncFeedback.SAVING
@@ -1925,10 +1935,10 @@ fun SyncFeedbackChip(
     }
 
     val (label, icon, bg, fg) = when (effective) {
-        SyncFeedback.SAVING -> Quad("Saving", Icons.Filled.HourglassTop, InfoPillBg, InfoPillInk)
-        SyncFeedback.SAVED -> Quad("Synced", Icons.Filled.CheckCircle, SoftMint, DeepMintInk)
-        SyncFeedback.PENDING_SYNC -> Quad("Pending Sync", Icons.Filled.CloudQueue, ButterYellow, DeepAmberInk)
-        SyncFeedback.ERROR -> Quad("Sync Error", Icons.Filled.ErrorOutline, SoftBlush, DeepBlushInk)
+        SyncFeedback.SAVING -> Quad("Saving", Icons.Filled.HourglassTop, palette.infoBg, palette.infoInk)
+        SyncFeedback.SAVED -> Quad("Synced", Icons.Filled.CheckCircle, palette.mintBg, palette.mintInk)
+        SyncFeedback.PENDING_SYNC -> Quad("Pending Sync", Icons.Filled.CloudQueue, palette.amberBg, palette.amberInk)
+        SyncFeedback.ERROR -> Quad("Sync Error", Icons.Filled.ErrorOutline, palette.blushBg, palette.blushInk)
         SyncFeedback.IDLE -> return
     }
 
@@ -1956,11 +1966,12 @@ fun MetricStatCard(
     value: String,
     subtitle: String,
     icon: ImageVector,
-    containerColor: Color = MutedSurface,
-    accentColor: Color = ObsidianCharcoal,
+    containerColor: Color = XMaxTheme.colors.surfaceMuted,
+    accentColor: Color = XMaxTheme.colors.textPrimary,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
+    val palette = XMaxTheme.colors
     Card(
         modifier = modifier,
         onClick = onClick ?: {},
@@ -1968,7 +1979,7 @@ fun MetricStatCard(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor, disabledContainerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = if (containerColor == PureWhite) BorderStroke(1.dp, SubtleOutline) else null
+        border = BorderStroke(1.dp, palette.outline)
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -1982,7 +1993,7 @@ fun MetricStatCard(
                 Text(
                     text = title,
                     style = XMaxType.statLabel,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -1991,7 +2002,7 @@ fun MetricStatCard(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(PureWhite),
+                        .background(palette.surfaceElevated),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(15.dp))
@@ -2000,14 +2011,14 @@ fun MetricStatCard(
             Text(
                 text = value,
                 style = XMaxType.numericSection,
-                color = ObsidianCharcoal,
+                color = palette.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
                 style = XMaxType.footnote,
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2021,6 +2032,7 @@ fun SectionHeader(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
+    val palette = XMaxTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2031,7 +2043,7 @@ fun SectionHeader(
         Text(
             text = formatTitleCase(title),
             style = XMaxType.sectionHeading,
-            color = ObsidianCharcoal
+            color = palette.textPrimary
         )
         if (actionLabel != null && onAction != null) {
             TextButton(
@@ -2040,7 +2052,7 @@ fun SectionHeader(
             ) {
                 Text(
                     text = formatTitleCase(actionLabel),
-                    color = VioletPrimary,
+                    color = palette.accentViolet,
                     style = XMaxType.subheadlineSemibold
                 )
             }
@@ -2056,11 +2068,12 @@ fun EmptyStateCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null
 ) {
+    val palette = XMaxTheme.colors
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = PureWhite,
-        border = BorderStroke(1.dp, SubtleOutline),
+        color = palette.surface,
+        border = BorderStroke(1.dp, palette.outline),
         shadowElevation = 1.dp
     ) {
         Column(
@@ -2074,26 +2087,26 @@ fun EmptyStateCard(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(KpiLavenderBg),
+                    .background(palette.kpiLavenderBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    tint = VioletPrimary,
+                    tint = palette.accentViolet,
                     modifier = Modifier.size(22.dp)
                 )
             }
             Text(
                 formatTitleCase(title),
                 style = XMaxType.headline,
-                color = ObsidianCharcoal,
+                color = palette.textPrimary,
                 textAlign = TextAlign.Center
             )
             Text(
                 subtitle,
                 style = XMaxType.subheadline,
-                color = StudioTextSecondary,
+                color = palette.textSecondary,
                 textAlign = TextAlign.Center
             )
             if (actionLabel != null && onAction != null) {
@@ -2101,7 +2114,10 @@ fun EmptyStateCard(
                 Button(
                     onClick = onAction,
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.buttonPrimaryBg,
+                        contentColor = palette.buttonPrimaryFg
+                    )
                 ) {
                     Text(actionLabel, style = XMaxType.button)
                 }
@@ -2110,37 +2126,39 @@ fun EmptyStateCard(
     }
 }
 
-fun Modifier.pastelAmbientBackdrop(): Modifier = this
-    .background(CrispCanvas)
-    .drawBehind {
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFFE9E6FF).copy(alpha = 0.52f), Color.Transparent),
-                center = Offset(size.width * 0.22f, size.height * 0.08f),
-                radius = size.width * 0.72f
-            ),
-            radius = size.width * 0.72f,
-            center = Offset(size.width * 0.22f, size.height * 0.08f)
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFFFFEDE4).copy(alpha = 0.56f), Color.Transparent),
-                center = Offset(size.width * 0.88f, size.height * 0.14f),
-                radius = size.width * 0.65f
-            ),
-            radius = size.width * 0.65f,
-            center = Offset(size.width * 0.88f, size.height * 0.14f)
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFFE5F7EE).copy(alpha = 0.40f), Color.Transparent),
-                center = Offset(size.width * 0.55f, size.height * 0.30f),
-                radius = size.width * 0.68f
-            ),
-            radius = size.width * 0.68f,
-            center = Offset(size.width * 0.55f, size.height * 0.30f)
-        )
-    }
+fun Modifier.pastelAmbientBackdrop(): Modifier = composed {
+    val palette = XMaxTheme.colors
+    background(palette.canvas)
+        .drawBehind {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(palette.ambientOrb1, Color.Transparent),
+                    center = Offset(size.width * 0.22f, size.height * 0.08f),
+                    radius = size.width * 0.72f
+                ),
+                radius = size.width * 0.72f,
+                center = Offset(size.width * 0.22f, size.height * 0.08f)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(palette.ambientOrb2, Color.Transparent),
+                    center = Offset(size.width * 0.88f, size.height * 0.14f),
+                    radius = size.width * 0.65f
+                ),
+                radius = size.width * 0.65f,
+                center = Offset(size.width * 0.88f, size.height * 0.14f)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(palette.ambientOrb3, Color.Transparent),
+                    center = Offset(size.width * 0.55f, size.height * 0.30f),
+                    radius = size.width * 0.68f
+                ),
+                radius = size.width * 0.68f,
+                center = Offset(size.width * 0.55f, size.height * 0.30f)
+            )
+        }
+}
 
 @Composable
 fun PastelKpiSparklineCard(
@@ -2152,6 +2170,7 @@ fun PastelKpiSparklineCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -2165,8 +2184,8 @@ fun PastelKpiSparklineCard(
         interactionSource = interactionSource,
         shape = RoundedCornerShape(20.dp),
         color = containerColor,
-        border = BorderStroke(1.dp, strokeColor.copy(alpha = 0.18f)),
-        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, strokeColor.copy(alpha = if (XMaxTheme.isDark) 0.35f else 0.18f)),
+        shadowElevation = if (XMaxTheme.isDark) 0.dp else 4.dp,
         modifier = modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
@@ -2186,7 +2205,7 @@ fun PastelKpiSparklineCard(
                 Text(
                     text = valueText,
                     style = XMaxType.statValue,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -2209,7 +2228,7 @@ fun PastelKpiSparklineCard(
                 Text(
                     text = label,
                     style = XMaxType.statLabel,
-                    color = StudioTextSecondary,
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -2217,7 +2236,7 @@ fun PastelKpiSparklineCard(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = ObsidianCharcoal,
+                    tint = palette.textPrimary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -2333,11 +2352,12 @@ fun XMaxToastBanner(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val palette = XMaxTheme.colors
     val (bg, border, ink, icon) = when (tone) {
-        ToastTone.SUCCESS -> Quad(SoftMint, Color(0xFFA7EBC2), DeepMintInk, Icons.Filled.CheckCircle)
-        ToastTone.WARNING -> Quad(ButterYellow, Color(0xFFFDE08D), DeepAmberInk, Icons.Filled.WarningAmber)
-        ToastTone.INFO -> Quad(InfoPillBg, Color(0xFFB3D2FD), InfoPillInk, Icons.Filled.Info)
-        ToastTone.ERROR -> Quad(SoftBlush, Color(0xFFFBBABA), DeepBlushInk, Icons.Filled.ErrorOutline)
+        ToastTone.SUCCESS -> Quad(palette.mintBg, palette.mintInk.copy(alpha = 0.35f), palette.mintInk, Icons.Filled.CheckCircle)
+        ToastTone.WARNING -> Quad(palette.amberBg, palette.amberInk.copy(alpha = 0.35f), palette.amberInk, Icons.Filled.WarningAmber)
+        ToastTone.INFO -> Quad(palette.infoBg, palette.infoInk.copy(alpha = 0.35f), palette.infoInk, Icons.Filled.Info)
+        ToastTone.ERROR -> Quad(palette.blushBg, palette.blushInk.copy(alpha = 0.35f), palette.blushInk, Icons.Filled.ErrorOutline)
     }
 
     Surface(
@@ -2439,7 +2459,39 @@ data class TicketPalette(
     val emblemTint: Color
 )
 
-fun getCatalogueTicketPalette(index: Int): TicketPalette {
+fun getCatalogueTicketPalette(index: Int, isDark: Boolean = false): TicketPalette {
+    if (isDark) {
+        return when (index % 4) {
+            0 -> TicketPalette(
+                startGradient = Color(0xFF162840),
+                endGradient = Color(0xFF1D2333),
+                borderColor = Color(0xFF2C4263),
+                emblemBg = Color(0xFF0EA5E9),
+                emblemTint = PureWhite
+            )
+            1 -> TicketPalette(
+                startGradient = Color(0xFF222938),
+                endGradient = Color(0xFF2D281D),
+                borderColor = Color(0xFF3A3A36),
+                emblemBg = Color(0xFF2B3140),
+                emblemTint = Color(0xFFF3F5FA)
+            )
+            2 -> TicketPalette(
+                startGradient = Color(0xFF35201A),
+                endGradient = Color(0xFF2A241E),
+                borderColor = Color(0xFF523228),
+                emblemBg = Color(0xFFEA580C),
+                emblemTint = PureWhite
+            )
+            else -> TicketPalette(
+                startGradient = Color(0xFF132D22),
+                endGradient = Color(0xFF182622),
+                borderColor = Color(0xFF234D3B),
+                emblemBg = Color(0xFF16A34A),
+                emblemTint = PureWhite
+            )
+        }
+    }
     return when (index % 4) {
         0 -> TicketPalette(
             startGradient = Color(0xFFBFE0FE),
@@ -2500,6 +2552,7 @@ fun FullScreenAgencyDialog(
         )
     ) {
         val view = LocalView.current
+        val lightBars = !XMaxTheme.isDark
         SideEffect {
             val window = (view.parent as? DialogWindowProvider)?.window
             if (window != null) {
@@ -2524,8 +2577,8 @@ fun FullScreenAgencyDialog(
                     }
                 }
                 WindowInsetsControllerCompat(window, view).apply {
-                    isAppearanceLightStatusBars = true
-                    isAppearanceLightNavigationBars = true
+                    isAppearanceLightStatusBars = lightBars
+                    isAppearanceLightNavigationBars = lightBars
                 }
             }
         }
@@ -2547,7 +2600,9 @@ fun CatalogueServiceTicketCard(
     onCardClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val palette = remember(index) { getCatalogueTicketPalette(index) }
+    val studioPalette = XMaxTheme.colors
+    val isDark = XMaxTheme.isDark
+    val palette = remember(index, isDark) { getCatalogueTicketPalette(index, isDark) }
     val categoryIcon = remember(item.category, item.kindEnum()) { getCatalogueCategoryIcon(item.category, item.kindEnum()) }
     val shape = remember { TicketCardShape(cornerRadius = 22.dp, notchRadius = 8.dp) }
     var isExpanded by remember(item.id) { mutableStateOf(false) }
@@ -2577,8 +2632,12 @@ fun CatalogueServiceTicketCard(
                 .height(IntrinsicSize.Min)
                 .background(
                     Brush.horizontalGradient(
-                        colors = if (isSelected) listOf(Color(0xFFDDD6FE), Color(0xFFF3E8FF))
-                        else listOf(palette.startGradient, palette.endGradient)
+                        colors = if (isSelected) {
+                            if (isDark) listOf(Color(0xFF282147), Color(0xFF1F1C34))
+                            else listOf(Color(0xFFDDD6FE), Color(0xFFF3E8FF))
+                        } else {
+                            listOf(palette.startGradient, palette.endGradient)
+                        }
                     )
                 )
                 .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
@@ -2611,17 +2670,24 @@ fun CatalogueServiceTicketCard(
 
             Spacer(Modifier.width(8.dp))
 
-            // Right inset rounded white content panel matching catalogue_services_design_5a91a7c5.jpg
+            // Right inset rounded content panel
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(17.dp))
                     .background(
                         Brush.horizontalGradient(
-                            colors = listOf(
-                                PureWhite.copy(alpha = 0.96f),
-                                PureWhite.copy(alpha = 0.82f)
-                            )
+                            colors = if (isDark) {
+                                listOf(
+                                    studioPalette.surface.copy(alpha = 0.96f),
+                                    studioPalette.surfaceElevated.copy(alpha = 0.92f)
+                                )
+                            } else {
+                                listOf(
+                                    PureWhite.copy(alpha = 0.96f),
+                                    PureWhite.copy(alpha = 0.82f)
+                                )
+                            }
                         )
                     )
                     .padding(horizontal = 15.dp, vertical = 13.dp)
@@ -2640,7 +2706,7 @@ fun CatalogueServiceTicketCard(
                         Text(
                             text = item.name,
                             style = XMaxType.headline,
-                            color = ObsidianCharcoal,
+                            color = studioPalette.textPrimary,
                             maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -2649,7 +2715,7 @@ fun CatalogueServiceTicketCard(
                             Spacer(Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = if (isExpanded) VioletSoftBg else MutedSurface
+                                color = if (isExpanded) studioPalette.softVioletBg else studioPalette.surfaceMuted
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
@@ -2659,12 +2725,12 @@ fun CatalogueServiceTicketCard(
                                     Text(
                                         text = if (isExpanded) "Less" else "Details",
                                         style = XMaxType.caption2Medium,
-                                        color = if (isExpanded) VioletPrimary else StudioTextSecondary
+                                        color = if (isExpanded) VioletPrimary else studioPalette.textSecondary
                                     )
                                     Icon(
                                         imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                                         contentDescription = if (isExpanded) "Collapse details" else "Expand details",
-                                        tint = if (isExpanded) VioletPrimary else StudioTextSecondary,
+                                        tint = if (isExpanded) VioletPrimary else studioPalette.textSecondary,
                                         modifier = Modifier.size(13.dp)
                                     )
                                 }
@@ -2685,7 +2751,7 @@ fun CatalogueServiceTicketCard(
                     Text(
                         text = subline,
                         style = XMaxType.footnoteMedium.tabular(),
-                        color = StudioTextSecondary,
+                        color = studioPalette.textSecondary,
                         maxLines = if (isExpanded) Int.MAX_VALUE else 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2694,7 +2760,7 @@ fun CatalogueServiceTicketCard(
                         Text(
                             text = item.description,
                             style = XMaxType.footnote,
-                            color = if (isExpanded) ObsidianCharcoal.copy(alpha = 0.88f) else StudioTextSecondary.copy(alpha = 0.88f),
+                            color = if (isExpanded) studioPalette.textPrimary.copy(alpha = 0.88f) else studioPalette.textSecondary.copy(alpha = 0.88f),
                             maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                             overflow = if (isExpanded) TextOverflow.Clip else TextOverflow.Ellipsis,
                             modifier = Modifier.testTag("catalogue_desc_${item.id}")
@@ -2705,7 +2771,7 @@ fun CatalogueServiceTicketCard(
                         Spacer(Modifier.height(2.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = MutedSurface.copy(alpha = 0.72f),
+                            color = studioPalette.surfaceMuted.copy(alpha = 0.72f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -2715,13 +2781,13 @@ fun CatalogueServiceTicketCard(
                                 Text(
                                     text = "Included Deliverables (${item.inclusions.size})",
                                     style = XMaxType.caption1Semibold.tabular(),
-                                    color = ObsidianCharcoal
+                                    color = studioPalette.textPrimary
                                 )
                                 item.inclusions.forEach { inc ->
                                     Text(
                                         text = "• ${inc.title} (×${inc.quantity})",
                                         style = XMaxType.caption1.tabular(),
-                                        color = StudioTextSecondary
+                                        color = studioPalette.textSecondary
                                     )
                                 }
                             }
@@ -2736,7 +2802,8 @@ fun CatalogueServiceTicketCard(
                         isSelected -> "Added"
                         else -> buttonLabel
                     }
-                    val pillBg = if (isSelected || selectedCount > 0) EmeraldApproved else ObsidianCharcoal
+                    val pillBg = if (isSelected || selectedCount > 0) EmeraldApproved else studioPalette.buttonPrimaryBg
+                    val pillFg = if (isSelected || selectedCount > 0) PureWhite else studioPalette.buttonPrimaryFg
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2761,14 +2828,14 @@ fun CatalogueServiceTicketCard(
                                     Icon(
                                         imageVector = Icons.Filled.Check,
                                         contentDescription = null,
-                                        tint = PureWhite,
+                                        tint = pillFg,
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
                                 Text(
                                     text = displayLabel,
                                     style = XMaxType.footnoteSemibold.tabular(),
-                                    color = PureWhite
+                                    color = pillFg
                                 )
                             }
                         }
@@ -2776,7 +2843,7 @@ fun CatalogueServiceTicketCard(
                             Text(
                                 text = "Tap card for full info",
                                 style = XMaxType.caption2,
-                                color = StudioTextSecondary.copy(alpha = 0.72f)
+                                color = studioPalette.textSecondary.copy(alpha = 0.72f)
                             )
                         }
                     }

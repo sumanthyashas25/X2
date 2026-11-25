@@ -14,7 +14,11 @@ import com.example.data.AuthSessionStatus
 import com.example.data.AuthenticationRepository
 import com.example.data.ChatRepository
 import com.example.data.ClientRepository
+import com.example.data.CloudStorageSummary
+import com.example.data.CloudStorageTracker
 import com.example.data.CommercialWorkflowRepository
+import com.example.data.DeletableCloudItem
+import com.example.data.formatStorageBytes
 import com.example.data.FirestoreInitState
 import com.example.data.GoogleSignInResult
 import com.example.data.OperationType
@@ -134,8 +138,18 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     private val quotationRepo: QuotationRepository = QuotationRepository(coreRepo)
     private val workRepo = CommercialWorkflowRepository(coreRepo)
     private val chatRepo = ChatRepository(coreRepo)
+    private val storageTracker = CloudStorageTracker(coreRepo)
 
     val firestoreInitState: StateFlow<FirestoreInitState> = firestoreInitService.initState
+
+    private val _cloudStorageSummary = MutableStateFlow(CloudStorageSummary())
+    val cloudStorageSummary: StateFlow<CloudStorageSummary> = _cloudStorageSummary.asStateFlow()
+
+    private val _isScanningCloudStorage = MutableStateFlow(false)
+    val isScanningCloudStorage: StateFlow<Boolean> = _isScanningCloudStorage.asStateFlow()
+
+    private val _isDeletingCloudStorage = MutableStateFlow(false)
+    val isDeletingCloudStorage: StateFlow<Boolean> = _isDeletingCloudStorage.asStateFlow()
 
     private val _authInProgress = MutableStateFlow(false)
     private val _phoneSession = MutableStateFlow(PhoneVerificationSession())
@@ -1429,6 +1443,82 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                     break
                 }
             }
+        }
+    }
+
+    fun refreshCloudStorageSummary(context: Context = getApplication()) {
+        if (_isScanningCloudStorage.value) return
+        viewModelScope.launch {
+            _isScanningCloudStorage.value = true
+            try {
+                _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value = e.localizedMessage ?: "Unable to scan cloud storage."
+            } finally {
+                _isScanningCloudStorage.value = false
+            }
+        }
+    }
+
+    fun deleteCloudStorageItems(
+        context: Context = getApplication(),
+        items: List<DeletableCloudItem>,
+        onComplete: () -> Unit = {}
+    ) {
+        if (items.isEmpty() || _isDeletingCloudStorage.value) return
+        viewModelScope.launch {
+            _isDeletingCloudStorage.value = true
+            try {
+                storageTracker.deleteCloudItems(items)
+                    .onSuccess { (count, freed) ->
+                        _statusMessage.value = if (count > 0) {
+                            "Deleted $count cloud item${if (count == 1) "" else "s"} (${formatStorageBytes(freed)} freed)"
+                        } else {
+                            "No eligible cloud items deleted."
+                        }
+                        _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+                        onComplete()
+                    }
+                    .onFailure { err ->
+                        _errorMessage.value = err.localizedMessage ?: "Failed to delete cloud storage items."
+                    }
+            } finally {
+                _isDeletingCloudStorage.value = false
+            }
+        }
+    }
+
+    fun deleteExpiredCloudStatuses(context: Context = getApplication()) {
+        if (_isDeletingCloudStorage.value) return
+        viewModelScope.launch {
+            _isDeletingCloudStorage.value = true
+            try {
+                val latest = storageTracker.scanCloudStorage(context, uiState.value)
+                storageTracker.deleteExpiredStatuses(latest)
+                    .onSuccess { (count, freed) ->
+                        _statusMessage.value = if (count > 0) {
+                            "Cleared $count expired status${if (count == 1) "" else "es"} (${formatStorageBytes(freed)} freed)"
+                        } else {
+                            "No expired statuses found in cloud storage."
+                        }
+                        _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+                    }
+                    .onFailure { err ->
+                        _errorMessage.value = err.localizedMessage ?: "Unable to delete expired statuses."
+                    }
+            } finally {
+                _isDeletingCloudStorage.value = false
+            }
+        }
+    }
+
+    fun clearLocalMediaCache(context: Context = getApplication()) {
+        viewModelScope.launch {
+            ChatFileManager.clearChatMediaCache(context)
+            _statusMessage.value = "On-device media cache cleared."
+            _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
         }
     }
 

@@ -245,6 +245,14 @@ data class XMaxTextTokens(
         lineHeight = 14.sp,
         letterSpacing = 0.05.sp
     ),
+    /** Caption 2 Bold / micro badges: 11sp, Bold 700. */
+    val caption2Bold: TextStyle = TextStyle(
+        fontFamily = InterFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.05.sp
+    ),
     /** Bottom bar / rail navigation label: 11.5sp, Medium 500. */
     val navLabel: TextStyle = TextStyle(
         fontFamily = InterFontFamily,

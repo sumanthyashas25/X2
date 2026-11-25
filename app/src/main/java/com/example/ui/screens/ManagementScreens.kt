@@ -47,6 +47,7 @@ fun ClientsScreen(
     onSaveClient: (Client) -> Unit,
     onDeleteClient: (Client) -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     var query by remember { mutableStateOf("") }
     var editingClient by remember { mutableStateOf<Client?>(null) }
     var deleteConfirmClient by remember { mutableStateOf<Client?>(null) }
@@ -62,18 +63,18 @@ fun ClientsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Clients (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Clients (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 if (canEdit) {
                     Button(
                         onClick = { editingClient = Client() },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.height(42.dp).testTag("add_client_button")
                     ) {
                         Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -97,8 +98,8 @@ fun ClientsScreen(
                 Surface(
                     onClick = { if (canEdit) editingClient = cli },
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -108,16 +109,16 @@ fun ClientsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            modifier = Modifier.size(44.dp).clip(CircleShape).background(KpiSkyBg),
+                            modifier = Modifier.size(44.dp).clip(CircleShape).background(palette.skyBg),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.Business, contentDescription = null, tint = KpiSkyStroke, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Filled.Business, contentDescription = null, tint = palette.skyInk, modifier = Modifier.size(20.dp))
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(formatTitleCase(cli.companyName), style = XMaxType.headline, color = ObsidianCharcoal)
-                            Text("${formatTitleCase(cli.contactPerson)} • ${cli.phone.ifBlank { cli.email.ifBlank { "No contact" } }}", style = XMaxType.footnote.tabular(), color = StudioTextSecondary)
+                            Text(formatTitleCase(cli.companyName), style = XMaxType.headline, color = palette.textPrimary)
+                            Text("${formatTitleCase(cli.contactPerson)} • ${cli.phone.ifBlank { cli.email.ifBlank { "No contact" } }}", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                             if (cli.meetingNotes.isNotBlank()) {
-                                Text("Notes: ${cli.meetingNotes}", style = XMaxType.caption1, color = StudioTextSecondary, maxLines = 2)
+                                Text("Notes: ${cli.meetingNotes}", style = XMaxType.caption1, color = palette.textSecondary, maxLines = 2)
                             }
                         }
                         if (canDeleteClient) {
@@ -137,10 +138,10 @@ fun ClientsScreen(
     deleteConfirmClient?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteConfirmClient = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Delete Client?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("Permanently remove ${formatTitleCase(target.companyName)} from your workspace clients? Existing projects keep their stored client name.", style = XMaxType.subheadline, color = StudioTextSecondary) },
+            title = { Text("Delete Client?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("Permanently remove ${formatTitleCase(target.companyName)} from your workspace clients? Existing projects keep their stored client name.", style = XMaxType.subheadline, color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -152,7 +153,7 @@ fun ClientsScreen(
                     modifier = Modifier.testTag("confirm_delete_client_button")
                 ) { Text("Delete", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { deleteConfirmClient = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { deleteConfirmClient = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 
@@ -166,9 +167,9 @@ fun ClientsScreen(
 
         AlertDialog(
             onDismissRequest = { editingClient = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text(if (cli.id.isBlank()) "New Client" else "Edit Client", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text(if (cli.id.isBlank()) "New Client" else "Edit Client", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = companyName, onValueChange = { companyName = it }, textStyle = XMaxType.body, label = { Text("Company Name *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -187,10 +188,10 @@ fun ClientsScreen(
                     },
                     enabled = companyName.isNotBlank() && contactPerson.isNotBlank(),
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Save", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { editingClient = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { editingClient = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
@@ -202,6 +203,7 @@ fun QuotationsScreen(
     onDeleteQuotation: (Quotation) -> Unit = {},
     onOpenPayments: () -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     var statusFilter by remember { mutableStateOf<QuotationStatus?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var deleteConfirmQuote by remember { mutableStateOf<Quotation?>(null) }
@@ -219,18 +221,18 @@ fun QuotationsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Quotations (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Quotations (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 if (state.hasPerm(AppPermission.CREATE_QUOTATIONS) || state.hasPerm(AppPermission.ISSUE_QUOTATIONS)) {
                     Button(
                         onClick = { onOpenQuote(null) },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                         modifier = Modifier.height(42.dp)
                     ) { Text("+ New Quote", style = XMaxType.buttonCompact) }
                 }
@@ -250,12 +252,12 @@ fun QuotationsScreen(
                     onClick = { statusFilter = null },
                     shape = RoundedCornerShape(999.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ObsidianCharcoal,
-                        selectedLabelColor = PureWhite,
-                        containerColor = PureWhite,
-                        labelColor = ObsidianCharcoal
+                        selectedContainerColor = palette.buttonPrimaryBg,
+                        selectedLabelColor = palette.buttonPrimaryFg,
+                        containerColor = palette.surface,
+                        labelColor = palette.textPrimary
                     ),
-                    border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == null, borderColor = SubtleOutline),
+                    border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == null, borderColor = palette.outline),
                     label = { Text("All", style = XMaxType.footnoteMedium) }
                 )
                 QuotationStatus.entries.forEach { s ->
@@ -264,12 +266,12 @@ fun QuotationsScreen(
                         onClick = { statusFilter = s },
                         shape = RoundedCornerShape(999.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ObsidianCharcoal,
-                            selectedLabelColor = PureWhite,
-                            containerColor = PureWhite,
-                            labelColor = ObsidianCharcoal
+                            selectedContainerColor = palette.buttonPrimaryBg,
+                            selectedLabelColor = palette.buttonPrimaryFg,
+                            containerColor = palette.surface,
+                            labelColor = palette.textPrimary
                         ),
-                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == s, borderColor = SubtleOutline),
+                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == s, borderColor = palette.outline),
                         label = { Text(s.label, style = XMaxType.footnoteMedium) }
                     )
                 }
@@ -280,22 +282,22 @@ fun QuotationsScreen(
         } else {
             items(filtered, key = { it.id }) { q ->
                 val (bg, fg) = when (q.statusEnum()) {
-                    QuotationStatus.CLIENT_APPROVED -> SoftMint to DeepMintInk
-                    QuotationStatus.ISSUED, QuotationStatus.SENT -> KpiLavenderBg to VioletPrimary
-                    QuotationStatus.SUPERSEDED -> MutedSurface to StudioTextSecondary
-                    QuotationStatus.DRAFT -> ButterYellow to DeepAmberInk
+                    QuotationStatus.CLIENT_APPROVED -> palette.mintBg to palette.mintInk
+                    QuotationStatus.ISSUED, QuotationStatus.SENT -> palette.lavenderBg to palette.lavenderInk
+                    QuotationStatus.SUPERSEDED -> palette.surfaceMuted to palette.textSecondary
+                    QuotationStatus.DRAFT -> palette.butterBg to palette.butterInk
                 }
                 Surface(
                     onClick = { onOpenQuote(q) },
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("${q.quoteNumber} (v${q.revision})", style = XMaxType.headline.tabular(), color = ObsidianCharcoal)
+                            Text("${q.quoteNumber} (v${q.revision})", style = XMaxType.headline.tabular(), color = palette.textPrimary)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 StatusPill(q.statusEnum().label, bg, fg)
                                 if (isSuper) {
@@ -308,17 +310,17 @@ fun QuotationsScreen(
                                 }
                             }
                         }
-                        Text("${formatTitleCase(q.projectTitle)} • ${formatTitleCase(q.clientSnapshot.companyName)}", style = XMaxType.footnoteMedium, color = StudioTextSecondary)
+                        Text("${formatTitleCase(q.projectTitle)} • ${formatTitleCase(q.clientSnapshot.companyName)}", style = XMaxType.footnoteMedium, color = palette.textSecondary)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "Total: ${MoneyFormatter.formatInr(q.totalPaise)}",
                                 style = XMaxType.subheadlineSemibold.tabular(),
-                                color = ObsidianCharcoal
+                                color = palette.textPrimary
                             )
                             Text(
                                 "Advance: ${MoneyFormatter.formatInr(q.advancePaise)}",
                                 style = XMaxType.footnote.tabular(),
-                                color = StudioTextSecondary
+                                color = palette.textSecondary
                             )
                         }
                         if (q.statusEnum() == QuotationStatus.CLIENT_APPROVED && q.advancePaise > 0L) {
@@ -328,8 +330,8 @@ fun QuotationsScreen(
                                 Surface(
                                     onClick = onOpenPayments,
                                     shape = RoundedCornerShape(14.dp),
-                                    color = ButterYellow.copy(alpha = 0.7f),
-                                    border = BorderStroke(1.dp, DeepAmberInk.copy(alpha = 0.25f)),
+                                    color = palette.butterBg,
+                                    border = BorderStroke(1.dp, palette.butterInk.copy(alpha = 0.28f)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
@@ -342,14 +344,14 @@ fun QuotationsScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = DeepAmberInk, modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = palette.butterInk, modifier = Modifier.size(16.dp))
                                             Text(
                                                 "Advance ${MoneyFormatter.formatInr(linkedProj?.advanceDuePaise ?: q.advancePaise)} reminder",
                                                 style = XMaxType.footnoteSemibold.tabular(),
-                                                color = DeepAmberInk
+                                                color = palette.butterInk
                                             )
                                         }
-                                        Text("Track →", style = XMaxType.footnoteSemibold, color = ObsidianCharcoal)
+                                        Text("Track →", style = XMaxType.footnoteSemibold, color = palette.textPrimary)
                                     }
                                 }
                             }
@@ -363,10 +365,10 @@ fun QuotationsScreen(
     deleteConfirmQuote?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteConfirmQuote = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Delete Quotation?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("Permanently delete quotation ${target.quoteNumber} (v${target.revision}) for ${formatTitleCase(target.clientSnapshot.companyName)}?", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary) },
+            title = { Text("Delete Quotation?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("Permanently delete quotation ${target.quoteNumber} (v${target.revision}) for ${formatTitleCase(target.clientSnapshot.companyName)}?", style = XMaxType.subheadline.tabular(), color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -378,7 +380,7 @@ fun QuotationsScreen(
                     modifier = Modifier.testTag("confirm_delete_quote_button")
                 ) { Text("Delete", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { deleteConfirmQuote = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { deleteConfirmQuote = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
@@ -391,6 +393,7 @@ fun CatalogueScreen(
     onSyncOfficialCatalogue: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     var query by remember { mutableStateOf("") }
     var showArchived by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CatalogueItem?>(null) }
@@ -405,13 +408,13 @@ fun CatalogueScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Catalogue (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal)
+                Text("Catalogue (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
                 if (canEdit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (onSyncOfficialCatalogue != null) {
@@ -421,13 +424,13 @@ fun CatalogueScreen(
                                     onSyncOfficialCatalogue()
                                 },
                                 shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, SubtleOutline),
+                                border = BorderStroke(1.dp, palette.outline),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 modifier = Modifier
                                     .height(40.dp)
                                     .testTag("sync_official_catalogue_button")
                             ) {
-                                Text("Sync PDF", style = XMaxType.caption1Semibold, color = ObsidianCharcoal)
+                                Text("Sync PDF", style = XMaxType.caption1Semibold, color = palette.textPrimary)
                             }
                         }
                         FilterChip(
@@ -435,10 +438,10 @@ fun CatalogueScreen(
                             onClick = { showArchived = !showArchived },
                             shape = RoundedCornerShape(999.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ObsidianCharcoal,
-                                selectedLabelColor = PureWhite,
-                                containerColor = MutedSurface,
-                                labelColor = ObsidianCharcoal
+                                selectedContainerColor = palette.buttonPrimaryBg,
+                                selectedLabelColor = palette.buttonPrimaryFg,
+                                containerColor = palette.surfaceMuted,
+                                labelColor = palette.textPrimary
                             ),
                             border = null,
                             label = { Text("Archived", style = XMaxType.footnoteMedium) }
@@ -446,7 +449,7 @@ fun CatalogueScreen(
                         Button(
                             onClick = { editing = CatalogueItem(sortOrder = state.catalogue.size + 1) },
                             shape = RoundedCornerShape(999.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                             modifier = Modifier.height(40.dp)
                         ) { Text("+ Add", style = XMaxType.buttonCompact) }
                     }
@@ -477,15 +480,15 @@ fun CatalogueScreen(
     viewingItem?.let { item ->
         AlertDialog(
             onDismissRequest = { viewingItem = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text(item.name, style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text(item.name, style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusPill(
                         label = "${item.kindEnum().label} • ${item.category}",
-                        containerColor = KpiLavenderBg,
-                        contentColor = VioletPrimary
+                        containerColor = palette.lavenderBg,
+                        contentColor = palette.lavenderInk
                     )
                     Text(
                         text = when (item.pricingModeEnum()) {
@@ -495,15 +498,15 @@ fun CatalogueScreen(
                             else -> MoneyFormatter.formatInr(item.pricePaise)
                         },
                         style = XMaxType.numericHeadline,
-                        color = ObsidianCharcoal
+                        color = palette.textPrimary
                     )
                     if (item.description.isNotBlank()) {
-                        Text(item.description, style = XMaxType.subheadline, color = StudioTextSecondary)
+                        Text(item.description, style = XMaxType.subheadline, color = palette.textSecondary)
                     }
                     if (item.inclusions.isNotEmpty()) {
-                        Text("Included Deliverables", style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                        Text("Included Deliverables", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         item.inclusions.forEach { inc ->
-                            Text("• ${inc.title} (x${inc.quantity})", style = XMaxType.footnote.tabular(), color = StudioTextSecondary)
+                            Text("• ${inc.title} (x${inc.quantity})", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                         }
                     }
                 }
@@ -512,7 +515,7 @@ fun CatalogueScreen(
                 Button(
                     onClick = { viewingItem = null },
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Close", style = XMaxType.buttonCompact) }
             }
         )
@@ -526,9 +529,9 @@ fun CatalogueScreen(
 
         AlertDialog(
             onDismissRequest = { editing = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text(if (item.id.isBlank()) "Add Catalogue Item" else "Edit ${item.name}", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text(if (item.id.isBlank()) "Add Catalogue Item" else "Edit ${item.name}", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it }, textStyle = XMaxType.body, label = { Text("Service Name *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
@@ -554,10 +557,10 @@ fun CatalogueScreen(
                     },
                     enabled = name.isNotBlank() && category.isNotBlank(),
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Save", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
@@ -568,6 +571,7 @@ fun PaymentsScreen(
     onRecordPayment: (Project, Long, Long, PaymentMethod, String, String) -> Unit
 ) {
     val context = LocalContext.current
+    val palette = XMaxTheme.colors
     val reminderSummary = remember(state.projects, state.deliverables, state.quotations) {
         WorkDistributionEngine.computePaymentReminders(
             projects = state.projects,
@@ -616,7 +620,7 @@ fun PaymentsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(CrispCanvas)
+            .background(palette.canvas)
             .testTag("payments_lazy_list"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -628,10 +632,10 @@ fun PaymentsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Payment Tracker", style = XMaxType.sectionHeading, color = ObsidianCharcoal)
-                    Text("${activeProjects.size} projects • ${state.payments.size} receipts logged", style = XMaxType.footnote.tabular(), color = StudioTextSecondary)
+                    Text("Payment Tracker", style = XMaxType.sectionHeading, color = palette.textPrimary)
+                    Text("${activeProjects.size} projects • ${state.payments.size} receipts logged", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                 }
-                StatusPill("$collectionPct% Collected", SoftMint, DeepMintInk)
+                StatusPill("$collectionPct% Collected", palette.mintBg, palette.mintInk)
             }
         }
 
@@ -639,8 +643,8 @@ fun PaymentsScreen(
         item {
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = PureWhite,
-                border = BorderStroke(1.dp, SubtleOutline),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
                 shadowElevation = 2.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -652,11 +656,11 @@ fun PaymentsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Collection Progress", style = XMaxType.headline, color = ObsidianCharcoal)
+                        Text("Collection Progress", style = XMaxType.headline, color = palette.textPrimary)
                         Text(
                             "${MoneyFormatter.formatInr(totalPaid)} / ${MoneyFormatter.formatInr(totalAgreed)}",
                             style = XMaxType.footnoteSemibold.tabular(),
-                            color = VioletPrimary
+                            color = palette.lavenderInk
                         )
                     }
                     LinearProgressIndicator(
@@ -666,18 +670,18 @@ fun PaymentsScreen(
                             .height(10.dp)
                             .clip(RoundedCornerShape(999.dp)),
                         color = EmeraldApproved,
-                        trackColor = MutedSurface
+                        trackColor = palette.surfaceMuted
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        StatusPill("Settled: $settledCount", SoftMint, DeepMintInk)
+                        StatusPill("Settled: $settledCount", palette.mintBg, palette.mintInk)
                         if (advanceDueCount > 0) {
-                            StatusPill("Advance Due: $advanceDueCount", ButterYellow, DeepAmberInk)
+                            StatusPill("Advance Due: $advanceDueCount", palette.butterBg, palette.butterInk)
                         }
                         if (balanceDueCount > 0) {
-                            StatusPill("Open Balances: $balanceDueCount", KpiLavenderBg, VioletPrimary)
+                            StatusPill("Open Balances: $balanceDueCount", palette.lavenderBg, palette.lavenderInk)
                         }
                     }
                 }
@@ -688,8 +692,8 @@ fun PaymentsScreen(
             item {
                 Surface(
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, DeepAmberInk.copy(alpha = 0.25f)),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.butterInk.copy(alpha = 0.28f)),
                     shadowElevation = 2.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -705,13 +709,13 @@ fun PaymentsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = DeepAmberInk, modifier = Modifier.size(20.dp))
-                                Text("Payment Reminders (${reminderSummary.totalCount})", style = XMaxType.headline.tabular(), color = ObsidianCharcoal)
+                                Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = palette.butterInk, modifier = Modifier.size(20.dp))
+                                Text("Payment Reminders (${reminderSummary.totalCount})", style = XMaxType.headline.tabular(), color = palette.textPrimary)
                             }
                             StatusPill(
                                 label = "${reminderSummary.finalCount} Final • ${reminderSummary.advanceCount} Advance",
-                                containerColor = ButterYellow,
-                                contentColor = DeepAmberInk
+                                containerColor = palette.butterBg,
+                                contentColor = palette.butterInk
                             )
                         }
 
@@ -719,7 +723,7 @@ fun PaymentsScreen(
                             val isFinal = rem.type != WorkDistributionEngine.PaymentReminderType.ADVANCE_DUE
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
-                                color = if (isFinal) SoftBlush else ButterYellow.copy(alpha = 0.55f),
+                                color = if (isFinal) palette.blushBg else palette.butterBg,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -731,20 +735,20 @@ fun PaymentsScreen(
                                         Text(
                                             rem.type.label,
                                             style = XMaxType.footnoteSemibold,
-                                            color = if (isFinal) CrimsonBlocked else DeepAmberInk
+                                            color = if (isFinal) CrimsonBlocked else palette.butterInk
                                         )
                                         Text(
                                             MoneyFormatter.formatInr(rem.amountDuePaise),
                                             style = XMaxType.numericHeadline,
-                                            color = ObsidianCharcoal
+                                            color = palette.textPrimary
                                         )
                                     }
                                     Text(
                                         "${formatTitleCase(rem.project.title)} • ${formatTitleCase(rem.project.clientCompanyName)}",
                                         style = XMaxType.subheadlineSemibold,
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
-                                    Text(rem.detail, style = XMaxType.footnote, color = StudioTextSecondary)
+                                    Text(rem.detail, style = XMaxType.footnote, color = palette.textSecondary)
                                     if (canRecord) {
                                         Button(
                                             onClick = {
@@ -754,7 +758,7 @@ fun PaymentsScreen(
                                                 recordTarget = rem.project
                                             },
                                             shape = RoundedCornerShape(999.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                             modifier = Modifier.fillMaxWidth().height(40.dp)
                                         ) {
                                             Text(if (isFinal) "Record Final Payment" else "Record Advance Payment", style = XMaxType.buttonCompact)
@@ -767,7 +771,7 @@ fun PaymentsScreen(
                         reminderSummary.quoteAdvanceReminders.forEach { qRem ->
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
-                                color = KpiLavenderBg.copy(alpha = 0.7f),
+                                color = palette.lavenderBg,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -776,15 +780,15 @@ fun PaymentsScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Approved Quote • Advance Due", style = XMaxType.footnoteSemibold, color = VioletPrimary)
-                                        Text(MoneyFormatter.formatInr(qRem.advanceDuePaise), style = XMaxType.numericHeadline, color = ObsidianCharcoal)
+                                        Text("Approved Quote • Advance Due", style = XMaxType.footnoteSemibold, color = palette.lavenderInk)
+                                        Text(MoneyFormatter.formatInr(qRem.advanceDuePaise), style = XMaxType.numericHeadline, color = palette.textPrimary)
                                     }
                                     Text(
                                         "${qRem.quotation.quoteNumber} • ${formatTitleCase(qRem.quotation.projectTitle)} (${formatTitleCase(qRem.quotation.clientSnapshot.companyName)})",
                                         style = XMaxType.subheadlineSemibold.tabular(),
-                                        color = ObsidianCharcoal
+                                        color = palette.textPrimary
                                     )
-                                    Text("Client approved quotation — accept on Requests tab to activate project billing.", style = XMaxType.caption1, color = StudioTextSecondary)
+                                    Text("Client approved quotation — accept on Requests tab to activate project billing.", style = XMaxType.caption1, color = palette.textSecondary)
                                 }
                             }
                         }
@@ -795,8 +799,8 @@ fun PaymentsScreen(
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricStatCard("Collected", MoneyFormatter.formatInr(totalPaid), "of ${MoneyFormatter.formatInr(totalAgreed)}", Icons.Filled.AccountBalanceWallet, containerColor = SoftMint, accentColor = DeepMintInk, modifier = Modifier.weight(1f))
-                MetricStatCard("Outstanding", MoneyFormatter.formatInr(totalBalance), "$balanceDueCount open projects", Icons.Filled.Schedule, containerColor = MutedSurface, accentColor = ObsidianCharcoal, modifier = Modifier.weight(1f))
+                MetricStatCard("Collected", MoneyFormatter.formatInr(totalPaid), "of ${MoneyFormatter.formatInr(totalAgreed)}", Icons.Filled.AccountBalanceWallet, containerColor = palette.mintBg, accentColor = palette.mintInk, modifier = Modifier.weight(1f))
+                MetricStatCard("Outstanding", MoneyFormatter.formatInr(totalBalance), "$balanceDueCount open projects", Icons.Filled.Schedule, containerColor = palette.surfaceMuted, accentColor = palette.textPrimary, modifier = Modifier.weight(1f))
             }
         }
 
@@ -827,19 +831,19 @@ fun PaymentsScreen(
                         },
                         shape = RoundedCornerShape(999.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ObsidianCharcoal,
-                            selectedLabelColor = PureWhite,
-                            containerColor = PureWhite,
-                            labelColor = ObsidianCharcoal
+                            selectedContainerColor = palette.buttonPrimaryBg,
+                            selectedLabelColor = palette.buttonPrimaryFg,
+                            containerColor = palette.surface,
+                            labelColor = palette.textPrimary
                         ),
-                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == key, borderColor = SubtleOutline),
+                        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = statusFilter == key, borderColor = palette.outline),
                         label = { Text(label, style = XMaxType.footnoteMedium.tabular()) }
                     )
                 }
             }
         }
 
-        item { Text("Project Balances (${filteredProjects.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal) }
+        item { Text("Project Balances (${filteredProjects.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary) }
 
         if (filteredProjects.isEmpty()) {
             item {
@@ -853,22 +857,22 @@ fun PaymentsScreen(
             items(filteredProjects, key = { it.id }) { proj ->
                 val projPct = if (proj.agreedValuePaise <= 0L) 100 else ((proj.paidPaise.toDouble() / proj.agreedValuePaise.toDouble()) * 100.0).toInt().coerceIn(0, 100)
                 val (badgeBg, badgeFg, badgeLabel) = when {
-                    proj.outstandingPaise <= 0L -> Triple(SoftMint, DeepMintInk, "Settled ✓")
-                    proj.advanceDuePaise > 0L -> Triple(ButterYellow, DeepAmberInk, "Advance Due")
-                    else -> Triple(InfoPillBg, InfoPillInk, "$projPct% Paid")
+                    proj.outstandingPaise <= 0L -> Triple(palette.mintBg, palette.mintInk, "Settled ✓")
+                    proj.advanceDuePaise > 0L -> Triple(palette.butterBg, palette.butterInk, "Advance Due")
+                    else -> Triple(palette.skyBg, palette.skyInk, "$projPct% Paid")
                 }
                 Surface(
                     shape = RoundedCornerShape(22.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(formatTitleCase(proj.title), style = XMaxType.headline, color = ObsidianCharcoal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(formatTitleCase(proj.clientCompanyName), style = XMaxType.footnote, color = StudioTextSecondary)
+                                Text(formatTitleCase(proj.title), style = XMaxType.headline, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(formatTitleCase(proj.clientCompanyName), style = XMaxType.footnote, color = palette.textSecondary)
                             }
                             StatusPill(badgeLabel, badgeBg, badgeFg)
                         }
@@ -878,22 +882,22 @@ fun PaymentsScreen(
                                 .fillMaxWidth()
                                 .height(7.dp)
                                 .clip(RoundedCornerShape(999.dp)),
-                            color = if (proj.outstandingPaise <= 0L) EmeraldApproved else VioletPrimary,
-                            trackColor = MutedSurface
+                            color = if (proj.outstandingPaise <= 0L) EmeraldApproved else palette.lavenderInk,
+                            trackColor = palette.surfaceMuted
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Agreed: ${MoneyFormatter.formatInr(proj.agreedValuePaise)}", style = XMaxType.caption1Medium.tabular(), color = StudioTextSecondary)
-                            Text("Paid: ${MoneyFormatter.formatInr(proj.paidPaise)}", style = XMaxType.caption1Semibold.tabular(), color = DeepMintInk)
-                            Text("Due: ${MoneyFormatter.formatInr(proj.outstandingPaise)}", style = XMaxType.caption1Semibold.tabular(), color = if (proj.outstandingPaise > 0L) DeepBlushInk else DeepMintInk)
+                            Text("Agreed: ${MoneyFormatter.formatInr(proj.agreedValuePaise)}", style = XMaxType.caption1Medium.tabular(), color = palette.textSecondary)
+                            Text("Paid: ${MoneyFormatter.formatInr(proj.paidPaise)}", style = XMaxType.caption1Semibold.tabular(), color = palette.mintInk)
+                            Text("Due: ${MoneyFormatter.formatInr(proj.outstandingPaise)}", style = XMaxType.caption1Semibold.tabular(), color = if (proj.outstandingPaise > 0L) palette.blushInk else palette.mintInk)
                         }
                         if (proj.advanceDuePaise > 0L) {
                             Text(
                                 "Pending Advance: ${MoneyFormatter.formatInr(proj.advanceDuePaise)}",
                                 style = XMaxType.footnoteMedium.tabular(),
-                                color = DeepAmberInk
+                                color = palette.butterInk
                             )
                         }
                         if (canRecord && proj.outstandingPaise > 0L) {
@@ -905,7 +909,7 @@ fun PaymentsScreen(
                                     recordTarget = proj
                                 },
                                 shape = RoundedCornerShape(999.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                                 modifier = Modifier.fillMaxWidth().height(44.dp).testTag("record_payment_${proj.id}")
                             ) { Text("Record Payment", style = XMaxType.buttonCompact) }
                         }
@@ -914,7 +918,7 @@ fun PaymentsScreen(
             }
         }
 
-        item { Text("Payment Ledger (${state.payments.size})", style = XMaxType.sectionHeading.tabular(), color = ObsidianCharcoal) }
+        item { Text("Payment Ledger (${state.payments.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary) }
         if (state.payments.isEmpty()) {
             item {
                 EmptyStateCard(
@@ -927,25 +931,25 @@ fun PaymentsScreen(
             items(state.payments, key = { it.id }) { p ->
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = PureWhite,
-                    border = BorderStroke(1.dp, SubtleOutline),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(MoneyFormatter.formatInr(p.amountPaise), style = XMaxType.numericHeadline, color = DeepMintInk)
-                            StatusPill(p.methodEnum().label, KpiLavenderBg, VioletPrimary)
+                            Text(MoneyFormatter.formatInr(p.amountPaise), style = XMaxType.numericHeadline, color = palette.mintInk)
+                            StatusPill(p.methodEnum().label, palette.lavenderBg, palette.lavenderInk)
                         }
-                        Text(formatTitleCase(p.projectTitle), style = XMaxType.subheadlineSemibold, color = ObsidianCharcoal)
+                        Text(formatTitleCase(p.projectTitle), style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
                         Text(
                             "${formatTitleCase(p.clientCompanyName)} • Ref: ${p.reference.ifBlank { "N/A" }}",
                             style = XMaxType.footnote.tabular(),
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
                         Text(
                             "Recorded by ${formatTitleCase(p.recordedByName)} on ${MoneyFormatter.formatDate(p.paymentDateMillis)}",
                             style = XMaxType.caption1.tabular(),
-                            color = StudioTextSecondary
+                            color = palette.textSecondary
                         )
                     }
                 }
@@ -966,12 +970,12 @@ fun PaymentsScreen(
 
         AlertDialog(
             onDismissRequest = { recordTarget = null },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Record Payment — ${formatTitleCase(proj.title)}", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
+            title = { Text("Record Payment — ${formatTitleCase(proj.title)}", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Remaining balance: ${MoneyFormatter.formatInr(proj.outstandingPaise)}", style = XMaxType.footnoteMedium.tabular(), color = StudioTextSecondary)
+                    Text("Remaining balance: ${MoneyFormatter.formatInr(proj.outstandingPaise)}", style = XMaxType.footnoteMedium.tabular(), color = palette.textSecondary)
                     OutlinedTextField(
                         value = amountRupees,
                         onValueChange = { amountRupees = it },
@@ -988,10 +992,10 @@ fun PaymentsScreen(
                                 onClick = { method = m },
                                 shape = RoundedCornerShape(999.dp),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = ObsidianCharcoal,
-                                    selectedLabelColor = PureWhite,
-                                    containerColor = MutedSurface,
-                                    labelColor = ObsidianCharcoal
+                                    selectedContainerColor = palette.buttonPrimaryBg,
+                                    selectedLabelColor = palette.buttonPrimaryFg,
+                                    containerColor = palette.surfaceMuted,
+                                    labelColor = palette.textPrimary
                                 ),
                                 border = null,
                                 label = { Text(m.label, style = XMaxType.footnoteMedium) }
@@ -1012,10 +1016,10 @@ fun PaymentsScreen(
                     },
                     enabled = paise > 0L,
                     shape = RoundedCornerShape(999.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ObsidianCharcoal, contentColor = PureWhite)
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
                 ) { Text("Save Payment", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { recordTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { recordTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
@@ -1026,10 +1030,11 @@ fun ActivityLogScreen(
     onDeleteLog: (String) -> Unit = {},
     onClearAllLogs: () -> Unit = {}
 ) {
+    val palette = XMaxTheme.colors
     var showClearConfirm by remember { mutableStateOf(false) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(CrispCanvas),
+        modifier = Modifier.fillMaxSize().background(palette.canvas),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1042,7 +1047,7 @@ fun ActivityLogScreen(
                 Text(
                     "Internal Activity Log",
                     style = XMaxType.sectionHeading,
-                    color = ObsidianCharcoal,
+                    color = palette.textPrimary,
                     modifier = Modifier.weight(1f)
                 )
                 if (state.isSuperAdmin && state.activityLog.isNotEmpty()) {
@@ -1050,7 +1055,7 @@ fun ActivityLogScreen(
                         onClick = { showClearConfirm = true },
                         shape = RoundedCornerShape(999.dp),
                         border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.4f)),
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = SoftBlush, contentColor = CrimsonBlocked),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.blushBg, contentColor = CrimsonBlocked),
                         modifier = Modifier.testTag("clear_all_logs_button")
                     ) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1066,7 +1071,7 @@ fun ActivityLogScreen(
             items(state.activityLog, key = { it.id }) { act ->
                 Card(
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MutedSurface),
+                    colors = CardDefaults.cardColors(containerColor = palette.surfaceMuted),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Row(
@@ -1075,15 +1080,15 @@ fun ActivityLogScreen(
                         verticalAlignment = Alignment.Top
                     ) {
                         Box(
-                            modifier = Modifier.size(34.dp).clip(CircleShape).background(PureWhite),
+                            modifier = Modifier.size(34.dp).clip(CircleShape).background(palette.surface),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.History, contentDescription = null, tint = ObsidianCharcoal, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.History, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(16.dp))
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(formatTitleCase(act.title), style = XMaxType.headline, color = ObsidianCharcoal)
-                            Text(act.detail, style = XMaxType.footnote, color = StudioTextSecondary)
-                            Text("By ${formatTitleCase(act.actorName)} • ${act.categoryEnum().label}", style = XMaxType.caption1Medium, color = StudioTextSecondary)
+                            Text(formatTitleCase(act.title), style = XMaxType.headline, color = palette.textPrimary)
+                            Text(act.detail, style = XMaxType.footnote, color = palette.textSecondary)
+                            Text("By ${formatTitleCase(act.actorName)} • ${act.categoryEnum().label}", style = XMaxType.caption1Medium, color = palette.textSecondary)
                         }
                         if (state.isSuperAdmin) {
                             IconButton(
@@ -1102,10 +1107,10 @@ fun ActivityLogScreen(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            containerColor = PureWhite,
+            containerColor = palette.surface,
             shape = RoundedCornerShape(26.dp),
-            title = { Text("Clear All Activity Logs?", style = XMaxType.secondaryTitle, color = ObsidianCharcoal) },
-            text = { Text("Permanently delete all ${state.activityLog.size} activity log entries? This cannot be undone.", style = XMaxType.subheadline.tabular(), color = StudioTextSecondary) },
+            title = { Text("Clear All Activity Logs?", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = { Text("Permanently delete all ${state.activityLog.size} activity log entries? This cannot be undone.", style = XMaxType.subheadline.tabular(), color = palette.textSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1117,7 +1122,7 @@ fun ActivityLogScreen(
                     modifier = Modifier.testTag("confirm_clear_all_logs_button")
                 ) { Text("Clear Logs", style = XMaxType.buttonCompact) }
             },
-            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = StudioTextSecondary) } }
+            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
         )
     }
 }
