@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path
+        name="quotations"
+        path="quotations/" />
+    <files-path
+        name="chat_uploads"
+        path="chat_uploads/" />
+    <cache-path
+        name="shared_pdfs"
+        path="quotations/" />
+    <cache-path
+        name="camera_captures"
+        path="camera_captures/" />
+</paths>
