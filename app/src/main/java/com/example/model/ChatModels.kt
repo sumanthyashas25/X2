@@ -346,3 +346,37 @@ data class MeetingSchedule(
     val createdByName: String = "",
     val createdAt: Timestamp? = null
 )
+
+enum class CallType(val label: String) {
+    AUDIO("Voice Call"),
+    VIDEO("Video Call")
+}
+
+enum class CallStatus(val label: String) {
+    RINGING("Ringing"),
+    CONNECTED("Connected"),
+    DECLINED("Declined"),
+    ENDED("Ended"),
+    MISSED("Missed")
+}
+
+@Keep
+@IgnoreExtraProperties
+data class UserPresence(
+    @DocumentId val id: String = "",
+    val uid: String = "",
+    val isOnline: Boolean = false,
+    val statusMessage: String = "",
+    val lastSeenAtMillis: Long = 0L,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class EphemeralChannelState(
+    @DocumentId val id: String = "",
+    val isTyping: Boolean = false,
+    val isRecording: Boolean = false,
+    val updatedAt: Timestamp? = null
+)
+

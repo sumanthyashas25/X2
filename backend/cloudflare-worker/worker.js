@@ -25,9 +25,16 @@ function getSupabaseBaseUrl(env) {
 }
 
 function resolveStorageProvider(env) {
+  const forced = String(env.STORAGE_PROVIDER || "AUTO").trim().toUpperCase();
+  if (forced === "SUPABASE_STORAGE" && hasSupabaseConfig(env)) return "SUPABASE_STORAGE";
+  if (forced === "CLOUDFLARE_R2" && env.CHAT_BUCKET) return "CLOUDFLARE_R2";
   if (env.CHAT_BUCKET) return "CLOUDFLARE_R2";
   if (hasSupabaseConfig(env)) return "SUPABASE_STORAGE";
   return "UNCONFIGURED";
+}
+
+function isR2Active(env) {
+  return resolveStorageProvider(env) === "CLOUDFLARE_R2" && Boolean(env.CHAT_BUCKET);
 }
 
 const ALLOWED_BUCKETS = {
@@ -102,7 +109,11 @@ export default {
         {
           ok: true,
           plan: "free",
+          workerVersion: "2026.11.27",
           storageProvider: resolveStorageProvider(env),
+          r2Configured: Boolean(env.CHAT_BUCKET),
+          supabaseConfigured: hasSupabaseConfig(env),
+          fcmConfigured: Boolean(env.SERVICE_ACCOUNT_JSON || env.FIREBASE_SERVICE_ACCOUNT_JSON),
           firebaseProjectId: env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID,
           firestoreDbId: env.FIRESTORE_DB_ID || DEFAULT_FIRESTORE_DB_ID,
         },
@@ -114,6 +125,11 @@ export default {
     try {
       const projectId = String(env.FIREBASE_PROJECT_ID || DEFAULT_FIREBASE_PROJECT_ID).trim();
       const firestoreDbId = String(env.FIRESTORE_DB_ID || DEFAULT_FIRESTORE_DB_ID).trim();
+
+      // Public read-only Client Portal guest link routes (token-authenticated, sanitized output only)
+      if (url.pathname.startsWith("/portal/")) {
+        return await handlePublicPortalRoute(request, url, projectId, firestoreDbId, env, cors);
+      }
 
       const authHeader = request.headers.get("Authorization") || "";
       const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -148,6 +164,9 @@ export default {
             firebaseProjectId: projectId,
             firestoreDbId,
             storageProvider: resolveStorageProvider(env),
+            r2Configured: Boolean(env.CHAT_BUCKET),
+            supabaseConfigured: hasSupabaseConfig(env),
+            fcmConfigured: Boolean(env.SERVICE_ACCOUNT_JSON || env.FIREBASE_SERVICE_ACCOUNT_JSON),
             member: member
               ? {
                   status: member.status || "",
@@ -206,6 +225,9 @@ export default {
       }
       if (url.pathname === "/v1/admin/reset-chunk") {
         return await handleResetChunk(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors);
+      }
+      if (url.pathname === "/v1/nudges/dispatch") {
+        return await handlePaymentNudgeDispatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors);
       }
 
       return jsonResponse({ error: "Not found" }, 404, cors);
@@ -421,9 +443,9 @@ async function fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId)
 function assertApprovedNotSuspended(member) {
   if (
     !member ||
-    (member.status !== "APPROVED" && member.status !== "active") ||
+    member.status !== "APPROVED" ||
     member.isSuspended === true ||
-    member.active === false ||
+    member.active !== true ||
     member.messagingSuspended === true
   ) {
     const err = new Error("User account is inactive, suspended, or unauthorized");
@@ -625,7 +647,7 @@ async function handleR2Upload(request, url, uid, idToken, projectId, firestoreDb
     );
   }
 
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     await env.CHAT_BUCKET.put(storagePath, bytes, {
       httpMetadata: {
         contentType: rawContentType,
@@ -748,7 +770,7 @@ async function handleR2Download(url, uid, idToken, projectId, firestoreDbId, env
     await assertChatParticipant(companyId, chatId, uid, member, idToken, projectId, firestoreDbId);
   }
 
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     const object = await env.CHAT_BUCKET.get(storagePath);
     if (!object) {
       return jsonResponse({ error: "File not found in Cloudflare R2" }, 404, cors);
@@ -838,7 +860,7 @@ async function handleR2Delete(uid, idToken, body, projectId, firestoreDbId, env,
     return jsonResponse({ error: "Chat ID mismatch" }, 403, cors);
   }
 
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     const head = await env.CHAT_BUCKET.head(storagePath);
     if (!head) {
       return jsonResponse({ deleted: true, alreadyMissing: true }, 200, cors);
@@ -935,7 +957,7 @@ async function handleStorageUsage(url, uid, idToken, projectId, firestoreDbId, e
   let objectCount = 0;
   let truncated = false;
 
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     const quotaBytes = 10 * 1024 * 1024 * 1024; // 10 GB Cloudflare R2 Free Tier
     let cursor = undefined;
     for (let page = 0; page < 5; page++) {
@@ -1116,7 +1138,7 @@ async function handleStorageDeleteBatch(uid, idToken, companyId, body, projectId
   }
 
   let deletedCount = 0;
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     const keys = validItems.map((i) => i.storagePath);
     await env.CHAT_BUCKET.delete(keys);
     deletedCount = keys.length;
@@ -1316,10 +1338,22 @@ async function handlePushDispatch(uid, idToken, companyId, body, projectId, fire
   const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
   assertApprovedNotSuspended(member);
 
-  const { doc: chat } = await fetchChannelOrChatDoc(companyId, chatId, idToken, projectId, firestoreDbId);
-  const targetUids = Array.isArray(body.targetUids)
+  const { chat } = await assertChatParticipant(
+    companyId,
+    chatId,
+    uid,
+    member,
+    idToken,
+    projectId,
+    firestoreDbId
+  );
+  const channelParticipants = Array.isArray(chat.participantUids) ? chat.participantUids : [];
+  const rawTargets = Array.isArray(body.targetUids)
     ? body.targetUids.map(sanitizeId).filter((p) => p && p !== uid).slice(0, 35)
     : [];
+  const targetUids = channelParticipants.length > 0
+    ? rawTargets.filter((p) => channelParticipants.includes(p))
+    : rawTargets;
 
   if (targetUids.length === 0) return jsonResponse({ sentCount: 0 }, 200, cors);
   if (!env.SERVICE_ACCOUNT_JSON && !env.FIREBASE_SERVICE_ACCOUNT_JSON) {
@@ -1386,7 +1420,7 @@ async function handleResetChunk(uid, idToken, companyId, body, projectId, firest
   if (!chatId) return jsonResponse({ error: "Missing chatId for reset" }, 400, cors);
 
   let deletedStorageInChunk = 0;
-  if (env.CHAT_BUCKET) {
+  if (isR2Active(env)) {
     const prefixes = [
       `companies/${companyId}/chats/${chatId}/`,
       `companies/${companyId}/group-photos/${chatId}/`,
@@ -1397,6 +1431,43 @@ async function handleResetChunk(uid, idToken, companyId, body, projectId, firest
       if (keys.length > 0) {
         await env.CHAT_BUCKET.delete(keys);
         deletedStorageInChunk += keys.length;
+      }
+    }
+  } else if (hasSupabaseConfig(env)) {
+    const supabaseBase = getSupabaseBaseUrl(env);
+    const prefixes = [
+      `companies/${companyId}/chats/${chatId}`,
+      `companies/${companyId}/group-photos/${chatId}`,
+    ];
+    for (const bucket of Object.keys(ALLOWED_BUCKETS)) {
+      for (const prefix of prefixes) {
+        const listRes = await fetch(`${supabaseBase}/storage/v1/object/list/${encodeURIComponent(bucket)}`, {
+          method: "POST",
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+        }).catch(() => null);
+        if (!listRes || !listRes.ok) continue;
+        const entries = await listRes.json().catch(() => []);
+        const paths = (Array.isArray(entries) ? entries : [])
+          .filter((e) => e && e.id && e.name)
+          .map((e) => `${prefix}/${e.name}`);
+        if (paths.length === 0) continue;
+        const delRes = await fetch(`${supabaseBase}/storage/v1/object/${encodeURIComponent(bucket)}`, {
+          method: "DELETE",
+          headers: {
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prefixes: paths }),
+        }).catch(() => null);
+        if (delRes && delRes.ok) {
+          deletedStorageInChunk += paths.length;
+        }
       }
     }
   }
@@ -1485,4 +1556,206 @@ async function getGoogleOAuthAccessToken(env) {
   const tokenData = await tokenRes.json();
   if (!tokenData.access_token) throw new Error("Failed to obtain Google OAuth access token");
   return tokenData.access_token;
+}
+
+function escapeHtml(raw) {
+  return String(raw || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatInrPaise(paise) {
+  const num = Number(paise || 0) / 100;
+  return "₹" + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function fetchDocAsService(path, projectId, firestoreDbId, accessToken) {
+  const docUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/${path}`;
+  const res = await fetch(docUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) return null;
+  const raw = await res.json();
+  return parseFirestoreDoc(raw);
+}
+
+async function listSubcollectionAsService(path, projectId, firestoreDbId, accessToken) {
+  const colUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/${path}?pageSize=100`;
+  const res = await fetch(colUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.documents || []).map(parseFirestoreDoc);
+}
+
+async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, env, cors) {
+  const parts = url.pathname.split("/").filter(Boolean); // ["portal", token, sub?]
+  const token = sanitizeId(parts[1] || "");
+  const sub = parts[2] || "";
+  if (!token || token.length < 12) {
+    return jsonResponse({ error: "Invalid portal token" }, 400, cors);
+  }
+  if (!env.SERVICE_ACCOUNT_JSON && !env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    return new Response(
+      `<html><body style="font-family:sans-serif;padding:32px;max-width:640px;margin:auto"><h2>X.MAX Client Portal</h2><p>Portal backend credentials are not configured yet on the Worker. Contact your account manager.</p></body></html>`,
+      { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } }
+    );
+  }
+
+  const accessToken = await getGoogleOAuthAccessToken(env);
+  const linkDoc = await fetchDocAsService(`portal_tokens/${token}`, projectId, firestoreDbId, accessToken);
+  if (!linkDoc || linkDoc.revoked === true) {
+    return jsonResponse({ error: "Client portal link not found or revoked" }, 404, cors);
+  }
+  if (linkDoc.expiresAtMillis && Number(linkDoc.expiresAtMillis) < Date.now()) {
+    return jsonResponse({ error: "Client portal link has expired" }, 410, cors);
+  }
+
+  const companyId = sanitizeId(linkDoc.companyId || "xmax");
+  const projId = sanitizeId(linkDoc.projectId || "");
+  const quoteId = sanitizeId(linkDoc.quotationId || "");
+
+  const [company, project, quotation, allDelivs] = await Promise.all([
+    fetchDocAsService(`companies/${companyId}`, projectId, firestoreDbId, accessToken),
+    projId ? fetchDocAsService(`companies/${companyId}/projects/${projId}`, projectId, firestoreDbId, accessToken) : Promise.resolve(null),
+    quoteId ? fetchDocAsService(`companies/${companyId}/quotations/${quoteId}`, projectId, firestoreDbId, accessToken) : Promise.resolve(null),
+    projId ? listSubcollectionAsService(`companies/${companyId}/deliverables`, projectId, firestoreDbId, accessToken) : Promise.resolve([]),
+  ]);
+
+  if (request.method === "POST" && sub === "approve") {
+    const body = await request.json().catch(() => ({}));
+    const note = String(body.note || "Approved via Client Portal link").slice(0, 400);
+    const patchUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/client_portal_links/${token}?updateMask.fieldPaths=clientApprovedAtMillis&updateMask.fieldPaths=clientApprovalNote`;
+    await fetch(patchUrl, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          clientApprovedAtMillis: { integerValue: String(Date.now()) },
+          clientApprovalNote: { stringValue: note },
+        },
+      }),
+    });
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/portal_tokens/${token}?updateMask.fieldPaths=clientApprovedAtMillis&updateMask.fieldPaths=clientApprovalNote`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            clientApprovedAtMillis: { integerValue: String(Date.now()) },
+            clientApprovalNote: { stringValue: note },
+          },
+        }),
+      }
+    );
+    return jsonResponse({ ok: true, approvedAtMillis: Date.now(), note }, 200, cors);
+  }
+
+  const projectDeliverables = (allDelivs || [])
+    .filter((d) => d.projectId === projId)
+    .map((d) => ({ title: d.title || "Deliverable", status: d.status || "NOT_STARTED", progressPercent: Number(d.progressPercent || 0) }));
+
+  const safePayload = {
+    companyName: company?.name || "X.MAX Agency",
+    projectTitle: project?.title || linkDoc.projectTitle || quotation?.projectTitle || "Project",
+    clientName: project?.clientCompanyName || linkDoc.clientName || "",
+    status: project?.status || quotation?.status || "ACTIVE",
+    agreedValuePaise: Number(project?.agreedValuePaise || quotation?.totalPaise || 0),
+    paidPaise: Number(project?.paidPaise || 0),
+    gstin: company?.gstin || "",
+    gstRatePercent: Number(company?.gstRatePercent || 18),
+    deliverables: projectDeliverables,
+    approvedAtMillis: Number(linkDoc.clientApprovedAtMillis || 0),
+    approvalNote: linkDoc.clientApprovalNote || "",
+  };
+
+  if (sub === "invoice") {
+    const balance = Math.max(0, safePayload.agreedValuePaise - safePayload.paidPaise);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GST Tax Invoice</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:20px;color:#0f172a} .box{border:1px solid #cbd5e1;border-radius:14px;padding:18px;background:#f8fafc}</style></head><body><h1>${escapeHtml(safePayload.companyName)} — Tax Invoice</h1><div class="box"><p><b>Client:</b> ${escapeHtml(safePayload.clientName)}</p><p><b>Project:</b> ${escapeHtml(safePayload.projectTitle)}</p><p><b>GSTIN:</b> ${escapeHtml(safePayload.gstin || "Registered")}</p><p><b>Total Contract:</b> ${formatInrPaise(safePayload.agreedValuePaise)}</p><p><b>Paid:</b> ${formatInrPaise(safePayload.paidPaise)}</p><p><b>Balance Due:</b> ${formatInrPaise(balance)}</p><button onclick="window.print()" style="margin-top:12px;padding:10px 18px;border-radius:999px;border:none;background:#111;color:#fff;cursor:pointer">Download / Print GST Invoice</button></div></body></html>`;
+    return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } });
+  }
+
+  const accept = request.headers.get("Accept") || "";
+  if (accept.includes("application/json") || url.searchParams.get("format") === "json") {
+    return jsonResponse(safePayload, 200, cors);
+  }
+
+  const rowsHtml = projectDeliverables
+    .map((d) => `<li><b>${escapeHtml(d.title)}</b> — ${escapeHtml(d.status)} (${d.progressPercent}%)</li>`)
+    .join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(safePayload.projectTitle)} Portal</title><style>body{font-family:system-ui,sans-serif;max-width:740px;margin:24px auto;padding:20px;background:#f8fafc;color:#0f172a}.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px}</style></head><body><div class="card"><h2>${escapeHtml(safePayload.companyName)} — Client Portal</h2><p><b>Project:</b> ${escapeHtml(safePayload.projectTitle)} (${escapeHtml(safePayload.status)})</p><p><b>Client:</b> ${escapeHtml(safePayload.clientName)}</p><p><b>Total:</b> ${formatInrPaise(safePayload.agreedValuePaise)} | <b>Paid:</b> ${formatInrPaise(safePayload.paidPaise)}</p><a href="/portal/${escapeHtml(token)}/invoice">View GST Tax Invoice</a></div><div class="card"><h3>Deliverables</h3><ul>${rowsHtml || "<li>In progress</li>"}</ul></div><div class="card"><button onclick="fetch('/portal/${escapeHtml(token)}/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:'Approved milestone via Portal'})}).then(()=>location.reload())" style="padding:10px 18px;border-radius:999px;border:none;background:#4f46e5;color:#fff;cursor:pointer">Approve Milestone</button>${safePayload.approvedAtMillis ? `<p>Approved: ${escapeHtml(safePayload.approvalNote)}</p>` : ""}</div></body></html>`;
+  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } });
+}
+
+async function handlePaymentNudgeDispatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {
+  const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
+  assertApprovedNotSuspended(member);
+
+  const accessLevel = String(member.accessLevel || member.role || "").toUpperCase();
+  const perms = member.permissions || {};
+  const grants = member.delegatedGrants || {};
+  const hasPerm = (key) => Boolean(perms?.[key]?.allowed || grants?.[key]?.allowed);
+  const canNudge =
+    accessLevel === "SUPER_ADMIN" ||
+    accessLevel === "ADMIN" ||
+    hasPerm("RECORD_PAYMENTS") ||
+    hasPerm("VIEW_PAYMENTS") ||
+    hasPerm("ISSUE_QUOTATIONS");
+  if (!canNudge) {
+    return jsonResponse({ error: "Insufficient commercial permissions to dispatch client payment nudges" }, 403, cors);
+  }
+
+  const phone = String(body.phone || "").replace(/[^0-9+]/g, "");
+  const email = String(body.email || "").trim();
+  const messageBody = String(body.messageBody || "").trim();
+  const channels = String(body.channels || "WHATSAPP_AND_EMAIL");
+
+  let whatsappDispatched = false;
+  let emailDispatched = false;
+
+  if ((channels.includes("WHATSAPP")) && phone && env.WHATSAPP_TOKEN && env.WHATSAPP_PHONE_ID) {
+    const waRes = await fetch(`https://graph.facebook.com/v19.0/${env.WHATSAPP_PHONE_ID}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: phone.replace(/^\+/, ""),
+        type: "text",
+        text: { body: messageBody },
+      }),
+    }).catch(() => null);
+    if (waRes && waRes.ok) whatsappDispatched = true;
+  }
+
+  if ((channels.includes("EMAIL")) && email && env.EMAIL_WEBHOOK_URL) {
+    const emRes = await fetch(String(env.EMAIL_WEBHOOK_URL), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: email,
+        subject: `Payment Reminder — ${String(body.clientName || "Project")} (${String(body.amountDueFormatted || "")})`,
+        text: messageBody,
+        portalUrl: String(body.portalUrl || ""),
+      }),
+    }).catch(() => null);
+    if (emRes && emRes.ok) emailDispatched = true;
+  }
+
+  const mode = (whatsappDispatched || emailDispatched) ? "CLOUD_API" : "LINK_FALLBACK";
+  return jsonResponse(
+    {
+      ok: true,
+      mode,
+      whatsappDispatched,
+      emailDispatched,
+      note: mode === "CLOUD_API"
+        ? "Dispatched via configured Worker API."
+        : "No WhatsApp/Email Worker secrets configured; logged nudge and prepared device handoff links.",
+    },
+    200,
+    cors
+  );
 }

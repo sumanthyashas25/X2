@@ -44,7 +44,7 @@ data class ResolvedThreadWallpaper(
  * status mute list, blocked users, and default status privacy).
  */
 object ChatSettingsStore {
-    private const val PREF_NAME = "xmax_chat_settings_v1"
+    private const val DEFAULT_PREF_NAME = "xmax_chat_settings_v1"
     private const val KEY_PIN_HASH = "lock_pin_hash"
     private const val KEY_PIN_SALT = "lock_pin_salt"
     private const val KEY_LOCKED_IDS = "locked_channel_ids"
@@ -70,17 +70,40 @@ object ChatSettingsStore {
     val prefsFlow: StateFlow<ChatUserPreferences> = _prefsFlow.asStateFlow()
 
     @Volatile
-    private var initialized = false
+    private var loadedProfileKey: String? = null
+
+    @Volatile
+    private var activeUid: String = ""
+
+    private fun prefFileName(uid: String = activeUid): String {
+        val clean = uid.trim().replace(Regex("[^A-Za-z0-9_-]"), "_")
+        return if (clean.isBlank()) DEFAULT_PREF_NAME else "xmax_chat_settings_uid_$clean"
+    }
 
     private fun prefs(context: Context): SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(prefFileName(), Context.MODE_PRIVATE)
+
+    fun setActiveProfile(context: Context, uid: String?) {
+        val normalized = uid?.trim().orEmpty()
+        val nextKey = prefFileName(normalized)
+        if (normalized == activeUid && loadedProfileKey == nextKey) return
+        synchronized(this) {
+            activeUid = normalized
+            loadedProfileKey = null
+            _prefsFlow.value = ChatUserPreferences()
+            _prefsFlow.value = readFromDisk(context)
+            loadedProfileKey = nextKey
+        }
+    }
 
     fun ensureLoaded(context: Context): ChatUserPreferences {
-        if (!initialized) {
+        val targetFile = prefFileName()
+        if (loadedProfileKey != targetFile) {
             synchronized(this) {
-                if (!initialized) {
+                val recheck = prefFileName()
+                if (loadedProfileKey != recheck) {
                     _prefsFlow.value = readFromDisk(context)
-                    initialized = true
+                    loadedProfileKey = recheck
                 }
             }
         }

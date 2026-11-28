@@ -5,6 +5,23 @@ import android.util.Log
 import com.example.R
 import com.google.firebase.FirebaseApp
 
+data class FirebaseConfigStatus(
+    val appInitialized: Boolean = false,
+    val projectId: String = "",
+    val databaseId: String = "",
+    val applicationId: String = "",
+    val hasValidApiKey: Boolean = false,
+    val hasValidWebClientId: Boolean = false,
+    val issueMessage: String? = null
+) {
+    val isHealthy: Boolean
+        get() = appInitialized &&
+            projectId == FirebaseStartup.EXPECTED_PROJECT_ID &&
+            databaseId == FirebaseStartup.EXPECTED_DATABASE_ID &&
+            hasValidApiKey &&
+            hasValidWebClientId
+}
+
 /**
  * Ensures [FirebaseApp] is initialized defensively before any [FirebaseAuth] or
  * [FirebaseFirestore] singleton is accessed, and logs detailed initialization
@@ -29,21 +46,50 @@ object FirebaseStartup {
         return fromRes.ifBlank { EXPECTED_DATABASE_ID }
     }
 
+    fun inspectConfig(context: Context?): FirebaseConfigStatus {
+        val appCtx = context?.applicationContext ?: context
+        if (appCtx != null) {
+            ensureInitialized(appCtx)
+        }
+        val app = runCatching { FirebaseApp.getInstance() }.getOrNull()
+        val options = app?.options
+        val projectId = options?.projectId.orEmpty()
+        val apiKey = options?.apiKey.orEmpty()
+        val appId = options?.applicationId.orEmpty()
+        val resolvedDbId = resolveDatabaseId(appCtx)
+        val webClientId = appCtx?.let {
+            runCatching { it.getString(R.string.default_web_client_id).trim() }.getOrNull()
+        }.orEmpty()
+        val hasValidApiKey = apiKey.isNotBlank() && !apiKey.contains("Dummy", ignoreCase = true)
+        val hasValidWebClientId = webClientId.isNotBlank() && !webClientId.startsWith("100000000000-dummyclientid")
+
+        val issue = when {
+            app == null -> "FirebaseApp failed to initialize from google-services.json."
+            projectId != EXPECTED_PROJECT_ID -> "Firebase project mismatch: $projectId (expected $EXPECTED_PROJECT_ID)."
+            !hasValidApiKey -> "Firebase API key missing or placeholder in google-services.json."
+            !hasValidWebClientId -> "Google Sign-In default_web_client_id missing or placeholder."
+            resolvedDbId != EXPECTED_DATABASE_ID -> "Firestore database ID mismatch: $resolvedDbId."
+            else -> null
+        }
+
+        return FirebaseConfigStatus(
+            appInitialized = app != null,
+            projectId = projectId,
+            databaseId = resolvedDbId,
+            applicationId = appId,
+            hasValidApiKey = hasValidApiKey,
+            hasValidWebClientId = hasValidWebClientId,
+            issueMessage = issue
+        )
+    }
+
     fun ensureInitialized(context: Context? = null) {
         if (initialized && runCatching { FirebaseApp.getInstance() }.isSuccess) return
         synchronized(this) {
-            val appCtx = context?.applicationContext ?: context
+            val appCtx = context?.applicationContext ?: context ?: return
             runCatching {
-                if (FirebaseApp.getApps(appCtx ?: return@runCatching).isEmpty()) {
-                    var app = try { FirebaseApp.initializeApp(appCtx) } catch (_: Throwable) { null }
-                    if (app == null) {
-                        val fallbackOptions = com.google.firebase.FirebaseOptions.Builder()
-                            .setApplicationId(appCtx.packageName.ifBlank { EXPECTED_PACKAGE_NAME })
-                            .setProjectId(EXPECTED_PROJECT_ID)
-                            .setApiKey("AIzaSyDummyKeyForInitializationCheck00")
-                            .build()
-                        FirebaseApp.initializeApp(appCtx, fallbackOptions)
-                    }
+                if (FirebaseApp.getApps(appCtx).isEmpty()) {
+                    FirebaseApp.initializeApp(appCtx)
                 }
                 val app = FirebaseApp.getInstance()
                 val options = app.options

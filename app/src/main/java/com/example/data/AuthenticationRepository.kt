@@ -12,6 +12,7 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
+import com.example.domain.CatalogueSeedData
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -54,6 +55,20 @@ data class PhoneVerificationSession(
     val errorMessage: String? = null
 )
 
+enum class UserRoleType(val roleKey: String, val displayLabel: String) {
+    SUPER_ADMIN("super_admin", "Super Admin"),
+    STANDARD_MEMBER("standard_member", "Agency Team Member"),
+    UNAUTHENTICATED("unauthenticated", "Signed Out")
+}
+
+data class VerifiedUserRole(
+    val role: UserRoleType = UserRoleType.UNAUTHENTICATED,
+    val email: String = "",
+    val uid: String = "",
+    val isSuperAdmin: Boolean = false,
+    val isAuthenticated: Boolean = false
+)
+
 tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
@@ -85,6 +100,40 @@ class AuthenticationRepository(
 
     companion object {
         private const val TAG = "XMaxAuthRepository"
+        const val SUPER_ADMIN_EMAIL = CatalogueSeedData.DEFAULT_SUPER_ADMIN_EMAIL
+
+        fun verifyUserRole(
+            email: String?,
+            uid: String = "",
+            isAuthenticated: Boolean = true
+        ): VerifiedUserRole {
+            if (!isAuthenticated) {
+                return VerifiedUserRole(
+                    role = UserRoleType.UNAUTHENTICATED,
+                    email = "",
+                    uid = "",
+                    isSuperAdmin = false,
+                    isAuthenticated = false
+                )
+            }
+            val normalizedEmail = email.orEmpty().trim().lowercase()
+            val superAdmin = CatalogueSeedData.isSuperAdminEmail(normalizedEmail)
+            return VerifiedUserRole(
+                role = if (superAdmin) UserRoleType.SUPER_ADMIN else UserRoleType.STANDARD_MEMBER,
+                email = normalizedEmail,
+                uid = uid,
+                isSuperAdmin = superAdmin,
+                isAuthenticated = true
+            )
+        }
+
+        fun verifyUserRole(user: FirebaseUser?): VerifiedUserRole {
+            return if (user == null) {
+                verifyUserRole(email = null, uid = "", isAuthenticated = false)
+            } else {
+                verifyUserRole(email = user.email, uid = user.uid, isAuthenticated = true)
+            }
+        }
     }
 
     val currentUser: FirebaseUser?
@@ -101,6 +150,16 @@ class AuthenticationRepository(
         trySend(firebaseAuth.currentUser)
         awaitClose { firebaseAuth.removeAuthStateListener(listener) }
     }
+
+    /**
+     * Real-time verified user role stream distinguishing `super_admin` (xdotmax@gmail.com)
+     * from `standard_member` agency team members.
+     */
+    val verifiedUserRoleFlow: Flow<VerifiedUserRole> = authStateFlow
+        .map { user -> verifyUserRole(user) }
+        .distinctUntilChanged()
+
+    fun currentVerifiedUserRole(): VerifiedUserRole = verifyUserRole(currentUser)
 
     /**
      * Stream of [AuthSessionStatus] allowing navigation & UI layers to react to login/logout events.

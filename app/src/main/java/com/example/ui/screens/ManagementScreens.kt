@@ -28,16 +28,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.chat.remote.WorkerBridgeClient
+import com.example.data.NetworkConnectivityMonitor
 import com.example.domain.MoneyFormatter
 import com.example.domain.WorkDistributionEngine
 import com.example.model.*
 import com.example.system.AppHapticsAndNotifier
 import com.example.ui.AgencyUiState
+import com.example.ui.components.AnalyticsVisualizer
 import com.example.ui.components.CatalogueServiceTicketCard
+import com.example.ui.components.CommercialFeatureGate
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.MetricStatCard
 import com.example.ui.components.MonochromeSearchBar
 import com.example.ui.components.StatusPill
+import com.example.ui.components.WorkspaceUiPolicy
 import com.example.ui.components.formatTitleCase
 import com.example.ui.theme.*
 
@@ -201,13 +207,17 @@ fun QuotationsScreen(
     state: AgencyUiState,
     onOpenQuote: (Quotation?) -> Unit,
     onDeleteQuotation: (Quotation) -> Unit = {},
-    onOpenPayments: () -> Unit = {}
+    onOpenPayments: () -> Unit = {},
+    onShareQuotePdf: (Quotation) -> Unit = {},
+    onOpenRequirementsQuote: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val palette = XMaxTheme.colors
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
     var statusFilter by remember { mutableStateOf<QuotationStatus?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var deleteConfirmQuote by remember { mutableStateOf<Quotation?>(null) }
-    val isSuper = state.isSuperAdmin
+    val isSuper = uiPolicy.isSuperAdmin
 
     val filtered = remember(state.quotations, statusFilter, searchQuery) {
         state.quotations.filter { q ->
@@ -228,13 +238,24 @@ fun QuotationsScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Quotations (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
-                if (state.hasPerm(AppPermission.CREATE_QUOTATIONS) || state.hasPerm(AppPermission.ISSUE_QUOTATIONS)) {
-                    Button(
-                        onClick = { onOpenQuote(null) },
-                        shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                        modifier = Modifier.height(42.dp)
-                    ) { Text("+ New Quote", style = XMaxType.buttonCompact) }
+                CommercialFeatureGate(policy = uiPolicy) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (onOpenRequirementsQuote != null) {
+                            OutlinedButton(
+                                onClick = onOpenRequirementsQuote,
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(42.dp).testTag("quotations_from_brief_button")
+                            ) { Text("From Brief", style = XMaxType.buttonCompact, color = palette.textPrimary) }
+                        }
+                        Button(
+                            onClick = { onOpenQuote(null) },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                            modifier = Modifier.height(42.dp)
+                        ) { Text("+ New Quote", style = XMaxType.buttonCompact) }
+                    }
                 }
             }
         }
@@ -300,6 +321,15 @@ fun QuotationsScreen(
                             Text("${q.quoteNumber} (v${q.revision})", style = XMaxType.headline.tabular(), color = palette.textPrimary)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 StatusPill(q.statusEnum().label, bg, fg)
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        AppHapticsAndNotifier.triggerTickHaptic(context)
+                                        onShareQuotePdf(q)
+                                    },
+                                    modifier = Modifier.size(36.dp).testTag("quote_pdf_${q.id}")
+                                ) {
+                                    Icon(Icons.Filled.PictureAsPdf, contentDescription = "Share Quote PDF", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
+                                }
                                 if (isSuper) {
                                     IconButton(
                                         onClick = { deleteConfirmQuote = q },
@@ -565,13 +595,26 @@ fun CatalogueScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PaymentsScreen(
     state: AgencyUiState,
-    onRecordPayment: (Project, Long, Long, PaymentMethod, String, String) -> Unit
+    onRecordPayment: (Project, Long, Long, PaymentMethod, String, String) -> Unit,
+    onGenerateTaxInvoice: (Project, Quotation?) -> Unit = { _, _ -> },
+    onDispatchNudge: (Project, Client?, String, String) -> Unit = { _, _, _, _ -> },
+    onCreatePortalLink: (Project, Quotation?, (ClientPortalLink) -> Unit) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
+    val isOnline by NetworkConnectivityMonitor.isOnline.collectAsStateWithLifecycle()
+    val analyticsSeries = remember(state.projects, state.deliverables, state.payments, state.timeEntries) {
+        WorkDistributionEngine.computeAgencyAnalyticsSeries(
+            projects = state.projects,
+            deliverables = state.deliverables,
+            payments = state.payments,
+            timeEntries = state.timeEntries
+        )
+    }
     val reminderSummary = remember(state.projects, state.deliverables, state.quotations) {
         WorkDistributionEngine.computePaymentReminders(
             projects = state.projects,
@@ -601,6 +644,7 @@ fun PaymentsScreen(
     val balanceDueCount = remember(activeProjects) { activeProjects.count { it.outstandingPaise > 0L } }
     val settledCount = remember(activeProjects) { activeProjects.count { it.outstandingPaise <= 0L } }
     val canRecord = state.hasPerm(AppPermission.RECORD_PAYMENTS)
+    val canSeeCommercialDocs = canRecord || state.hasPerm(AppPermission.ISSUE_QUOTATIONS) || state.isSuperAdmin || state.isAdmin
 
     val filteredProjects = remember(activeProjects, statusFilter, searchQuery) {
         activeProjects.filter { p ->
@@ -625,13 +669,42 @@ fun PaymentsScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (!isOnline || state.deliverablesPendingSync) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.butterBg,
+                    border = BorderStroke(1.dp, palette.butterInk.copy(alpha = 0.28f)),
+                    modifier = Modifier.fillMaxWidth().testTag("payments_offline_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            if (!isOnline) Icons.Filled.CloudOff else Icons.Filled.CloudSync,
+                            contentDescription = null,
+                            tint = palette.butterInk,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = if (!isOnline) "Offline Ledger Mode — showing cached invoices & balances. Changes will queue for sync." else "Syncing queued financial updates with cloud…",
+                            style = XMaxType.footnoteSemibold,
+                            color = palette.butterInk
+                        )
+                    }
+                }
+            }
+        }
+
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(Modifier.weight(1f).padding(end = 8.dp)) {
                     Text("Payment Tracker", style = XMaxType.sectionHeading, color = palette.textPrimary)
                     Text("${activeProjects.size} projects • ${state.payments.size} receipts logged", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
                 }
@@ -672,9 +745,10 @@ fun PaymentsScreen(
                         color = EmeraldApproved,
                         trackColor = palette.surfaceMuted
                     )
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         StatusPill("Settled: $settledCount", palette.mintBg, palette.mintInk)
                         if (advanceDueCount > 0) {
@@ -798,6 +872,13 @@ fun PaymentsScreen(
         }
 
         item {
+            AnalyticsVisualizer(
+                series = analyticsSeries,
+                title = "Payment Trends & Revenue Forecast"
+            )
+        }
+
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 MetricStatCard("Collected", MoneyFormatter.formatInr(totalPaid), "of ${MoneyFormatter.formatInr(totalAgreed)}", Icons.Filled.AccountBalanceWallet, containerColor = palette.mintBg, accentColor = palette.mintInk, modifier = Modifier.weight(1f))
                 MetricStatCard("Outstanding", MoneyFormatter.formatInr(totalBalance), "$balanceDueCount open projects", Icons.Filled.Schedule, containerColor = palette.surfaceMuted, accentColor = palette.textPrimary, modifier = Modifier.weight(1f))
@@ -856,6 +937,18 @@ fun PaymentsScreen(
         } else {
             items(filteredProjects, key = { it.id }) { proj ->
                 val projPct = if (proj.agreedValuePaise <= 0L) 100 else ((proj.paidPaise.toDouble() / proj.agreedValuePaise.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+                val matchedQuote = remember(state.quotations, proj.approvedQuoteId, proj.id) {
+                    state.quotations.firstOrNull { it.id == proj.approvedQuoteId || it.linkedProjectId == proj.id }
+                }
+                val matchedClient = remember(state.clients, proj.clientId, proj.clientCompanyName) {
+                    state.clients.firstOrNull { it.id == proj.clientId || it.companyName.equals(proj.clientCompanyName, ignoreCase = true) }
+                }
+                val activeLink = remember(state.portalLinks, proj.id) {
+                    state.portalLinks.firstOrNull { it.projectId == proj.id && it.isActive() }
+                }
+                val projTime = remember(state.timeEntries, proj.id) { state.timeEntries.filter { it.projectId == proj.id } }
+                val loggedMins = projTime.sumOf { it.durationMinutes }
+                val laborCostPaise = projTime.sumOf { it.billableAmountPaise() }
                 val (badgeBg, badgeFg, badgeLabel) = when {
                     proj.outstandingPaise <= 0L -> Triple(palette.mintBg, palette.mintInk, "Settled ✓")
                     proj.advanceDuePaise > 0L -> Triple(palette.butterBg, palette.butterInk, "Advance Due")
@@ -893,12 +986,83 @@ fun PaymentsScreen(
                             Text("Paid: ${MoneyFormatter.formatInr(proj.paidPaise)}", style = XMaxType.caption1Semibold.tabular(), color = palette.mintInk)
                             Text("Due: ${MoneyFormatter.formatInr(proj.outstandingPaise)}", style = XMaxType.caption1Semibold.tabular(), color = if (proj.outstandingPaise > 0L) palette.blushInk else palette.mintInk)
                         }
+                        if (loggedMins > 0) {
+                            val hrsStr = "%.1f".format(loggedMins / 60.0)
+                            Text(
+                                "Tracked Time: ${hrsStr}h • Billable Labor: ${MoneyFormatter.formatInr(laborCostPaise)}",
+                                style = XMaxType.caption1Medium.tabular(),
+                                color = palette.skyInk
+                            )
+                        }
                         if (proj.advanceDuePaise > 0L) {
                             Text(
                                 "Pending Advance: ${MoneyFormatter.formatInr(proj.advanceDuePaise)}",
                                 style = XMaxType.footnoteMedium.tabular(),
                                 color = palette.butterInk
                             )
+                        }
+                        if (canSeeCommercialDocs) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        AppHapticsAndNotifier.triggerTickHaptic(context)
+                                        onGenerateTaxInvoice(proj, matchedQuote)
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.dp, palette.outline),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.height(40.dp).testTag("invoice_pdf_${proj.id}")
+                                ) {
+                                    Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = palette.textPrimary, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Tax Invoice PDF", style = XMaxType.caption1Semibold, color = palette.textPrimary, maxLines = 1, softWrap = false)
+                                }
+                                if (proj.outstandingPaise > 0L) {
+                                    val dispatchWithUrl: (String) -> Unit = { ch ->
+                                        if (activeLink != null) {
+                                            onDispatchNudge(proj, matchedClient, ch, WorkerBridgeClient.buildPublicPortalUrl(activeLink.token))
+                                        } else {
+                                            onCreatePortalLink(proj, matchedQuote) { newLink ->
+                                                onDispatchNudge(proj, matchedClient, ch, WorkerBridgeClient.buildPublicPortalUrl(newLink.token))
+                                            }
+                                        }
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            AppHapticsAndNotifier.triggerTickHaptic(context)
+                                            dispatchWithUrl("WHATSAPP")
+                                        },
+                                        shape = RoundedCornerShape(999.dp),
+                                        border = BorderStroke(1.dp, EmeraldApproved.copy(alpha = 0.45f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.mintBg, contentColor = palette.mintInk),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(40.dp).testTag("nudge_wa_${proj.id}")
+                                    ) {
+                                        Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("WhatsApp Nudge", style = XMaxType.caption1Semibold, maxLines = 1, softWrap = false)
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            AppHapticsAndNotifier.triggerTickHaptic(context)
+                                            dispatchWithUrl("EMAIL")
+                                        },
+                                        shape = RoundedCornerShape(999.dp),
+                                        border = BorderStroke(1.dp, palette.lavenderInk.copy(alpha = 0.35f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(40.dp).testTag("nudge_email_${proj.id}")
+                                    ) {
+                                        Icon(Icons.Filled.Email, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Email Nudge", style = XMaxType.caption1Semibold, maxLines = 1, softWrap = false)
+                                    }
+                                }
+                            }
                         }
                         if (canRecord && proj.outstandingPaise > 0L) {
                             Button(
@@ -951,6 +1115,43 @@ fun PaymentsScreen(
                             style = XMaxType.caption1.tabular(),
                             color = palette.textSecondary
                         )
+                    }
+                }
+            }
+        }
+
+        if (state.nudgeLogs.isNotEmpty()) {
+            item { Text("Automated Payment Nudge Log (${state.nudgeLogs.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary) }
+            items(state.nudgeLogs.take(20), key = { it.id }) { log ->
+                val isSent = log.status == "SENT"
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
+                    modifier = Modifier.fillMaxWidth().testTag("nudge_log_${log.id}")
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            StatusPill(
+                                label = log.channel,
+                                containerColor = if (log.channel == "WHATSAPP") palette.mintBg else palette.lavenderBg,
+                                contentColor = if (log.channel == "WHATSAPP") palette.mintInk else palette.lavenderInk
+                            )
+                            StatusPill(
+                                label = if (isSent) "Delivered via API" else log.status,
+                                containerColor = if (isSent) palette.mintBg else palette.butterBg,
+                                contentColor = if (isSent) palette.mintInk else palette.butterInk
+                            )
+                        }
+                        Text("${formatTitleCase(log.projectTitle)} • ${formatTitleCase(log.clientCompanyName)}", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                        Text(
+                            "Due ${MoneyFormatter.formatInr(log.amountDuePaise)} • To: ${log.recipient.ifBlank { "Client" }}",
+                            style = XMaxType.footnote.tabular(),
+                            color = palette.textSecondary
+                        )
+                        if (log.summary.isNotBlank()) {
+                            Text(log.summary, style = XMaxType.caption1, color = palette.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }

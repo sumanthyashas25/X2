@@ -218,6 +218,8 @@ data class Member(
     val messagingSuspended: Boolean = false,
     val messagingSuspendedReason: String = "",
     val lastActiveAtMillis: Long = 0L,
+    val availabilityStatus: String = "ACTIVE",
+    val e2eePublicKey: String = "",
     val departmentId: String = "",
     val departmentName: String = "",
     val jobRoleId: String = "",
@@ -770,6 +772,14 @@ data class ChatMessage(
     val eventLocation: String = "",
     val eventTimeMillis: Long = 0L,
     val eventRsvps: Map<String, String> = emptyMap(),
+    @get:com.google.firebase.firestore.PropertyName("isEncrypted")
+    @set:com.google.firebase.firestore.PropertyName("isEncrypted")
+    var isEncrypted: Boolean = false,
+    val e2eeCiphertext: String = "",
+    val e2eeIv: String = "",
+    val e2eeSenderPublicKey: String = "",
+    val e2eeKeyEnvelopes: Map<String, String> = emptyMap(),
+    val e2eeAlgo: String = "",
     @get:com.google.firebase.firestore.PropertyName("isFailed")
     @set:com.google.firebase.firestore.PropertyName("isFailed")
     var isFailed: Boolean = false,
@@ -953,6 +963,96 @@ data class StaffPlanItem(
 ) {
     fun categoryEnum(): PlanCategory = safeEnum(category, PlanCategory.TO_DO)
 }
+
+@Keep
+@IgnoreExtraProperties
+data class TimeEntry(
+    @DocumentId val id: String = "",
+    val projectId: String = "",
+    val projectTitle: String = "",
+    val deliverableId: String = "",
+    val deliverableTitle: String = "",
+    val uid: String = "",
+    val memberName: String = "",
+    val departmentId: String = "",
+    val workDateMillis: Long = System.currentTimeMillis(),
+    val durationMinutes: Int = 0,
+    val billable: Boolean = true,
+    val hourlyRatePaise: Long = 0L,
+    val notes: String = "",
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+) {
+    fun billableAmountPaise(): Long =
+        if (!billable || durationMinutes <= 0 || hourlyRatePaise <= 0L) 0L
+        else (hourlyRatePaise * durationMinutes) / 60L
+}
+
+@Keep
+@IgnoreExtraProperties
+data class ChatCallSession(
+    @DocumentId val id: String = "",
+    val channelId: String = "",
+    val channelTitle: String = "",
+    val callType: String = "VIDEO",
+    val callerUid: String = "",
+    val callerName: String = "",
+    val calleeUids: List<String> = emptyList(),
+    val participantUids: List<String> = emptyList(),
+    val acceptedUids: List<String> = emptyList(),
+    val status: String = "RINGING",
+    val videoEnabled: Boolean = true,
+    val mutedUids: List<String> = emptyList(),
+    val cameraOffUids: List<String> = emptyList(),
+    val durationSeconds: Int = 0,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val endedAtMillis: Long = 0L,
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class ClientPortalLink(
+    @DocumentId val id: String = "",
+    val token: String = "",
+    val projectId: String = "",
+    val projectTitle: String = "",
+    val quotationId: String = "",
+    val clientId: String = "",
+    val clientCompanyName: String = "",
+    val createdByUid: String = "",
+    val createdByName: String = "",
+    val expiresAtMillis: Long = 0L,
+    val revoked: Boolean = false,
+    val clientApprovedAtMillis: Long = 0L,
+    val clientApprovalNote: String = "",
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val createdAt: Timestamp? = null,
+    val updatedAt: Timestamp? = null
+) {
+    fun isActive(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        !revoked && (expiresAtMillis == 0L || expiresAtMillis > nowMillis)
+}
+
+@Keep
+@IgnoreExtraProperties
+data class PaymentNudgeLog(
+    @DocumentId val id: String = "",
+    val projectId: String = "",
+    val projectTitle: String = "",
+    val quotationId: String = "",
+    val clientCompanyName: String = "",
+    val channel: String = "WHATSAPP",
+    val recipient: String = "",
+    val amountDuePaise: Long = 0L,
+    val status: String = "SENT",
+    val summary: String = "",
+    val sentByUid: String = "",
+    val sentAtMillis: Long = System.currentTimeMillis(),
+    val createdAt: Timestamp? = null
+)
+
 
 
 

@@ -1,6 +1,7 @@
 package com.example.ui.navigation
 
 import android.app.Activity
+import com.example.domain.CatalogueSeedData
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -83,7 +84,7 @@ fun resolveAuthRoute(
 
     if (authStatus is AuthSessionStatus.SignedIn) {
         val userEmail = authStatus.user.email.orEmpty().trim().lowercase()
-        if (userEmail == "xdotmax@gmail.com") {
+        if (CatalogueSeedData.isBootstrapEmail(userEmail)) {
             return XMaxRoute.Dashboard
         }
 

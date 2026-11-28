@@ -61,6 +61,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chat.ChatAudioManager
+import com.example.chat.ChatE2eeCrypto
 import com.example.chat.ChatFileManager
 import com.example.chat.ChatLocationManager
 import com.example.chat.ChatSettingsStore
@@ -116,6 +117,10 @@ fun TeamChatScreen(
     onOpenDepartmentChat: (Department, onReady: (ChatChannel) -> Unit, onError: (String) -> Unit) -> Unit = { _, _, _ -> },
     onDeleteChannel: (String, () -> Unit) -> Unit = { _, _ -> },
     onDeleteMessage: (String, String) -> Unit = { _, _ -> },
+    onSetCompanyDefaultWallpaper: (presetId: String, customUrl: String) -> Unit = { _, _ -> },
+    onStartVideoCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit = { _, _, _ -> },
+    onAcceptVideoCall: (String) -> Unit = {},
+    onEndVideoCall: (String, String) -> Unit = { _, _ -> },
     onCloseChat: () -> Unit,
     chatViewModel: ChatViewModel = viewModel()
 ) {
@@ -129,6 +134,9 @@ fun TeamChatScreen(
     LaunchedEffect(member.uid) {
         ChatSettingsStore.ensureLoaded(context)
         onEnsureGeneralChannel()
+    }
+    LaunchedEffect(state.members) {
+        chatViewModel.updateMemberDirectory(state.members)
     }
 
     var mode by remember(initialChannelId) {
@@ -181,6 +189,9 @@ fun TeamChatScreen(
 
     val messagesFlow = remember(activeChannel.id) { observeMessages(activeChannel.id) }
     val syncedMessages by messagesFlow.collectAsStateWithLifecycle(initialValue = SyncedData(emptyList(), false))
+    val decryptedMessages = remember(syncedMessages.data, member.uid) {
+        chatViewModel.decryptMessages(syncedMessages.data, member.uid)
+    }
     val searchQuery by chatViewModel.searchQuery.collectAsStateWithLifecycle()
     val filterTab by chatViewModel.filterTab.collectAsStateWithLifecycle()
     val selectedCustomList by chatViewModel.selectedCustomList.collectAsStateWithLifecycle()
@@ -416,7 +427,8 @@ fun TeamChatScreen(
                     }
                 },
                 onBack = onCloseChat,
-                onClose = onCloseChat
+                onClose = onCloseChat,
+                onSetCompanyDefaultWallpaper = onSetCompanyDefaultWallpaper
             )
         } else {
             EnhancedChatThreadView(
@@ -424,11 +436,14 @@ fun TeamChatScreen(
                 companyId = companyId,
                 member = member,
                 channel = activeChannel,
-                messages = syncedMessages.data,
+                messages = decryptedMessages,
                 hasPendingWrites = syncedMessages.hasPendingWrites,
                 chatViewModel = chatViewModel,
                 hdMediaMode = hdMediaMode,
                 isProcessingFile = isProcessingFile,
+                onStartVideoCall = onStartVideoCall,
+                onAcceptVideoCall = onAcceptVideoCall,
+                onEndVideoCall = onEndVideoCall,
                 onToggleHdMedia = { hdMediaMode = it },
                 onCamera = ::launchCamera,
                 onPickSinglePhoto = { singleImagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -758,6 +773,9 @@ private fun EnhancedChatThreadView(
     chatViewModel: ChatViewModel,
     hdMediaMode: Boolean,
     isProcessingFile: Boolean,
+    onStartVideoCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit,
+    onAcceptVideoCall: (String) -> Unit,
+    onEndVideoCall: (String, String) -> Unit,
     onToggleHdMedia: (Boolean) -> Unit,
     onCamera: () -> Unit,
     onPickSinglePhoto: () -> Unit,
@@ -811,6 +829,8 @@ private fun EnhancedChatThreadView(
     var showPinSetupDialog by remember { mutableStateOf(false) }
     var showDeleteThreadConfirm by remember { mutableStateOf(false) }
     var showVideoCallDialog by remember { mutableStateOf(false) }
+    var activeCallSessionId by remember { mutableStateOf<String?>(null) }
+    var showSafetyNumberDialog by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf<Int?>(null) } // null=none, 0=current, 15/60=live
 
     val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1084,16 +1104,19 @@ private fun EnhancedChatThreadView(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                val otherPeerOnline = otherPeer != null && RtdbPresenceManager.isMemberOnlineNow(otherPeer, peerPresence)
+                                val otherPeerLastSeen = if (otherPeer != null) RtdbPresenceManager.effectiveLastSeenMillis(otherPeer, peerPresence) else 0L
                                 val subtitleText = when {
                                     ephemeral.recordingNames.isNotEmpty() -> "${ephemeral.recordingNames.first().substringBefore(" ")} recording audio…"
                                     ephemeral.typingNames.isNotEmpty() -> "${ephemeral.typingNames.first().substringBefore(" ")} typing…"
-                                    otherPeer != null && peerPresence.online -> peerPresence.availability.label
-                                    otherPeer != null && peerPresence.lastSeenMillis > 0L -> {
-                                        val ls = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(peerPresence.lastSeenMillis))
+                                    otherPeerOnline -> if (headerAvailability == MemberAvailability.BUSY) "Busy" else "Online"
+                                    otherPeer != null && otherPeerLastSeen > 0L -> {
+                                        val ls = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(otherPeerLastSeen))
                                         "Last seen $ls"
                                     }
+                                    otherPeer != null -> "Offline"
                                     channel.isSelfNotes(member.uid) -> "Personal Notes"
-                                    channel.channelTypeEnum() == ChatChannelType.DIRECT -> "Personal Chat"
+                                    channel.channelTypeEnum() == ChatChannelType.DIRECT -> "Offline"
                                     else -> channel.topic.ifBlank { "Group conversation" }
                                 }
                                 Text(
@@ -1101,8 +1124,8 @@ private fun EnhancedChatThreadView(
                                     style = XMaxType.caption1,
                                     color = when {
                                         ephemeral.typingNames.isNotEmpty() || ephemeral.recordingNames.isNotEmpty() -> EmeraldApproved
-                                        otherPeer != null && peerPresence.online && peerPresence.availability == MemberAvailability.BUSY -> CrimsonBlocked
-                                        otherPeer != null && peerPresence.online -> EmeraldApproved
+                                        otherPeerOnline && headerAvailability == MemberAvailability.BUSY -> CrimsonBlocked
+                                        otherPeerOnline -> EmeraldApproved
                                         else -> palette.textSecondary
                                     },
                                     maxLines = 1,
@@ -1113,20 +1136,58 @@ private fun EnhancedChatThreadView(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = { showVideoCallDialog = true },
+                                onClick = { showSafetyNumberDialog = true },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .testTag("chat_thread_e2ee_button")
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = "E2EE Security & Safety Number", tint = EmeraldApproved, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    val callees = channel.participantUids.filter { it != member.uid }
+                                        .ifEmpty {
+                                            state.members.filter { it.uid != member.uid && it.active && it.statusEnum() == MembershipStatus.APPROVED }
+                                                .map { it.uid }
+                                                .take(12)
+                                        }
+                                    showVideoCallDialog = true
+                                    onStartVideoCall(channel, callees) { session ->
+                                        activeCallSessionId = session.id
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .testTag("chat_thread_audio_call_button")
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Start Voice Call", tint = EmeraldApproved, modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    val callees = channel.participantUids.filter { it != member.uid }
+                                        .ifEmpty {
+                                            state.members.filter { it.uid != member.uid && it.active && it.statusEnum() == MembershipStatus.APPROVED }
+                                                .map { it.uid }
+                                                .take(12)
+                                        }
+                                    showVideoCallDialog = true
+                                    onStartVideoCall(channel, callees) { session ->
+                                        activeCallSessionId = session.id
+                                    }
+                                },
                                 modifier = Modifier
                                     .size(44.dp)
                                     .testTag("chat_thread_video_call_button")
                             ) {
                                 Icon(Icons.Default.Videocam, contentDescription = "Start Video Call", tint = palette.accentViolet, modifier = Modifier.size(22.dp))
                             }
-                            IconButton(onClick = { showInThreadSearch = !showInThreadSearch }, modifier = Modifier.size(44.dp)) {
+                            IconButton(onClick = { showInThreadSearch = !showInThreadSearch }, modifier = Modifier.size(42.dp)) {
                                 Icon(Icons.Default.Search, contentDescription = "Search thread", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
-                            IconButton(onClick = { showStarredSheet = true }, modifier = Modifier.size(44.dp)) {
+                            IconButton(onClick = { showStarredSheet = true }, modifier = Modifier.size(42.dp)) {
                                 Icon(Icons.Default.StarBorder, contentDescription = "Starred messages", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
-                            IconButton(onClick = { showInfoSheet = true }, modifier = Modifier.size(44.dp)) {
+                            IconButton(onClick = { showInfoSheet = true }, modifier = Modifier.size(42.dp)) {
                                 Icon(Icons.Default.Info, contentDescription = "Chat info", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
                             }
                         }
@@ -1834,15 +1895,87 @@ private fun EnhancedChatThreadView(
         )
     }
 
+    if (showSafetyNumberDialog) {
+        val myPubKey = remember(member.uid) { ChatE2eeCrypto.getOrCreatePublicKeyBase64(context, member.uid) }
+        val peer = remember(channel.participantUids, state.members, member.uid) {
+            state.members.firstOrNull { it.uid != member.uid && it.uid in channel.participantUids }
+        }
+        val safetyCode = remember(myPubKey, peer?.e2eePublicKey) {
+            if (peer != null && peer.e2eePublicKey.isNotBlank()) {
+                ChatE2eeCrypto.pairSafetyNumber(myPubKey, peer.e2eePublicKey)
+            } else {
+                ChatE2eeCrypto.fingerprintForPublicKey(myPubKey)
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showSafetyNumberDialog = false },
+            containerColor = palette.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = EmeraldApproved)
+                    Text("End-to-End Encryption", style = XMaxType.secondaryTitle, color = palette.textPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Messages in this conversation use ECDH P-256 key agreement with per-message AES-256-GCM envelope encryption (${ChatE2eeCrypto.ALGO_ID}).",
+                        style = XMaxType.footnote,
+                        color = palette.textSecondary
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = palette.surfaceMuted,
+                        border = BorderStroke(1.dp, palette.outline),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = if (peer != null) "Safety Number with ${formatTitleCase(peer.fullName)}" else "Your Device Key Fingerprint",
+                                style = XMaxType.caption1Semibold,
+                                color = palette.textSecondary
+                            )
+                            Text(
+                                text = safetyCode,
+                                style = XMaxType.headline.tabular(),
+                                color = palette.textPrimary
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSafetyNumberDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
+                ) {
+                    Text("Verified", style = XMaxType.buttonCompact)
+                }
+            }
+        )
+    }
+
     if (showVideoCallDialog) {
         val peerMembers = remember(channel.participantUids, state.members, member.uid) {
             state.members.filter { it.uid != member.uid && it.uid in channel.participantUids }
+        }
+        val liveSession = remember(state.activeCallSessions, activeCallSessionId, channel.id) {
+            state.activeCallSessions.firstOrNull { it.id == activeCallSessionId }
+                ?: state.activeCallSessions.firstOrNull {
+                    it.channelId == channel.id && (it.status == "RINGING" || it.status == "CONNECTED")
+                }
         }
         ChatVideoCallDialog(
             channel = channel,
             myMember = member,
             peerMembers = peerMembers,
-            onDismiss = { showVideoCallDialog = false },
+            callSession = liveSession,
+            onAcceptCall = { liveSession?.let { onAcceptVideoCall(it.id) } },
+            onEndOrDeclineCall = { st -> liveSession?.let { onEndVideoCall(it.id, st) } },
+            onDismiss = {
+                showVideoCallDialog = false
+                activeCallSessionId = null
+            },
             onCallCompleted = { durationSec ->
                 val durationLabel = if (durationSec > 0) {
                     val m = durationSec / 60

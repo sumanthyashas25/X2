@@ -842,12 +842,20 @@ fun RichChatMessageBubble(
                             }
                         }
 
-                        // Metadata Row: Pinned, Starred, View-Once, Edited, Timestamp, Status ticks
+                        // Metadata Row: E2EE Lock, Pinned, Starred, View-Once, Edited, Timestamp, Status ticks
                         Row(
                             modifier = Modifier.align(Alignment.End),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            if (message.isEncrypted) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    contentDescription = "End-to-end encrypted",
+                                    tint = if (isMe) Color(0xFF86EFAC) else EmeraldApproved,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
                             if (message.viewOnce) {
                                 Icon(Icons.Default.LooksOne, contentDescription = "View once", tint = if (isMe) PureWhite else VioletPrimary, modifier = Modifier.size(12.dp))
                             }

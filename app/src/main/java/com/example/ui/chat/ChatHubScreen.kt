@@ -134,6 +134,7 @@ fun ChatHubScreen(
     onSendQuickCompose: () -> Unit,
     onBack: () -> Unit,
     onClose: () -> Unit = onBack,
+    onSetCompanyDefaultWallpaper: (presetId: String, customUrl: String) -> Unit = { _, _ -> },
     state: AgencyUiState? = null,
     chatViewModel: ChatViewModel? = null
 ) {
@@ -660,6 +661,8 @@ fun ChatHubScreen(
                                         filteredColleagues.forEach { person ->
                                             val dmChannel = directChannelsByPeer[person.uid]
                                             val presence = companyPresence[person.uid]
+                                            val isOnlineNow = RtdbPresenceManager.isMemberOnlineNow(person, presence)
+                                            val lastSeenMs = RtdbPresenceManager.effectiveLastSeenMillis(person, presence)
                                             val availability = RtdbPresenceManager.resolveAvailability(person, presence)
                                             val unread = dmChannel?.unreadCountFor(member.uid) ?: 0
                                             val isMuted = dmChannel?.isMutedFor(member.uid) == true
@@ -668,6 +671,14 @@ fun ChatHubScreen(
                                             val timeStr = remember(dmChannel?.lastMessageAtMillis) {
                                                 val ms = dmChannel?.lastMessageAtMillis ?: 0L
                                                 if (ms > 0L) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms)) else ""
+                                            }
+                                            val presenceLabel = remember(isOnlineNow, availability, lastSeenMs) {
+                                                when {
+                                                    isOnlineNow && availability == MemberAvailability.BUSY -> "Busy"
+                                                    isOnlineNow -> "Online"
+                                                    lastSeenMs > 0L -> "Last seen ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(lastSeenMs))}"
+                                                    else -> "Offline"
+                                                }
                                             }
 
                                             Surface(
@@ -724,6 +735,14 @@ fun ChatHubScreen(
                                                                     overflow = TextOverflow.Ellipsis,
                                                                     modifier = Modifier.weight(1f, fill = false)
                                                                 )
+                                                                Text(
+                                                                    text = "• $presenceLabel",
+                                                                    style = XMaxType.caption1Semibold,
+                                                                    color = if (isOnlineNow) {
+                                                                        if (availability == MemberAvailability.BUSY) CrimsonBlocked else EmeraldApproved
+                                                                    } else palette.textSecondary,
+                                                                    maxLines = 1
+                                                                )
                                                                 if (isPinned) Icon(Icons.Default.PushPin, null, tint = VioletPrimary, modifier = Modifier.size(13.dp))
                                                                 if (isMuted) Icon(Icons.Default.VolumeOff, null, tint = palette.textSecondary, modifier = Modifier.size(13.dp))
                                                                 if (isLocked) Icon(Icons.Default.Lock, null, tint = palette.textPrimary, modifier = Modifier.size(13.dp))
@@ -734,7 +753,7 @@ fun ChatHubScreen(
                                                                 }
                                                                 Text(
                                                                     text = dmChannel?.lastMessagePreview?.takeIf { it.isNotBlank() }
-                                                                        ?: "Tap to message",
+                                                                        ?: presenceLabel,
                                                                     style = XMaxType.subheadline,
                                                                     color = palette.textSecondary,
                                                                     maxLines = 1,
@@ -1096,8 +1115,17 @@ fun ChatHubScreen(
                                 contentPadding = PaddingValues(bottom = if (isWide) 24.dp else 116.dp)
                             ) {
                                 items(dirFiltered, key = { it.uid }) { person ->
-                                    val availability = RtdbPresenceManager.resolveAvailability(person, companyPresence[person.uid])
-                                    if (!directoryFilterOnlineOnly || availability != MemberAvailability.AWAY) {
+                                    val presence = companyPresence[person.uid]
+                                    val isOnlineNow = RtdbPresenceManager.isMemberOnlineNow(person, presence)
+                                    val lastSeenMs = RtdbPresenceManager.effectiveLastSeenMillis(person, presence)
+                                    val availability = RtdbPresenceManager.resolveAvailability(person, presence)
+                                    val presenceText = when {
+                                        isOnlineNow && availability == MemberAvailability.BUSY -> "Busy"
+                                        isOnlineNow -> "Online"
+                                        lastSeenMs > 0L -> "Last seen ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(lastSeenMs))}"
+                                        else -> "Offline"
+                                    }
+                                    if (!directoryFilterOnlineOnly || isOnlineNow) {
                                         Surface(
                                             onClick = { onOpenDirectChat(person) },
                                             color = Color.Transparent,
@@ -1130,9 +1158,11 @@ fun ChatHubScreen(
                                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                             Text(formatTitleCase(person.fullName), style = XMaxType.headline, color = palette.textPrimary)
                                                             Text(
-                                                                text = "• ${availability.label}",
+                                                                text = "• $presenceText",
                                                                 style = XMaxType.caption1Semibold,
-                                                                color = availabilityDotColor(availability)
+                                                                color = if (isOnlineNow) {
+                                                                    if (availability == MemberAvailability.BUSY) CrimsonBlocked else EmeraldApproved
+                                                                } else palette.textSecondary
                                                             )
                                                         }
                                                         Text(formatTitleCase(person.jobRoleName.ifBlank { "Team Member" }), style = XMaxType.footnote, color = palette.textSecondary)
@@ -1474,6 +1504,23 @@ fun ChatHubScreen(
                                                 )
                                             }
                                         }
+                                        if (isSuperAdmin && wallpaperScopeChannelId == null) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    onSetCompanyDefaultWallpaper(prefs.globalWallpaperId, "")
+                                                    wallpaperFeedback = "Applied \"${previewPreset.label}\" as workspace default for everyone"
+                                                },
+                                                shape = RoundedCornerShape(14.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .defaultMinSize(minHeight = 44.dp)
+                                                    .testTag("settings_apply_workspace_wallpaper")
+                                            ) {
+                                                Icon(Icons.Default.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Apply as Workspace Default for Everyone", style = XMaxType.buttonCompact)
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1624,68 +1671,72 @@ fun ChatHubScreen(
                                     }
                                 }
 
-                                // Free-Tier Hybrid Infrastructure (Firebase + Cloudflare Worker + Supabase Storage)
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = palette.surface,
-                                    border = BorderStroke(1.dp, palette.outline),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("Cloud & Storage Performance", style = XMaxType.headline, color = palette.textPrimary)
-                                            Surface(shape = RoundedCornerShape(999.dp), color = palette.mintBg) {
-                                                Text(
-                                                    "Free Tier",
-                                                    style = XMaxType.caption2Medium,
-                                                    color = palette.mintInk,
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                                )
+                                if (isSuperAdmin) {
+                                    // Free-Tier Hybrid Infrastructure (Super Admin only)
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = palette.surface,
+                                        border = BorderStroke(1.dp, palette.outline),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("super_admin_cloud_performance_card")
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Cloud & Storage Performance", style = XMaxType.headline, color = palette.textPrimary)
+                                                Surface(shape = RoundedCornerShape(999.dp), color = palette.mintBg) {
+                                                    Text(
+                                                        "Free Tier",
+                                                        style = XMaxType.caption2Medium,
+                                                        color = palette.mintInk,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                    )
+                                                }
                                             }
-                                        }
-                                        Text(
-                                            text = "Firebase (Auth & Messages) • Cloudflare Worker (Signed Edge Auth) • Supabase Storage (${WorkerBridgeClient.activeStorageProviderLabel()})",
-                                            style = XMaxType.footnote,
-                                            color = palette.textSecondary
-                                        )
-                                        Text(
-                                            text = "Local media cache: ${cacheStats.fileCount} files (${ChatFileManager.formatFileSize(cacheStats.totalBytes)})",
-                                            style = XMaxType.numericFootnote,
-                                            color = palette.textPrimary
-                                        )
-                                        healthCheckMessage?.let { msg ->
-                                            Text(msg, style = XMaxType.caption1Medium, color = VioletPrimary)
-                                        }
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            OutlinedButton(
-                                                enabled = !isCheckingHealth,
-                                                onClick = {
-                                                    scope.launch {
-                                                        isCheckingHealth = true
-                                                        healthCheckMessage = when (val res = WorkerBridgeClient.checkHealth()) {
-                                                            is WorkerResult.Success -> "Connected: ${res.data.storageProvider} (${res.data.plan} plan)"
-                                                            is WorkerResult.NotConfigured -> "Worker URL not configured yet in Secrets; using Firestore inline fallback."
-                                                            is WorkerResult.RateLimited -> "Rate limited; retry in ${res.retryAfterSeconds}s."
-                                                            is WorkerResult.Error -> res.message
+                                            Text(
+                                                text = "Firebase (Auth & Messages) • Cloudflare Worker (Signed Edge Auth) • Supabase Storage (${WorkerBridgeClient.activeStorageProviderLabel()})",
+                                                style = XMaxType.footnote,
+                                                color = palette.textSecondary
+                                            )
+                                            Text(
+                                                text = "Local media cache: ${cacheStats.fileCount} files (${ChatFileManager.formatFileSize(cacheStats.totalBytes)})",
+                                                style = XMaxType.numericFootnote,
+                                                color = palette.textPrimary
+                                            )
+                                            healthCheckMessage?.let { msg ->
+                                                Text(msg, style = XMaxType.caption1Medium, color = VioletPrimary)
+                                            }
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(
+                                                    enabled = !isCheckingHealth,
+                                                    onClick = {
+                                                        scope.launch {
+                                                            isCheckingHealth = true
+                                                            healthCheckMessage = when (val res = WorkerBridgeClient.checkHealth()) {
+                                                                is WorkerResult.Success -> "Connected: ${res.data.storageProvider} (${res.data.plan} plan)"
+                                                                is WorkerResult.NotConfigured -> "Worker URL not configured yet in Secrets; using Firestore inline fallback."
+                                                                is WorkerResult.RateLimited -> "Rate limited; retry in ${res.retryAfterSeconds}s."
+                                                                is WorkerResult.Error -> res.message
+                                                            }
+                                                            isCheckingHealth = false
                                                         }
-                                                        isCheckingHealth = false
                                                     }
+                                                ) {
+                                                    Text(if (isCheckingHealth) "Checking…" else "Check Backend", style = XMaxType.buttonCompact)
                                                 }
-                                            ) {
-                                                Text(if (isCheckingHealth) "Checking…" else "Check Backend", style = XMaxType.buttonCompact)
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    scope.launch {
-                                                        cacheStats = ChatFileManager.clearChatMediaCache(context)
+                                                TextButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            cacheStats = ChatFileManager.clearChatMediaCache(context)
+                                                        }
                                                     }
+                                                ) {
+                                                    Text("Clear Media Cache", style = XMaxType.buttonCompact, color = CrimsonBlocked)
                                                 }
-                                            ) {
-                                                Text("Clear Media Cache", style = XMaxType.buttonCompact, color = CrimsonBlocked)
                                             }
                                         }
                                     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,10 +88,14 @@ fun MyWorkScreen(
     onDeletePlanItem: (String) -> Unit = {},
     onToggleFocusTimer: () -> Unit = {},
     onResetFocusTimer: () -> Unit = {},
-    onSetFocusPreset: (Int) -> Unit = {}
+    onSetFocusPreset: (Int) -> Unit = {},
+    onLogTimeEntry: (Project, Deliverable?, Int, Boolean, Long, String) -> Unit = { _, _, _, _, _, _ -> },
+    onCommitTimerToTimeEntry: (Deliverable) -> Unit = {},
+    onDeleteTimeEntry: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
+    var showLogHoursDialog by remember { mutableStateOf(false) }
     val member = state.myMember
     val uid = member?.uid.orEmpty()
     val myDeptId = member?.departmentId.orEmpty()
@@ -737,12 +743,245 @@ fun MyWorkScreen(
                     elapsedTimerSeconds = elapsedSecs,
                     isTimerRunning = isTimerRunning,
                     onToggleTimer = { onToggleTimer(d.id) },
+                    onCommitTimerToTimeEntry = { onCommitTimerToTimeEntry(d) },
                     onSlideStart = { onStartDeliverable(d) },
                     onQuickSubmitReview = { onQuickSubmitReview(d) },
                     onClick = { onOpenDeliverable(d) }
                 )
             }
         }
+
+        // 6. Timesheet & Logged Hours Card
+        item {
+            val weekCutoff = todayStart - 6L * 86_400_000L
+            val myRecentEntries = remember(state.timeEntries, uid, state.isSuperAdmin) {
+                state.timeEntries.filter { it.uid == uid || state.isSuperAdmin || state.isAdmin }
+            }
+            val weekMins = remember(myRecentEntries, weekCutoff) {
+                myRecentEntries.filter { it.workDateMillis >= weekCutoff }.sumOf { it.durationMinutes }
+            }
+            val weekBillablePaise = remember(myRecentEntries, weekCutoff) {
+                myRecentEntries.filter { it.workDateMillis >= weekCutoff }.sumOf { it.billableAmountPaise() }
+            }
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
+                shadowElevation = 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("my_work_timesheet_card")
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Timesheet & Hours", style = XMaxType.headline, color = palette.textPrimary)
+                            Text(
+                                "${"%.1f".format(weekMins / 60.0)}h this week • ${MoneyFormatter.formatInr(weekBillablePaise)} billable",
+                                style = XMaxType.footnote.tabular(),
+                                color = palette.textSecondary
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                AppHapticsAndNotifier.triggerTickHaptic(context)
+                                showLogHoursDialog = true
+                            },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(40.dp).testTag("open_log_hours_dialog")
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Log Hours", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                        }
+                    }
+
+                    if (myRecentEntries.isEmpty()) {
+                        Text(
+                            "No hours logged yet. Start a deliverable timer or tap Log Hours to record billable project time.",
+                            style = XMaxType.footnote,
+                            color = palette.textSecondary
+                        )
+                    } else {
+                        myRecentEntries.take(8).forEach { entry ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = palette.surfaceMuted,
+                                modifier = Modifier.fillMaxWidth().testTag("time_entry_${entry.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = "${formatTitleCase(entry.projectTitle)} • ${entry.durationMinutes}m",
+                                            style = XMaxType.subheadlineSemibold.tabular(),
+                                            color = palette.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = buildString {
+                                                if (entry.deliverableTitle.isNotBlank()) append("${formatTitleCase(entry.deliverableTitle)} • ")
+                                                append(MoneyFormatter.formatDate(entry.workDateMillis))
+                                                if (entry.billable) append(" • ${MoneyFormatter.formatInr(entry.billableAmountPaise())}")
+                                            },
+                                            style = XMaxType.caption1.tabular(),
+                                            color = palette.textSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (entry.notes.isNotBlank()) {
+                                            Text(entry.notes, style = XMaxType.caption1, color = palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    if (entry.uid == uid || state.isSuperAdmin) {
+                                        IconButton(
+                                            onClick = { onDeleteTimeEntry(entry.id) },
+                                            modifier = Modifier.size(40.dp).testTag("delete_time_${entry.id}")
+                                        ) {
+                                            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete time entry", tint = CrimsonBlocked, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLogHoursDialog) {
+        val activeProjects = remember(state.projects) { state.projects.filter { !it.deleted } }
+        var selectedProjectId by remember(activeProjects) { mutableStateOf(activeProjects.firstOrNull()?.id.orEmpty()) }
+        val projectDeliverables = remember(state.deliverables, selectedProjectId) {
+            state.deliverables.filter { it.projectId == selectedProjectId }
+        }
+        var selectedDeliverableId by remember(selectedProjectId) { mutableStateOf("") }
+        var minutesText by remember { mutableStateOf("60") }
+        var billable by remember { mutableStateOf(true) }
+        var hourlyRateRupees by remember { mutableStateOf("1500") }
+        var notes by remember { mutableStateOf("") }
+        val selectedProj = activeProjects.firstOrNull { it.id == selectedProjectId }
+        val selectedDeliv = projectDeliverables.firstOrNull { it.id == selectedDeliverableId }
+
+        AlertDialog(
+            onDismissRequest = { showLogHoursDialog = false },
+            containerColor = palette.surface,
+            shape = RoundedCornerShape(26.dp),
+            title = { Text("Log Project Hours", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (activeProjects.isEmpty()) {
+                        Text("No active projects available yet.", style = XMaxType.footnote, color = palette.textSecondary)
+                    } else {
+                        Text("Project", style = XMaxType.caption1Semibold, color = palette.textSecondary)
+                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            activeProjects.forEach { proj ->
+                                FilterChip(
+                                    selected = selectedProjectId == proj.id,
+                                    onClick = { selectedProjectId = proj.id },
+                                    shape = RoundedCornerShape(999.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = palette.buttonPrimaryBg,
+                                        selectedLabelColor = palette.buttonPrimaryFg,
+                                        containerColor = palette.surfaceMuted,
+                                        labelColor = palette.textPrimary
+                                    ),
+                                    border = null,
+                                    label = { Text(formatTitleCase(proj.title), style = XMaxType.caption1Semibold, maxLines = 1) }
+                                )
+                            }
+                        }
+                        if (projectDeliverables.isNotEmpty()) {
+                            Text("Deliverable (optional)", style = XMaxType.caption1Semibold, color = palette.textSecondary)
+                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = selectedDeliverableId.isBlank(),
+                                    onClick = { selectedDeliverableId = "" },
+                                    shape = RoundedCornerShape(999.dp),
+                                    label = { Text("General", style = XMaxType.caption1) }
+                                )
+                                projectDeliverables.forEach { deliv ->
+                                    FilterChip(
+                                        selected = selectedDeliverableId == deliv.id,
+                                        onClick = { selectedDeliverableId = deliv.id },
+                                        shape = RoundedCornerShape(999.dp),
+                                        label = { Text(formatTitleCase(deliv.title), style = XMaxType.caption1, maxLines = 1) }
+                                    )
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = minutesText,
+                            onValueChange = { minutesText = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Duration (minutes) *", style = XMaxType.inputLabel) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("log_hours_minutes_input")
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Billable Time", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                            Switch(checked = billable, onCheckedChange = { billable = it })
+                        }
+                        if (billable) {
+                            OutlinedTextField(
+                                value = hourlyRateRupees,
+                                onValueChange = { hourlyRateRupees = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Hourly Rate (₹)", style = XMaxType.inputLabel) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        OutlinedTextField(
+                            value = notes,
+                            onValueChange = { notes = it },
+                            label = { Text("Work Notes", style = XMaxType.inputLabel) },
+                            minLines = 2,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                val mins = minutesText.toIntOrNull() ?: 0
+                val ratePaise = (hourlyRateRupees.toLongOrNull() ?: 0L) * 100L
+                Button(
+                    onClick = {
+                        if (selectedProj != null && mins > 0) {
+                            onLogTimeEntry(selectedProj, selectedDeliv, mins, billable, ratePaise, notes)
+                            showLogHoursDialog = false
+                        }
+                    },
+                    enabled = selectedProj != null && mins > 0,
+                    shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                    modifier = Modifier.testTag("submit_log_hours_button")
+                ) { Text("Save Hours", style = XMaxType.buttonCompact) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogHoursDialog = false }) {
+                    Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary)
+                }
+            }
+        )
     }
 }
 
@@ -896,6 +1135,7 @@ private fun PastelDeliverableScheduleCard(
     elapsedTimerSeconds: Long = 0L,
     isTimerRunning: Boolean = false,
     onToggleTimer: () -> Unit = {},
+    onCommitTimerToTimeEntry: () -> Unit = {},
     onSlideStart: () -> Unit = {},
     onQuickSubmitReview: () -> Unit = {},
     onClick: () -> Unit
@@ -1035,6 +1275,18 @@ private fun PastelDeliverableScheduleCard(
                         }
                     }
 
+                    if (elapsedTimerSeconds > 0L) {
+                        OutlinedButton(
+                            onClick = onCommitTimerToTimeEntry,
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, palette.outline),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(38.dp).testTag("save_timesheet_${deliverable.id}")
+                        ) {
+                            Text("Save to Timesheet", style = XMaxType.caption1Semibold, color = palette.textPrimary, maxLines = 1, softWrap = false)
+                        }
+                    }
+
                     if (totalCount == 0 || doneCount == totalCount) {
                         Button(
                             onClick = onQuickSubmitReview,
@@ -1064,6 +1316,7 @@ fun DeliverableDetailDialog(
     onStartWork: (Deliverable) -> Unit = {},
     onToggleTimer: (String) -> Unit = {},
     onResetTimer: (String) -> Unit = {},
+    onCommitTimerToTimeEntry: (Deliverable) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1416,6 +1669,18 @@ fun DeliverableDetailDialog(
                                                         modifier = Modifier.height(40.dp)
                                                     ) {
                                                         Text("Log Time", style = XMaxType.caption1Semibold, color = palette.textPrimary)
+                                                    }
+                                                    Button(
+                                                        onClick = {
+                                                            onCommitTimerToTimeEntry(deliverable)
+                                                            savedFeedbackBanner = "Saved ${formatElapsedTimer(elapsedSecs)} to project timesheet ✓"
+                                                        },
+                                                        shape = RoundedCornerShape(999.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = palette.mintBg, contentColor = palette.mintInk),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(40.dp).testTag("dialog_save_timesheet_button")
+                                                    ) {
+                                                        Text("Save Timesheet", style = XMaxType.caption1Semibold, maxLines = 1, softWrap = false)
                                                     }
                                                 }
                                             }

@@ -1,8 +1,13 @@
 package com.example.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -10,8 +15,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,31 +25,33 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.model.ChatCallSession
 import com.example.model.ChatChannel
 import com.example.model.Member
 import com.example.ui.components.StudioAvatar
 import com.example.ui.components.formatTitleCase
+import com.example.ui.theme.CrimsonBlocked
 import com.example.ui.theme.EmeraldApproved
 import com.example.ui.theme.PureWhite
-import com.example.ui.theme.XMaxTheme
 import com.example.ui.theme.XMaxType
 import kotlinx.coroutines.delay
 
@@ -54,6 +59,7 @@ enum class VideoCallStatus {
     CONNECTING,
     RINGING,
     CONNECTED,
+    DECLINED,
     ENDED
 }
 
@@ -62,30 +68,65 @@ fun ChatVideoCallDialog(
     channel: ChatChannel,
     myMember: Member,
     peerMembers: List<Member>,
+    callSession: ChatCallSession? = null,
+    onAcceptCall: () -> Unit = {},
+    onEndOrDeclineCall: (status: String) -> Unit = {},
     onDismiss: () -> Unit,
     onCallCompleted: (durationSeconds: Int) -> Unit
 ) {
-    var callStatus by remember { mutableStateOf(VideoCallStatus.CONNECTING) }
-    var durationSeconds by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    var cameraGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var audioGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val avPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        cameraGranted = grants[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        audioGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+    LaunchedEffect(Unit) {
+        val needed = buildList {
+            if (!cameraGranted) add(Manifest.permission.CAMERA)
+            if (!audioGranted) add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (needed.isNotEmpty()) {
+            avPermLauncher.launch(needed.toTypedArray())
+        }
+    }
+
+    var localEnded by remember { mutableStateOf(false) }
+    val isIncomingRinging = callSession != null &&
+        callSession.callerUid != myMember.uid &&
+        callSession.status == "RINGING" &&
+        !localEnded
+
+    val callStatus = when {
+        localEnded -> VideoCallStatus.ENDED
+        callSession == null -> VideoCallStatus.CONNECTING
+        callSession.status == "CONNECTED" -> VideoCallStatus.CONNECTED
+        callSession.status == "RINGING" -> VideoCallStatus.RINGING
+        callSession.status == "DECLINED" -> VideoCallStatus.DECLINED
+        callSession.status == "ENDED" || callSession.status == "MISSED" -> VideoCallStatus.ENDED
+        else -> VideoCallStatus.CONNECTING
+    }
+
+    var durationSeconds by remember(callSession?.id) { mutableIntStateOf(0) }
     var isMuted by remember { mutableStateOf(false) }
     var isVideoEnabled by remember { mutableStateOf(true) }
     var isFrontCamera by remember { mutableStateOf(true) }
     var isSpeakerOn by remember { mutableStateOf(true) }
     var isPipExpanded by remember { mutableStateOf(false) }
 
-    // Simulated connection progression: Connecting -> Ringing (1.2s) -> Connected (2.4s)
-    LaunchedEffect(Unit) {
-        delay(1200)
-        if (callStatus == VideoCallStatus.CONNECTING) {
-            callStatus = VideoCallStatus.RINGING
-        }
-        delay(1400)
-        if (callStatus == VideoCallStatus.RINGING) {
-            callStatus = VideoCallStatus.CONNECTED
-        }
-    }
-
-    // Call duration timer
+    // Count connected seconds ONLY when Firestore signaling marks call CONNECTED
     LaunchedEffect(callStatus) {
         if (callStatus == VideoCallStatus.CONNECTED) {
             while (true) {
@@ -95,13 +136,30 @@ fun ChatVideoCallDialog(
         }
     }
 
+    // Auto-close dialog shortly after remote decline/end
+    LaunchedEffect(callSession?.status) {
+        val st = callSession?.status
+        if (st == "DECLINED" || st == "ENDED" || st == "MISSED") {
+            delay(900)
+            onCallCompleted(durationSeconds)
+            onDismiss()
+        }
+    }
+
     val primaryPeer = peerMembers.firstOrNull() ?: myMember
     val isGroupCall = peerMembers.size > 1
 
+    fun finishCall(targetStatus: String) {
+        if (localEnded) return
+        localEnded = true
+        onEndOrDeclineCall(targetStatus)
+        onCallCompleted(durationSeconds)
+        onDismiss()
+    }
+
     Dialog(
         onDismissRequest = {
-            onCallCompleted(durationSeconds)
-            onDismiss()
+            finishCall(if (isIncomingRinging) "DECLINED" else "ENDED")
         },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
@@ -117,7 +175,7 @@ fun ChatVideoCallDialog(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .testTag("video_call_dialog_screen")
         ) {
-            // Main Stage: Remote Participant Video Feed (or animated simulated feed)
+            // Main Stage: Remote Participant Signaling Status & Audio Visualizer
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -126,9 +184,9 @@ fun ChatVideoCallDialog(
             ) {
                 RemoteVideoStage(
                     primaryPeer = primaryPeer,
-                    allPeers = peerMembers,
                     isGroup = isGroupCall,
                     callStatus = callStatus,
+                    isIncoming = isIncomingRinging,
                     channelTitle = channel.title
                 )
             }
@@ -152,7 +210,8 @@ fun ChatVideoCallDialog(
                             text = if (isGroupCall) formatTitleCase(channel.title) else formatTitleCase(primaryPeer.fullName),
                             style = XMaxType.headline,
                             color = PureWhite,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -166,16 +225,19 @@ fun ChatVideoCallDialog(
                                         when (callStatus) {
                                             VideoCallStatus.CONNECTED -> EmeraldApproved
                                             VideoCallStatus.RINGING -> Color(0xFFFBBF24)
+                                            VideoCallStatus.DECLINED -> CrimsonBlocked
                                             else -> Color(0xFF94A3B8)
                                         }
                                     )
                             )
                             Text(
-                                text = when (callStatus) {
-                                    VideoCallStatus.CONNECTING -> "Connecting…"
-                                    VideoCallStatus.RINGING -> "Ringing…"
-                                    VideoCallStatus.CONNECTED -> formatTimer(durationSeconds)
-                                    VideoCallStatus.ENDED -> "Call ended"
+                                text = when {
+                                    callStatus == VideoCallStatus.CONNECTING -> "Signaling…"
+                                    isIncomingRinging -> "Incoming video call…"
+                                    callStatus == VideoCallStatus.RINGING -> "Ringing…"
+                                    callStatus == VideoCallStatus.CONNECTED -> formatTimer(durationSeconds)
+                                    callStatus == VideoCallStatus.DECLINED -> "Declined"
+                                    else -> "Call ended"
                                 },
                                 style = XMaxType.caption1Medium,
                                 color = PureWhite.copy(alpha = 0.85f)
@@ -183,7 +245,6 @@ fun ChatVideoCallDialog(
                         }
                     }
 
-                    // Network Quality Badge
                     Surface(
                         shape = RoundedCornerShape(999.dp),
                         color = Color.White.copy(alpha = 0.15f),
@@ -201,7 +262,7 @@ fun ChatVideoCallDialog(
                                 modifier = Modifier.size(12.dp)
                             )
                             Text(
-                                text = "HD • Encrypted",
+                                text = if (cameraGranted) "Live • Encrypted" else "Audio Only",
                                 style = XMaxType.caption2Medium,
                                 color = PureWhite
                             )
@@ -210,12 +271,12 @@ fun ChatVideoCallDialog(
                 }
             }
 
-            // Local Camera PiP (Picture-in-Picture)
+            // Local Camera PiP with Real CameraX Preview
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 70.dp, end = 16.dp)
-                    .size(if (isPipExpanded) 140.dp else 100.dp, if (isPipExpanded) 190.dp else 135.dp)
+                    .padding(top = 74.dp, end = 16.dp)
+                    .size(if (isPipExpanded) 144.dp else 104.dp, if (isPipExpanded) 196.dp else 140.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(Color(0xFF1E222D))
                     .border(2.dp, PureWhite.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
@@ -223,26 +284,24 @@ fun ChatVideoCallDialog(
                     .testTag("video_call_local_pip"),
                 contentAlignment = Alignment.Center
             ) {
-                if (isVideoEnabled) {
-                    // Simulated Front/Rear Camera stream with subtle ambient shimmer
-                    LocalCameraStream(
-                        isFront = isFrontCamera,
-                        userName = myMember.fullName
-                    )
+                if (isVideoEnabled && cameraGranted) {
+                    LocalCameraPreview(isFront = isFrontCamera, myMember = myMember)
                 } else {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(8.dp)
                     ) {
                         StudioAvatar(
                             name = myMember.fullName,
-                            size = 36.dp,
+                            size = 38.dp,
                             photoBase64 = myMember.photoBase64
                         )
                         Text(
-                            text = "Camera off",
+                            text = if (!cameraGranted) "Camera perm" else "Camera off",
                             style = XMaxType.caption2Medium,
-                            color = PureWhite.copy(alpha = 0.7f)
+                            color = PureWhite.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -251,81 +310,180 @@ fun ChatVideoCallDialog(
             // Bottom Controls Island
             Surface(
                 shape = RoundedCornerShape(32.dp),
-                color = Color(0xFF171A21).copy(alpha = 0.92f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                color = Color(0xFF171A21).copy(alpha = 0.94f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 28.dp, start = 16.dp, end = 16.dp)
                     .widthIn(max = 420.dp)
                     .testTag("video_call_control_bar")
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Mute Audio Toggle
-                    CallControlButton(
-                        icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        label = if (isMuted) "Unmute" else "Mute",
-                        active = isMuted,
-                        activeContainerColor = Color(0xFFEF4444),
-                        onClick = { isMuted = !isMuted },
-                        testTag = "call_btn_mute"
-                    )
-
-                    // Video Camera Toggle
-                    CallControlButton(
-                        icon = if (isVideoEnabled) Icons.Default.Videocam else Icons.Default.VideocamOff,
-                        label = if (isVideoEnabled) "Cam On" else "Cam Off",
-                        active = !isVideoEnabled,
-                        activeContainerColor = Color(0xFFEF4444),
-                        onClick = { isVideoEnabled = !isVideoEnabled },
-                        testTag = "call_btn_video"
-                    )
-
-                    // Camera Flip
-                    CallControlButton(
-                        icon = Icons.Default.Cameraswitch,
-                        label = if (isFrontCamera) "Front" else "Rear",
-                        active = false,
-                        onClick = { isFrontCamera = !isFrontCamera },
-                        testTag = "call_btn_flip"
-                    )
-
-                    // Speakerphone Toggle
-                    CallControlButton(
-                        icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-                        label = if (isSpeakerOn) "Speaker" else "Earpiece",
-                        active = isSpeakerOn,
-                        onClick = { isSpeakerOn = !isSpeakerOn },
-                        testTag = "call_btn_speaker"
-                    )
-
-                    // End Call
-                    Surface(
-                        onClick = {
-                            callStatus = VideoCallStatus.ENDED
-                            onCallCompleted(durationSeconds)
-                            onDismiss()
-                        },
-                        shape = CircleShape,
-                        color = Color(0xFFEF4444),
+                if (isIncomingRinging) {
+                    Row(
                         modifier = Modifier
-                            .size(52.dp)
-                            .testTag("call_btn_end")
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.CallEnd,
-                                contentDescription = "End Call",
-                                tint = PureWhite,
-                                modifier = Modifier.size(26.dp)
-                            )
+                        Button(
+                            onClick = { finishCall("DECLINED") },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonBlocked, contentColor = PureWhite),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("call_btn_decline")
+                        ) {
+                            Icon(Icons.Default.CallEnd, contentDescription = "Decline Call", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Decline", style = XMaxType.buttonCompact)
+                        }
+                        Button(
+                            onClick = onAcceptCall,
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldApproved, contentColor = PureWhite),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("call_btn_accept")
+                        ) {
+                            Icon(Icons.Default.Videocam, contentDescription = "Accept Call", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Accept", style = XMaxType.buttonCompact)
                         }
                     }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CallControlButton(
+                            icon = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                            label = if (isMuted) "Unmute" else "Mute",
+                            active = isMuted,
+                            activeContainerColor = CrimsonBlocked,
+                            onClick = { isMuted = !isMuted },
+                            testTag = "call_btn_mute"
+                        )
+
+                        CallControlButton(
+                            icon = if (isVideoEnabled) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                            label = if (isVideoEnabled) "Cam On" else "Cam Off",
+                            active = !isVideoEnabled,
+                            activeContainerColor = CrimsonBlocked,
+                            onClick = {
+                                if (!cameraGranted) {
+                                    avPermLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+                                } else {
+                                    isVideoEnabled = !isVideoEnabled
+                                }
+                            },
+                            testTag = "call_btn_video"
+                        )
+
+                        CallControlButton(
+                            icon = Icons.Default.Cameraswitch,
+                            label = if (isFrontCamera) "Front" else "Rear",
+                            active = false,
+                            onClick = { isFrontCamera = !isFrontCamera },
+                            testTag = "call_btn_flip"
+                        )
+
+                        CallControlButton(
+                            icon = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
+                            label = if (isSpeakerOn) "Speaker" else "Earpiece",
+                            active = isSpeakerOn,
+                            onClick = { isSpeakerOn = !isSpeakerOn },
+                            testTag = "call_btn_speaker"
+                        )
+
+                        Surface(
+                            onClick = { finishCall("ENDED") },
+                            shape = CircleShape,
+                            color = CrimsonBlocked,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .testTag("call_btn_end")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.CallEnd,
+                                    contentDescription = "End Call",
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun IncomingCallBanner(
+    session: ChatCallSession,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = Color(0xFF171A21),
+        border = BorderStroke(1.dp, EmeraldApproved.copy(alpha = 0.6f)),
+        shadowElevation = 12.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag("incoming_call_banner")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StudioAvatar(name = session.callerName, size = 42.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = formatTitleCase(session.callerName),
+                    style = XMaxType.headline,
+                    color = PureWhite,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Incoming ${if (session.callType == "AUDIO") "Voice" else "Video"} Call",
+                    style = XMaxType.caption1,
+                    color = EmeraldApproved,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Surface(
+                onClick = onDecline,
+                shape = CircleShape,
+                color = CrimsonBlocked,
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("incoming_call_decline")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = PureWhite, modifier = Modifier.size(20.dp))
+                }
+            }
+            Surface(
+                onClick = onAccept,
+                shape = CircleShape,
+                color = EmeraldApproved,
+                modifier = Modifier
+                    .size(44.dp)
+                    .testTag("incoming_call_accept")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Videocam, contentDescription = "Accept", tint = PureWhite, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -346,7 +504,7 @@ private fun CallControlButton(
         shape = CircleShape,
         color = if (active) activeContainerColor else Color.White.copy(alpha = 0.12f),
         modifier = Modifier
-            .size(46.dp)
+            .size(48.dp)
             .testTag(testTag)
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -363,9 +521,9 @@ private fun CallControlButton(
 @Composable
 private fun RemoteVideoStage(
     primaryPeer: Member,
-    allPeers: List<Member>,
     isGroup: Boolean,
     callStatus: VideoCallStatus,
+    isIncoming: Boolean,
     channelTitle: String
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "remote_video_pulse")
@@ -395,7 +553,6 @@ private fun RemoteVideoStage(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Decorative background audio waves / subtle radar rings
         Canvas(modifier = Modifier.size(340.dp)) {
             val center = Offset(size.width / 2, size.height / 2)
             drawCircle(
@@ -416,7 +573,6 @@ private fun RemoteVideoStage(
             modifier = Modifier.padding(horizontal = 24.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                // Pulsing ring
                 Box(
                     modifier = Modifier
                         .size(136.dp)
@@ -451,23 +607,49 @@ private fun RemoteVideoStage(
                 )
             }
 
-            // Audio wave activity animation during active call
-            if (callStatus == VideoCallStatus.CONNECTED) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    repeat(7) { idx ->
-                        AudioWaveBar(index = idx)
+            when (callStatus) {
+                VideoCallStatus.CONNECTED -> {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        repeat(7) { idx -> AudioWaveBar(index = idx) }
                     }
+                    Text(
+                        text = "Connected via Live Call Signaling",
+                        style = XMaxType.caption1Medium,
+                        color = EmeraldApproved
+                    )
                 }
-            } else {
-                Text(
-                    text = if (callStatus == VideoCallStatus.RINGING) "Calling…" else "Establishing peer connection…",
-                    style = XMaxType.caption1Medium,
-                    color = EmeraldApproved
-                )
+                VideoCallStatus.RINGING -> {
+                    Text(
+                        text = if (isIncoming) "Tap Accept to join call" else "Ringing peer device…",
+                        style = XMaxType.caption1Medium,
+                        color = Color(0xFFFBBF24)
+                    )
+                }
+                VideoCallStatus.DECLINED -> {
+                    Text(
+                        text = "Call declined by recipient",
+                        style = XMaxType.caption1Medium,
+                        color = CrimsonBlocked
+                    )
+                }
+                VideoCallStatus.ENDED -> {
+                    Text(
+                        text = "Call ended",
+                        style = XMaxType.caption1Medium,
+                        color = PureWhite.copy(alpha = 0.7f)
+                    )
+                }
+                VideoCallStatus.CONNECTING -> {
+                    Text(
+                        text = "Starting encrypted signaling…",
+                        style = XMaxType.caption1Medium,
+                        color = EmeraldApproved
+                    )
+                }
             }
         }
     }
@@ -495,37 +677,58 @@ private fun AudioWaveBar(index: Int) {
 }
 
 @Composable
-private fun LocalCameraStream(isFront: Boolean, userName: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF1E293B),
-                        Color(0xFF0F172A)
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+private fun LocalCameraPreview(isFront: Boolean, myMember: Member) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var cameraError by remember { mutableStateOf(false) }
+
+    if (cameraError) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.linearGradient(listOf(Color(0xFF1E293B), Color(0xFF0F172A)))),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                if (isFront) Icons.Default.Face else Icons.Default.CameraRear,
-                contentDescription = null,
-                tint = PureWhite.copy(alpha = 0.8f),
-                modifier = Modifier.size(24.dp)
-            )
-            Text(
-                text = if (isFront) "Front" else "Rear",
-                style = XMaxType.caption2Medium,
-                color = PureWhite.copy(alpha = 0.75f)
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                StudioAvatar(name = myMember.fullName, size = 34.dp, photoBase64 = myMember.photoBase64)
+                Text(if (isFront) "Front" else "Rear", style = XMaxType.caption2Medium, color = PureWhite.copy(alpha = 0.75f))
+            }
+        }
+        return
+    }
+
+    val previewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
         }
     }
+
+    DisposableEffect(isFront, lifecycleOwner) {
+        val future = ProcessCameraProvider.getInstance(context)
+        val listener = Runnable {
+            runCatching {
+                val provider = future.get()
+                val preview = Preview.Builder().build().also {
+                    it.surfaceProvider = previewView.surfaceProvider
+                }
+                val selector = if (isFront) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                provider.unbindAll()
+                provider.bindToLifecycle(lifecycleOwner, selector, preview)
+            }.onFailure {
+                cameraError = true
+            }
+        }
+        future.addListener(listener, ContextCompat.getMainExecutor(context))
+        onDispose {
+            runCatching { future.get().unbindAll() }
+        }
+    }
+
+    AndroidView(
+        factory = { previewView },
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 private fun formatTimer(totalSec: Int): String {

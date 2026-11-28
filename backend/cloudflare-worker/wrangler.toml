@@ -7,6 +7,8 @@ FIREBASE_PROJECT_ID = "gen-lang-client-0137668580"
 FIRESTORE_DB_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
 # Leave empty for native mobile clients (prevents wildcard CORS on authenticated endpoints).
 # Add comma-separated origins only if a web dashboard calls this Worker directly.
+# "AUTO" uses Cloudflare R2 when bound, or set "SUPABASE_STORAGE" to force Supabase.
+STORAGE_PROVIDER = "AUTO"
 ALLOWED_ORIGINS = ""
 
 # Free-Tier Storage Options:

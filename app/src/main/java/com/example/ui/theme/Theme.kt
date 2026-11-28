@@ -118,7 +118,7 @@ enum class AppIconTheme(val label: String, val badgeColor: Color, val descriptio
 }
 
 object AppAppearanceStore {
-    private const val PREF_NAME = "xmax_appearance_v1"
+    private const val DEFAULT_PREF_NAME = "xmax_appearance_v1"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_ACCENT = "accent_color"
     private const val KEY_BUTTON_THEME = "button_theme"
@@ -127,7 +127,10 @@ object AppAppearanceStore {
     private const val KEY_APP_ICON_THEME = "app_icon_theme"
 
     @Volatile
-    private var loaded = false
+    private var loadedProfileKey: String? = null
+
+    @Volatile
+    private var activeUid: String = ""
 
     private val _themeModeFlow = MutableStateFlow(AppThemeMode.SYSTEM)
     val themeModeFlow: StateFlow<AppThemeMode> = _themeModeFlow.asStateFlow()
@@ -147,9 +150,23 @@ object AppAppearanceStore {
     private val _appIconThemeFlow = MutableStateFlow(AppIconTheme.CLASSIC_VIOLET)
     val appIconThemeFlow: StateFlow<AppIconTheme> = _appIconThemeFlow.asStateFlow()
 
+    private fun prefFileName(uid: String = activeUid): String {
+        val clean = uid.trim().replace(Regex("[^A-Za-z0-9_-]"), "_")
+        return if (clean.isBlank()) DEFAULT_PREF_NAME else "xmax_appearance_uid_$clean"
+    }
+
+    fun setActiveProfile(context: Context, uid: String?) {
+        val normalized = uid?.trim().orEmpty()
+        if (normalized == activeUid && loadedProfileKey == prefFileName(normalized)) return
+        activeUid = normalized
+        loadedProfileKey = null
+        ensureLoaded(context)
+    }
+
     fun ensureLoaded(context: Context) {
-        if (loaded) return
-        val prefs = context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val targetFile = prefFileName()
+        if (loadedProfileKey == targetFile) return
+        val prefs = context.applicationContext.getSharedPreferences(targetFile, Context.MODE_PRIVATE)
         val rawMode = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name)
         _themeModeFlow.value = runCatching { AppThemeMode.valueOf(rawMode ?: AppThemeMode.SYSTEM.name) }
             .getOrDefault(AppThemeMode.SYSTEM)
@@ -174,71 +191,78 @@ object AppAppearanceStore {
         _appIconThemeFlow.value = runCatching { AppIconTheme.valueOf(rawIcon ?: AppIconTheme.CLASSIC_VIOLET.name) }
             .getOrDefault(AppIconTheme.CLASSIC_VIOLET)
 
-        loaded = true
+        loadedProfileKey = targetFile
     }
 
     fun setThemeMode(context: Context, mode: AppThemeMode) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _themeModeFlow.value = mode
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_THEME_MODE, mode.name)
             .apply()
     }
 
     fun setAccentColor(context: Context, accent: AppAccentColor) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _accentColorFlow.value = accent
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_ACCENT, accent.name)
             .apply()
     }
 
     fun setButtonTheme(context: Context, theme: AppButtonTheme) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _buttonThemeFlow.value = theme
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_BUTTON_THEME, theme.name)
             .apply()
     }
 
     fun setNavHighlight(context: Context, highlight: AppNavHighlight) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _navHighlightFlow.value = highlight
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_NAV_HIGHLIGHT, highlight.name)
             .apply()
     }
 
     fun setDashboardTint(context: Context, tint: AppDashboardTint) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _dashboardTintFlow.value = tint
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_DASHBOARD_TINT, tint.name)
             .apply()
     }
 
     fun setAppIconTheme(context: Context, iconTheme: AppIconTheme) {
-        loaded = true
+        val file = prefFileName()
+        loadedProfileKey = file
         _appIconThemeFlow.value = iconTheme
         context.applicationContext
-            .getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getSharedPreferences(file, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_APP_ICON_THEME, iconTheme.name)
             .apply()
     }
 
     internal fun resetForTesting(mode: AppThemeMode = AppThemeMode.SYSTEM) {
-        loaded = false
+        activeUid = ""
+        loadedProfileKey = null
         _themeModeFlow.value = mode
         _accentColorFlow.value = AppAccentColor.VIOLET
         _buttonThemeFlow.value = AppButtonTheme.ACCENT

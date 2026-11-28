@@ -529,4 +529,262 @@ class CommercialWorkflowRepository(private val core: AgencyRepository) {
     suspend fun deleteQuotation(quoteId: String, quoteNum: String, actor: Member) {
         quotations.deleteQuotation(quoteId, quoteNum, actor).getOrThrow()
     }
+
+    // --- Time Tracking ---
+
+    fun observeTimeEntries(uid: String, isManager: Boolean): Flow<List<TimeEntry>> = callbackFlow {
+        val query = if (isManager) {
+            sub("time_entries").orderBy("workDateMillis", Query.Direction.DESCENDING).limit(200)
+        } else {
+            sub("time_entries").whereEqualTo("uid", uid).limit(150)
+        }
+        val reg = query.addSnapshotListener { snap, err ->
+            if (err != null) {
+                handleFirestoreError(err, OperationType.LIST, "companies/${core.companyId}/time_entries")
+                close(err)
+                return@addSnapshotListener
+            }
+            val list = snap?.documents?.mapNotNull { doc ->
+                doc.get("createdAt", est)
+                doc.get("updatedAt", est)
+                doc.toObject(TimeEntry::class.java)
+            }?.sortedByDescending { it.workDateMillis }.orEmpty()
+            trySend(list)
+        }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun logTimeEntry(
+        project: Project,
+        deliverable: Deliverable?,
+        durationMinutes: Int,
+        billable: Boolean,
+        hourlyRatePaise: Long,
+        notes: String,
+        workDateMillis: Long,
+        actor: Member
+    ): TimeEntry {
+        val safeMinutes = durationMinutes.coerceIn(1, 24 * 60)
+        val entryId = "time_" + UUID.randomUUID().toString().take(10)
+        val payload = mapOf(
+            "projectId" to project.id,
+            "projectTitle" to project.title.take(160),
+            "deliverableId" to (deliverable?.id ?: ""),
+            "deliverableTitle" to (deliverable?.title?.take(160) ?: ""),
+            "uid" to actor.uid,
+            "memberName" to actor.fullName.ifBlank { "Member" }.take(120),
+            "departmentId" to (deliverable?.departmentId?.ifBlank { actor.departmentId } ?: actor.departmentId),
+            "workDateMillis" to workDateMillis,
+            "durationMinutes" to safeMinutes,
+            "billable" to billable,
+            "hourlyRatePaise" to hourlyRatePaise.coerceAtLeast(0L),
+            "notes" to notes.trim().take(600),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        sub("time_entries").document(entryId).set(payload).await()
+        core.logActivity(
+            ActivityCategory.DELIVERABLE,
+            "Logged ${safeMinutes}m on ${project.title}",
+            deliverable?.title?.ifBlank { notes.trim() } ?: notes.trim(),
+            actor.uid,
+            actor.fullName,
+            entryId
+        )
+        return TimeEntry(
+            id = entryId,
+            projectId = project.id,
+            projectTitle = project.title,
+            deliverableId = deliverable?.id ?: "",
+            deliverableTitle = deliverable?.title ?: "",
+            uid = actor.uid,
+            memberName = actor.fullName,
+            departmentId = deliverable?.departmentId ?: actor.departmentId,
+            workDateMillis = workDateMillis,
+            durationMinutes = safeMinutes,
+            billable = billable,
+            hourlyRatePaise = hourlyRatePaise.coerceAtLeast(0L),
+            notes = notes.trim()
+        )
+    }
+
+    suspend fun deleteTimeEntry(entryId: String) {
+        if (entryId.isBlank()) return
+        sub("time_entries").document(entryId).delete().await()
+    }
+
+    // --- Client Portal Guest Links ---
+
+    fun observePortalLinks(): Flow<List<ClientPortalLink>> = callbackFlow {
+        val reg = sub("client_portal_links")
+            .orderBy("createdAtMillis", Query.Direction.DESCENDING)
+            .limit(80)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    handleFirestoreError(err, OperationType.LIST, "companies/${core.companyId}/client_portal_links")
+                    close(err)
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.mapNotNull { doc ->
+                    doc.get("createdAt", est)
+                    doc.get("updatedAt", est)
+                    doc.toObject(ClientPortalLink::class.java)
+                }.orEmpty()
+                trySend(list)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun createClientPortalLink(
+        project: Project,
+        quotationId: String,
+        validDays: Int,
+        actor: Member
+    ): ClientPortalLink {
+        val bytes = ByteArray(18).also { java.security.SecureRandom().nextBytes(it) }
+        val token = "ptk_" + bytes.joinToString("") { "%02x".format(it) }
+        val now = System.currentTimeMillis()
+        val expires = now + validDays.coerceIn(1, 90) * 86_400_000L
+        val payload = mapOf(
+            "token" to token,
+            "projectId" to project.id,
+            "projectTitle" to project.title.take(160),
+            "quotationId" to quotationId.ifBlank { project.approvedQuoteId },
+            "clientId" to project.clientId,
+            "clientCompanyName" to project.clientCompanyName.take(150),
+            "createdByUid" to actor.uid,
+            "createdByName" to actor.fullName.ifBlank { "Member" }.take(120),
+            "expiresAtMillis" to expires,
+            "revoked" to false,
+            "clientApprovedAtMillis" to 0L,
+            "clientApprovalNote" to "",
+            "createdAtMillis" to now,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        val batch = db.batch()
+        batch.set(sub("client_portal_links").document(token), payload)
+        // Top-level lookup index for public Cloudflare Worker portal endpoints (guest token read-only access)
+        batch.set(
+            db.collection("portal_tokens").document(token),
+            mapOf(
+                "companyId" to core.companyId,
+                "token" to token,
+                "projectId" to project.id,
+                "quotationId" to quotationId.ifBlank { project.approvedQuoteId },
+                "expiresAtMillis" to expires,
+                "revoked" to false,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+        batch.commit().await()
+        core.logActivity(
+            ActivityCategory.PROJECT,
+            "Client Portal Link Created",
+            "${project.clientCompanyName} • ${project.title}",
+            actor.uid,
+            actor.fullName,
+            token
+        )
+        return ClientPortalLink(
+            id = token,
+            token = token,
+            projectId = project.id,
+            projectTitle = project.title,
+            quotationId = quotationId.ifBlank { project.approvedQuoteId },
+            clientId = project.clientId,
+            clientCompanyName = project.clientCompanyName,
+            createdByUid = actor.uid,
+            createdByName = actor.fullName,
+            expiresAtMillis = expires,
+            createdAtMillis = now
+        )
+    }
+
+    suspend fun revokeClientPortalLink(token: String, actor: Member) {
+        if (token.isBlank()) return
+        val batch = db.batch()
+        batch.update(
+            sub("client_portal_links").document(token),
+            mapOf("revoked" to true, "updatedAt" to FieldValue.serverTimestamp())
+        )
+        batch.set(
+            db.collection("portal_tokens").document(token),
+            mapOf("revoked" to true, "updatedAt" to FieldValue.serverTimestamp()),
+            com.google.firebase.firestore.SetOptions.merge()
+        )
+        batch.commit().await()
+        core.logActivity(
+            ActivityCategory.PROJECT,
+            "Client Portal Link Revoked",
+            "Revoked guest access token",
+            actor.uid,
+            actor.fullName,
+            token
+        )
+    }
+
+    // --- Automated Payment Nudge Logs ---
+
+    fun observeNudgeLogs(): Flow<List<PaymentNudgeLog>> = callbackFlow {
+        val reg = sub("nudge_logs")
+            .orderBy("sentAtMillis", Query.Direction.DESCENDING)
+            .limit(100)
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    handleFirestoreError(err, OperationType.LIST, "companies/${core.companyId}/nudge_logs")
+                    close(err)
+                    return@addSnapshotListener
+                }
+                val list = snap?.documents?.mapNotNull { doc ->
+                    doc.get("createdAt", est)
+                    doc.toObject(PaymentNudgeLog::class.java)
+                }.orEmpty()
+                trySend(list)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun logPaymentNudge(
+        project: Project,
+        quotationId: String,
+        channel: String,
+        recipient: String,
+        amountDuePaise: Long,
+        status: String,
+        summary: String,
+        actor: Member
+    ): PaymentNudgeLog {
+        val logId = "ndg_" + UUID.randomUUID().toString().take(10)
+        val now = System.currentTimeMillis()
+        val payload = mapOf(
+            "projectId" to project.id,
+            "projectTitle" to project.title.take(160),
+            "quotationId" to quotationId.take(128),
+            "clientCompanyName" to project.clientCompanyName.take(150),
+            "channel" to channel.take(32),
+            "recipient" to recipient.take(160),
+            "amountDuePaise" to amountDuePaise.coerceAtLeast(0L),
+            "status" to status.take(32),
+            "summary" to summary.take(400),
+            "sentByUid" to actor.uid,
+            "sentAtMillis" to now,
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        sub("nudge_logs").document(logId).set(payload).await()
+        return PaymentNudgeLog(
+            id = logId,
+            projectId = project.id,
+            projectTitle = project.title,
+            quotationId = quotationId,
+            clientCompanyName = project.clientCompanyName,
+            channel = channel,
+            recipient = recipient,
+            amountDuePaise = amountDuePaise,
+            status = status,
+            summary = summary,
+            sentByUid = actor.uid,
+            sentAtMillis = now
+        )
+    }
 }

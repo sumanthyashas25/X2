@@ -422,7 +422,7 @@ class ExampleRobolectricTest {
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("chat_direct_header").assertExists()
     composeTestRule.onAllNodesWithText("Aarav Designer")[0].assertExists()
-    composeTestRule.onNodeWithText("Personal Chat").assertExists()
+    composeTestRule.onNodeWithText("Offline").assertExists()
     composeTestRule.onNodeWithText("Personal Chat • Graphic Designer").assertDoesNotExist()
     composeTestRule.onNodeWithText("Team channel & shared files").assertDoesNotExist()
     composeTestRule.onNodeWithTag("chat_thread_close_button").assertDoesNotExist()

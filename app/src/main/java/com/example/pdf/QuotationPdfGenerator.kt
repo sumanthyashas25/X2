@@ -18,7 +18,11 @@ import android.text.TextPaint
 import androidx.core.content.FileProvider
 import com.example.R
 import com.example.domain.MoneyFormatter
+import com.example.model.CompanyProfile
+import com.example.model.PaymentRecord
+import com.example.model.Project
 import com.example.model.Quotation
+import com.example.model.TimeEntry
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -401,6 +405,301 @@ object QuotationPdfGenerator {
     fun launchShareSheet(context: Context, file: File, quotation: Quotation) {
         val shareIntent = buildShareIntent(context, file, quotation)
         val chooser = Intent.createChooser(shareIntent, "Share Quotation PDF").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+    }
+
+    fun buildInvoiceTargetFile(context: Context, project: Project): File {
+        val dir = File(context.filesDir, "invoices").apply { mkdirs() }
+        val safeId = project.id.ifBlank { project.title }
+            .replace(Regex("[^A-Za-z0-9_-]"), "_")
+            .take(40)
+        return File(dir, "INV_${safeId}.pdf")
+    }
+
+    data class TaxInvoiceSummary(
+        val invoiceNumber: String,
+        val gstEnabled: Boolean,
+        val gstRatePercent: Int,
+        val taxablePaise: Long,
+        val cgstPaise: Long,
+        val sgstPaise: Long,
+        val grossPaise: Long,
+        val paidPaise: Long,
+        val balanceDuePaise: Long
+    )
+
+    fun computeTaxInvoiceSummary(
+        project: Project,
+        quotation: Quotation?,
+        company: CompanyProfile?
+    ): TaxInvoiceSummary {
+        val invoiceNo = "INV-${project.id.takeLast(6).uppercase().ifBlank { "XMAX" }}"
+        val gstEnabled = quotation?.gstEnabled ?: (company?.gstEnabled ?: true)
+        val gstPercent = quotation?.gstRatePercent ?: (company?.gstRatePercent ?: 18)
+        val grossPaise = project.agreedValuePaise.coerceAtLeast(0L)
+        val taxablePaise = if (gstEnabled && gstPercent > 0) {
+            quotation?.takeIf { it.subtotalPaise > 0L }
+                ?.let { (it.subtotalPaise + it.surchargePaise - it.discountPaise).coerceAtLeast(0L) }
+                ?: ((grossPaise * 100L) / (100L + gstPercent))
+        } else grossPaise
+        val totalTaxPaise = if (gstEnabled && gstPercent > 0) {
+            (grossPaise - taxablePaise).coerceAtLeast(0L)
+        } else 0L
+        val cgstPaise = totalTaxPaise / 2L
+        val sgstPaise = totalTaxPaise - cgstPaise
+        val paidPaise = project.paidPaise.coerceAtLeast(0L)
+        val balancePaise = (grossPaise - paidPaise).coerceAtLeast(0L)
+        return TaxInvoiceSummary(
+            invoiceNumber = invoiceNo,
+            gstEnabled = gstEnabled,
+            gstRatePercent = gstPercent,
+            taxablePaise = taxablePaise,
+            cgstPaise = cgstPaise,
+            sgstPaise = sgstPaise,
+            grossPaise = grossPaise,
+            paidPaise = paidPaise,
+            balanceDuePaise = balancePaise
+        )
+    }
+
+    fun generateTaxInvoicePdf(
+        context: Context,
+        project: Project,
+        quotation: Quotation?,
+        payments: List<PaymentRecord>,
+        company: CompanyProfile?,
+        timeEntries: List<TimeEntry> = emptyList()
+    ): GeneratedPdfResult {
+        val outFile = buildInvoiceTargetFile(context, project)
+        val doc = PdfDocument()
+        var pageNumber = 1
+        var page = doc.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
+        var canvas = page.canvas
+        var y = MARGIN_TOP
+
+        val titlePaint = makeTextPaint(18f, Color.WHITE, bold = true)
+        val subtitlePaint = makeTextPaint(9.5f, Color.rgb(224, 231, 255))
+        val h2Paint = makeTextPaint(11.5f, Color.rgb(15, 23, 42), bold = true)
+        val bodyPaint = makeTextPaint(9.2f, Color.rgb(30, 41, 59))
+        val mutedPaint = makeTextPaint(8.5f, Color.rgb(100, 116, 139))
+        val boldBodyPaint = makeTextPaint(9.2f, Color.rgb(15, 23, 42), bold = true)
+        val rightPaint = makeTextPaint(9.2f, Color.rgb(15, 23, 42), bold = false, align = Paint.Align.RIGHT)
+        val rightBoldPaint = makeTextPaint(9.6f, Color.rgb(15, 23, 42), bold = true, align = Paint.Align.RIGHT)
+
+        val invoiceNo = "INV-${project.id.takeLast(6).uppercase().ifBlank { "XMAX" }}"
+        val companyName = company?.name?.ifBlank { quotation?.companySnapshot?.name } ?: "X.MAX Agency"
+        val companyTagline = company?.tagline?.ifBlank { "Creative & Digital Marketing Agency" }
+            ?: "Creative & Digital Marketing Agency"
+        val companyAddress = company?.address?.ifBlank { quotation?.companySnapshot?.address } ?: ""
+        val companyPhone = company?.phone?.ifBlank { quotation?.companySnapshot?.phone } ?: ""
+        val companyEmail = company?.email?.ifBlank { quotation?.companySnapshot?.email } ?: ""
+        val gstin = company?.gstin?.ifBlank { quotation?.companySnapshot?.gstin } ?: ""
+        val gstEnabled = quotation?.gstEnabled ?: (company?.gstEnabled ?: true)
+        val gstPercent = quotation?.gstRatePercent ?: (company?.gstRatePercent ?: 18)
+
+        fun drawInvoiceFooter() {
+            val footerY = PAGE_HEIGHT - 22f
+            canvas.drawLine(MARGIN_X, footerY - 10f, MARGIN_X + CONTENT_WIDTH, footerY - 10f, dividerPaint)
+            canvas.drawText("$companyName • Tax Invoice $invoiceNo • SAC 998313", MARGIN_X, footerY, mutedPaint)
+            val rightMuted = TextPaint(mutedPaint).apply { textAlign = Paint.Align.RIGHT }
+            canvas.drawText("Page $pageNumber", MARGIN_X + CONTENT_WIDTH, footerY, rightMuted)
+        }
+
+        fun startInvoiceNewPage() {
+            drawInvoiceFooter()
+            doc.finishPage(page)
+            pageNumber++
+            page = doc.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
+            canvas = page.canvas
+            y = MARGIN_TOP
+            canvas.drawText("$companyName • Tax Invoice $invoiceNo", MARGIN_X, y + 10f, mutedPaint)
+            y += 18f
+            canvas.drawLine(MARGIN_X, y, MARGIN_X + CONTENT_WIDTH, y, dividerPaint)
+            y += 12f
+        }
+
+        // === TOP BANNER ===
+        val bannerRect = RectF(MARGIN_X, y, MARGIN_X + CONTENT_WIDTH, y + 74f)
+        canvas.drawRoundRect(bannerRect, 10f, 10f, darkPaint)
+        canvas.drawText(companyName, MARGIN_X + 16f, y + 31f, titlePaint)
+        canvas.drawText(companyTagline, MARGIN_X + 16f, y + 51f, subtitlePaint)
+        val invRight = makeTextPaint(13f, Color.WHITE, bold = true, align = Paint.Align.RIGHT)
+        val invSubRight = makeTextPaint(9.5f, Color.rgb(199, 210, 254), bold = false, align = Paint.Align.RIGHT)
+        canvas.drawText("TAX INVOICE", MARGIN_X + CONTENT_WIDTH - 16f, y + 29f, invRight)
+        canvas.drawText("$invoiceNo  |  SAC: 998313", MARGIN_X + CONTENT_WIDTH - 16f, y + 46f, invSubRight)
+        canvas.drawText("Date: ${MoneyFormatter.formatDate(System.currentTimeMillis())}", MARGIN_X + CONTENT_WIDTH - 16f, y + 60f, invSubRight)
+        y += 86f
+
+        // === SUPPLIER & BILL TO ===
+        val colHalf = (CONTENT_WIDTH - 14f) / 2f
+        val leftX = MARGIN_X
+        val rightX = MARGIN_X + colHalf + 14f
+        val supplierLines = buildList {
+            add("Supplier: $companyName")
+            if (companyAddress.isNotBlank()) add(companyAddress)
+            val cLine = listOfNotNull(companyPhone.takeIf { it.isNotBlank() }, companyEmail.takeIf { it.isNotBlank() }).joinToString(" • ")
+            if (cLine.isNotBlank()) add(cLine)
+            if (gstin.isNotBlank()) add("GSTIN: $gstin")
+        }
+        val billToLines = buildList {
+            add("Bill To: ${project.clientCompanyName.ifBlank { quotation?.clientSnapshot?.companyName ?: "Client" }}")
+            quotation?.clientSnapshot?.contactPerson?.takeIf { it.isNotBlank() }?.let { add("Attn: $it") }
+            quotation?.clientSnapshot?.let { cs ->
+                val c = listOfNotNull(cs.phone.takeIf { it.isNotBlank() }, cs.email.takeIf { it.isNotBlank() }).joinToString(" • ")
+                if (c.isNotBlank()) add(c)
+                if (cs.address.isNotBlank()) add(cs.address)
+            }
+        }
+        val leftLayout = buildStaticLayout(supplierLines.joinToString("\n"), bodyPaint, colHalf.toInt() - 16)
+        val rightLayout = buildStaticLayout(billToLines.joinToString("\n"), bodyPaint, colHalf.toInt() - 16)
+        val metaH = maxOf(leftLayout.height, rightLayout.height) + 18f
+        canvas.drawRoundRect(RectF(leftX, y, leftX + colHalf, y + metaH), 8f, 8f, cardBgPaint)
+        canvas.drawRoundRect(RectF(rightX, y, rightX + colHalf, y + metaH), 8f, 8f, cardBgPaint)
+        drawStaticLayout(canvas, leftLayout, leftX + 10f, y + 9f)
+        drawStaticLayout(canvas, rightLayout, rightX + 10f, y + 9f)
+        y += metaH + 12f
+
+        canvas.drawText("Project: ${project.title}", MARGIN_X, y + 11f, h2Paint)
+        quotation?.quoteNumber?.takeIf { it.isNotBlank() }?.let { qn ->
+            canvas.drawText("Ref Quote: $qn", MARGIN_X + CONTENT_WIDTH, y + 11f, rightPaint)
+        }
+        y += 22f
+
+        // === SERVICE LINE ITEMS ===
+        canvas.drawRoundRect(RectF(MARGIN_X, y, MARGIN_X + CONTENT_WIDTH, y + 24f), 8f, 8f, headerBgPaint)
+        canvas.drawText("Description / SAC 998313", MARGIN_X + 10f, y + 16f, boldBodyPaint)
+        canvas.drawText("Amount", MARGIN_X + CONTENT_WIDTH - 10f, y + 16f, rightBoldPaint)
+        y += 30f
+
+        val lines = quotation?.lines.orEmpty()
+        if (lines.isNotEmpty()) {
+            lines.forEach { line ->
+                val lineTitle = buildStaticLayout("${line.title} (Qty: ${line.quantity})", bodyPaint, 340)
+                val rowH = lineTitle.height + 12f
+                if (y + rowH > PAGE_HEIGHT - MARGIN_BOTTOM - 20f) startInvoiceNewPage()
+                drawStaticLayout(canvas, lineTitle, MARGIN_X + 8f, y + 4f)
+                val amtStr = if (line.separatelyBilled) "Actuals" else MoneyFormatter.formatInr(line.lineTotalPaise)
+                canvas.drawText(amtStr, MARGIN_X + CONTENT_WIDTH - 8f, y + 14f, rightPaint)
+                y += rowH
+                canvas.drawLine(MARGIN_X, y, MARGIN_X + CONTENT_WIDTH, y, dividerPaint)
+                y += 4f
+            }
+        } else {
+            val basePaise = if (gstEnabled && gstPercent > 0) {
+                (project.agreedValuePaise * 100L) / (100L + gstPercent)
+            } else project.agreedValuePaise
+            canvas.drawText("${project.title} — Agency Deliverables", MARGIN_X + 8f, y + 14f, bodyPaint)
+            canvas.drawText(MoneyFormatter.formatInr(basePaise), MARGIN_X + CONTENT_WIDTH - 8f, y + 14f, rightPaint)
+            y += 24f
+            canvas.drawLine(MARGIN_X, y, MARGIN_X + CONTENT_WIDTH, y, dividerPaint)
+            y += 6f
+        }
+
+        // === BILLABLE HOURS SUMMARY ===
+        val projEntries = timeEntries.filter { it.projectId == project.id && it.billable }
+        if (projEntries.isNotEmpty()) {
+            val totalMins = projEntries.sumOf { it.durationMinutes }
+            val hoursLabel = String.format(java.util.Locale.US, "%.1f hrs logged (%d entries)", totalMins / 60f, projEntries.size)
+            if (y + 28f > PAGE_HEIGHT - MARGIN_BOTTOM) startInvoiceNewPage()
+            canvas.drawText("Tracked Billable Effort: $hoursLabel", MARGIN_X + 8f, y + 12f, mutedPaint)
+            y += 20f
+        }
+
+        // === TAX & PAYMENT SUMMARY ===
+        val invSummary = computeTaxInvoiceSummary(project, quotation, company)
+        val grossPaise = invSummary.grossPaise
+        val taxablePaise = invSummary.taxablePaise
+        val cgstPaise = invSummary.cgstPaise
+        val sgstPaise = invSummary.sgstPaise
+        val totalTaxPaise = cgstPaise + sgstPaise
+        val paidPaise = invSummary.paidPaise
+        val balancePaise = invSummary.balanceDuePaise
+
+        val taxRows = mutableListOf<Pair<String, String>>()
+        taxRows += "Taxable Value" to MoneyFormatter.formatInr(taxablePaise)
+        if (gstEnabled && totalTaxPaise > 0L) {
+            val halfRate = gstPercent / 2.0
+            taxRows += "CGST (${String.format(java.util.Locale.US, "%.1f", halfRate)}%)" to MoneyFormatter.formatInr(cgstPaise)
+            taxRows += "SGST (${String.format(java.util.Locale.US, "%.1f", halfRate)}%)" to MoneyFormatter.formatInr(sgstPaise)
+        }
+        val boxH = taxRows.size * 18f + 78f
+        if (y + boxH > PAGE_HEIGHT - MARGIN_BOTTOM) startInvoiceNewPage()
+        y += 8f
+        val totalsW = 265f
+        val totalsX = MARGIN_X + CONTENT_WIDTH - totalsW
+        canvas.drawRoundRect(RectF(totalsX, y, MARGIN_X + CONTENT_WIDTH, y + boxH), 8f, 8f, cardBgPaint)
+        var ty = y + 18f
+        taxRows.forEach { (k, v) ->
+            canvas.drawText(k, totalsX + 12f, ty, mutedPaint)
+            canvas.drawText(v, MARGIN_X + CONTENT_WIDTH - 12f, ty, rightPaint)
+            ty += 18f
+        }
+        canvas.drawLine(totalsX + 10f, ty - 8f, MARGIN_X + CONTENT_WIDTH - 10f, ty - 8f, dividerPaint)
+        ty += 8f
+        canvas.drawText("INVOICE TOTAL", totalsX + 12f, ty, makeTextPaint(10.5f, Color.rgb(79, 70, 229), bold = true))
+        canvas.drawText(MoneyFormatter.formatInr(grossPaise), MARGIN_X + CONTENT_WIDTH - 12f, ty, rightBoldPaint)
+        ty += 18f
+        canvas.drawText("Amount Received", totalsX + 12f, ty, bodyPaint)
+        canvas.drawText(MoneyFormatter.formatInr(paidPaise), MARGIN_X + CONTENT_WIDTH - 12f, ty, rightPaint)
+        ty += 17f
+        canvas.drawText("BALANCE DUE", totalsX + 12f, ty, boldBodyPaint)
+        canvas.drawText(MoneyFormatter.formatInr(balancePaise), MARGIN_X + CONTENT_WIDTH - 12f, ty, rightBoldPaint)
+        y += boxH + 14f
+
+        // === PAYMENT RECEIPTS LEDGER ===
+        val projPayments = payments.filter { it.projectId == project.id }.sortedBy { it.paymentDateMillis }
+        if (projPayments.isNotEmpty()) {
+            if (y + 40f > PAGE_HEIGHT - MARGIN_BOTTOM) startInvoiceNewPage()
+            canvas.drawText("Payment Receipts Ledger", MARGIN_X, y + 10f, h2Paint)
+            y += 18f
+            projPayments.forEach { p ->
+                if (y + 18f > PAGE_HEIGHT - MARGIN_BOTTOM) startInvoiceNewPage()
+                val refLabel = if (p.reference.isNotBlank()) " • Ref ${p.reference}" else ""
+                canvas.drawText(
+                    "${MoneyFormatter.formatDate(p.paymentDateMillis)} • ${p.method}$refLabel",
+                    MARGIN_X + 4f,
+                    y + 10f,
+                    mutedPaint
+                )
+                canvas.drawText(MoneyFormatter.formatInr(p.amountPaise), MARGIN_X + CONTENT_WIDTH - 4f, y + 10f, rightPaint)
+                y += 16f
+            }
+        }
+
+        drawInvoiceFooter()
+        doc.finishPage(page)
+        FileOutputStream(outFile).use { fos -> doc.writeTo(fos) }
+        doc.close()
+
+        return GeneratedPdfResult(
+            file = outFile,
+            sha256 = sha256Hex(outFile)
+        )
+    }
+
+    fun buildInvoiceShareIntent(context: Context, file: File, project: Project): Intent {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        return Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "Tax Invoice - ${project.title} (${project.clientCompanyName})")
+            putExtra(
+                Intent.EXTRA_TEXT,
+                "Please find attached the Tax Invoice for ${project.title}. Balance due: ${MoneyFormatter.formatInr((project.agreedValuePaise - project.paidPaise).coerceAtLeast(0L))}."
+            )
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    fun launchInvoiceShareSheet(context: Context, file: File, project: Project) {
+        val intent = buildInvoiceShareIntent(context, file, project)
+        val chooser = Intent.createChooser(intent, "Share Tax Invoice PDF").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(chooser)

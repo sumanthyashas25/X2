@@ -1500,3 +1500,421 @@ test("Mixed-case verified Firebase Auth token email can read and accept lowercas
     })
   );
 });
+
+test("Scenario 12: Only xdotmax@gmail.com can bootstrap Super Admin; khushirathod014@gmail.com is restricted to standard member onboarding", async () => {
+  const now = pastDate();
+  const nonSuperUid = "khushi_standard_user";
+  const nonSuperDb = testEnv.authenticatedContext(nonSuperUid, {
+    email: "khushirathod014@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  // khushirathod014@gmail.com MUST NOT read or bootstrap uninitialized company or claim SUPER_ADMIN
+  await assertFails(nonSuperDb.collection("companies").doc("new_company").get());
+  await assertFails(
+    nonSuperDb.collection("companies").doc("new_company").set({
+      name: "Unauthorized Co",
+      gstEnabled: false,
+      gstRatePercent: 0,
+      defaultAdvancePercent: 50,
+      defaultValidityDays: 14,
+      defaultRevisionRounds: 3,
+      nextQuoteSeq: 1,
+      seededCatalogue: true,
+      createdByUid: nonSuperUid,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    nonSuperDb.collection("companies").doc("new_company").collection("members").doc(nonSuperUid).set({
+      uid: nonSuperUid,
+      fullName: "Standard User",
+      accessLevel: "SUPER_ADMIN",
+      status: "APPROVED",
+      active: true,
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    nonSuperDb.collection("companies").doc(COMPANY_ID).collection("members").doc(nonSuperUid).set({
+      uid: nonSuperUid,
+      fullName: "Standard User",
+      accessLevel: "SUPER_ADMIN",
+      status: "APPROVED",
+      active: true,
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // khushirathod014@gmail.com can ONLY self-onboard as STAFF + PENDING on xmax
+  await assertSucceeds(
+    nonSuperDb.collection("companies").doc(COMPANY_ID).collection("members").doc(nonSuperUid).set({
+      uid: nonSuperUid,
+      companyNameInput: "X.MAX",
+      fullName: "Agency Team Member",
+      accessLevel: "STAFF",
+      status: "PENDING",
+      active: true,
+      scopeType: "TEAM",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Exclusive Super Admin xdotmax@gmail.com CAN bootstrap company and claim SUPER_ADMIN
+  const ownerUid = "xdotmax_super_admin";
+  const ownerDb = testEnv.authenticatedContext(ownerUid, {
+    email: "XDotMax@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  await assertSucceeds(ownerDb.collection("companies").doc("new_company").get());
+  await assertSucceeds(
+    ownerDb.collection("companies").doc("new_company").set({
+      name: "Xteam Global",
+      gstEnabled: false,
+      gstRatePercent: 0,
+      defaultAdvancePercent: 50,
+      defaultValidityDays: 14,
+      defaultRevisionRounds: 3,
+      nextQuoteSeq: 1,
+      seededCatalogue: true,
+      createdByUid: ownerUid,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    ownerDb.collection("companies").doc("new_company").collection("members").doc(ownerUid).set({
+      uid: ownerUid,
+      fullName: "X.MAX Director",
+      accessLevel: "SUPER_ADMIN",
+      status: "APPROVED",
+      active: true,
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+});
+
+test("Scenario 13: Real-time ephemeral typing and presence documents", async () => {
+  await seedCompanyAndMembers();
+  const now = pastDate();
+  const staffDb = testEnv.authenticatedContext(STAFF_UID, {
+    email: "designer@xmax.agency",
+    email_verified: true,
+  }).firestore();
+
+  const outsiderDb = testEnv.authenticatedContext("unauthorized_user", {
+    email: "outsider@evil.com",
+    email_verified: true,
+  }).firestore();
+
+  // Approved staff member updates their presence
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("presence").doc(STAFF_UID).set({
+      uid: STAFF_UID,
+      isOnline: true,
+      statusMessage: "Working on UI designs",
+      updatedAt: now,
+    })
+  );
+
+  // Outsider cannot write presence or read presence
+  await assertFails(
+    outsiderDb.collection("companies").doc(COMPANY_ID).collection("presence").doc(STAFF_UID).get()
+  );
+  await assertFails(
+    outsiderDb.collection("companies").doc(COMPANY_ID).collection("presence").doc("unauthorized_user").set({
+      uid: "unauthorized_user",
+      isOnline: true,
+      updatedAt: now,
+    })
+  );
+
+  // Ephemeral typing/recording under chat_channels
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("general").collection("ephemeral").doc(STAFF_UID).set({
+      isTyping: true,
+      isRecording: false,
+      updatedAt: now,
+    })
+  );
+
+  // Staff can read ephemeral status
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("general").collection("ephemeral").doc(STAFF_UID).get()
+  );
+});
+
+test("Scenario 14: Bi-directional call signaling documents", async () => {
+  await seedCompanyAndMembers();
+  const now = pastDate();
+  const callerDb = testEnv.authenticatedContext(STAFF_UID, {
+    email: "designer@xmax.agency",
+    email_verified: true,
+  }).firestore();
+
+  const calleeDb = testEnv.authenticatedContext(OTHER_STAFF_UID, {
+    email: "video@xmax.agency",
+    email_verified: true,
+  }).firestore();
+
+  const outsiderDb = testEnv.authenticatedContext("intruder_uid", {
+    email: "intruder@bad.com",
+    email_verified: true,
+  }).firestore();
+
+  const callDoc = {
+    channelId: "general_channel",
+    callType: "VIDEO",
+    callerUid: STAFF_UID,
+    callerName: "Aarav Designer",
+    participantUids: [STAFF_UID, OTHER_STAFF_UID],
+    status: "RINGING",
+    mutedUids: [],
+    cameraOffUids: [],
+    durationSeconds: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  // Caller can create call document
+  await assertSucceeds(
+    callerDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").set(callDoc)
+  );
+
+  // Callee can observe call document
+  await assertSucceeds(
+    calleeDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").get()
+  );
+
+  // Callee can accept the call (status -> CONNECTED)
+  await assertSucceeds(
+    calleeDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").update({
+      status: "CONNECTED",
+      updatedAt: pastDate(1000),
+    })
+  );
+
+  // Outsider CANNOT read or update call document
+  await assertFails(
+    outsiderDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").get()
+  );
+  await assertFails(
+    outsiderDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").update({
+      status: "DECLINED",
+      updatedAt: pastDate(500),
+    })
+  );
+
+  // Caller can end call
+  await assertSucceeds(
+    callerDb.collection("companies").doc(COMPANY_ID).collection("calls").doc("call_123").update({
+      status: "ENDED",
+      durationSeconds: 45,
+      updatedAt: pastDate(200),
+    })
+  );
+});
+
+test("Scenario 15: Verified email bootstrap, member heartbeat/e2ee self-updates, invite claim, time entries, portal links & nudge logs", async () => {
+  await seedCompanyAndMembers();
+  const now = pastDate();
+
+  const staffDb = testEnv.authenticatedContext(STAFF_UID, {
+    email: "designer@xmax.agency",
+    email_verified: true,
+  }).firestore();
+  const otherStaffDb = testEnv.authenticatedContext(OTHER_STAFF_UID, {
+    email: "video@xmax.agency",
+    email_verified: true,
+  }).firestore();
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID, {
+    email: "priya@xmax.agency",
+    email_verified: true,
+  }).firestore();
+  const pendingDb = testEnv.authenticatedContext(PENDING_UID, {
+    email: "invitedstaff@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  // 1. Unverified xdotmax@gmail.com CANNOT bootstrap Super Admin
+  const unverifiedOwnerDb = testEnv.authenticatedContext("unverified_owner", {
+    email: "xdotmax@gmail.com",
+    email_verified: false,
+  }).firestore();
+  await assertFails(
+    unverifiedOwnerDb.collection("companies").doc(COMPANY_ID).collection("members").doc("unverified_owner").set({
+      uid: "unverified_owner",
+      fullName: "Spoofed Owner",
+      accessLevel: "SUPER_ADMIN",
+      status: "APPROVED",
+      active: true,
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // 2. Approved Staff can update heartbeat, availabilityStatus, online, and e2eePublicKey (pending cannot!)
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("members").doc(STAFF_UID).update({
+      lastActiveAtMillis: Date.now(),
+      availabilityStatus: "BUSY",
+      online: true,
+      e2eePublicKey: "BEX1234567890PUBLICKEY==",
+      updatedAt: pastDate(500),
+    })
+  );
+
+  // Pending user onboarding -> later invited -> self-claims invite cleanly preserving createdAt
+  await assertSucceeds(
+    pendingDb.collection("companies").doc(COMPANY_ID).collection("members").doc(PENDING_UID).set({
+      uid: PENDING_UID,
+      fullName: "Invited Designer",
+      accessLevel: "STAFF",
+      status: "PENDING",
+      active: true,
+      scopeType: "TEAM",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  // Pending member cannot write heartbeat e2eePublicKey yet
+  await assertFails(
+    pendingDb.collection("companies").doc(COMPANY_ID).collection("members").doc(PENDING_UID).update({
+      e2eePublicKey: "FAKEKEY==",
+      updatedAt: pastDate(300),
+    })
+  );
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("companies").doc(COMPANY_ID).collection("invitations").doc("invitedstaff@gmail.com").set({
+      email: "invitedstaff@gmail.com",
+      accessLevel: "STAFF",
+      departmentId: "dept_creative",
+      departmentName: "Creative",
+      jobRoleId: "role_graphic_designer",
+      jobRoleName: "Graphic Designer",
+      scopeType: "TEAM",
+      scopeDepartmentIds: [],
+      permissions: {},
+      invitedByUid: ADMIN_UID,
+      status: "PENDING",
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  await assertSucceeds(
+    pendingDb.collection("companies").doc(COMPANY_ID).collection("members").doc(PENDING_UID).update({
+      status: "APPROVED",
+      active: true,
+      accessLevel: "STAFF",
+      departmentId: "dept_creative",
+      jobRoleId: "role_graphic_designer",
+      scopeType: "TEAM",
+      permissions: {},
+      delegatedGrants: {},
+      updatedAt: pastDate(200),
+    })
+  );
+
+  // 3. Time entries: Staff creates own entry; cannot impersonate others; other staff cannot read someone else's time entry
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("time_entries").doc("te_1").set({
+      uid: STAFF_UID,
+      memberName: "Aarav Designer",
+      projectId: "proj_1",
+      projectTitle: "Brand Campaign",
+      deliverableId: "deliv_1",
+      deliverableTitle: "Logo Grid",
+      durationMinutes: 45,
+      workDateMillis: Date.now(),
+      billable: true,
+      hourlyRatePaise: 150000,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    otherStaffDb.collection("companies").doc(COMPANY_ID).collection("time_entries").doc("te_1").get()
+  );
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("time_entries").get()
+  );
+
+  // 4. Client portal links, portal_tokens & nudge_logs: Commercial/Admin allowed, standard Staff denied
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("client_portal_links").doc("ptk_abc1234567890").set({
+      token: "ptk_abc1234567890",
+      projectId: "proj_1",
+      projectTitle: "Brand Campaign",
+      clientId: "client_1",
+      clientName: "Acme India",
+      createdByUid: ADMIN_UID,
+      revoked: false,
+      expiresAtMillis: Date.now() + 86400000,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("portal_tokens").doc("ptk_abc1234567890").set({
+      token: "ptk_abc1234567890",
+      companyId: COMPANY_ID,
+      projectId: "proj_1",
+      revoked: false,
+      expiresAtMillis: Date.now() + 86400000,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  // portal_tokens is never client-readable
+  await assertFails(adminDb.collection("portal_tokens").doc("ptk_abc1234567890").get());
+  await assertFails(staffDb.collection("companies").doc(COMPANY_ID).collection("client_portal_links").get());
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("nudge_logs").doc("nudge_1").set({
+      projectId: "proj_1",
+      clientName: "Acme India",
+      channels: "WHATSAPP",
+      amountDuePaise: 2500000,
+      sentByUid: ADMIN_UID,
+      createdAt: now,
+    })
+  );
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("nudge_logs").doc("nudge_2").set({
+      projectId: "proj_1",
+      clientName: "Acme India",
+      channels: "WHATSAPP",
+      amountDuePaise: 2500000,
+      sentByUid: STAFF_UID,
+      createdAt: now,
+    })
+  );
+});
+

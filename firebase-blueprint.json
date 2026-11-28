@@ -463,6 +463,91 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerUid", "title", "category", "creativeTag", "dateMillis", "timeRange", "notes", "linkedDeliverableId", "completed", "createdAt", "updatedAt"]
+    },
+    "TimeEntry": {
+      "title": "TimeEntry",
+      "description": "Team member project/deliverable logged hours for billing and efficiency reporting",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "projectTitle": { "type": "string" },
+        "deliverableId": { "type": "string" },
+        "deliverableTitle": { "type": "string" },
+        "uid": { "type": "string" },
+        "memberName": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "workDateMillis": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "billable": { "type": "boolean" },
+        "hourlyRatePaise": { "type": "integer" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "projectTitle", "uid", "memberName", "workDateMillis", "durationMinutes", "billable", "hourlyRatePaise", "createdAt", "updatedAt"]
+    },
+    "ChatCallSession": {
+      "title": "ChatCallSession",
+      "description": "Real-time video and audio call signaling session in workspace chat",
+      "type": "object",
+      "properties": {
+        "channelId": { "type": "string" },
+        "channelTitle": { "type": "string" },
+        "callerUid": { "type": "string" },
+        "callerName": { "type": "string" },
+        "calleeUids": { "type": "array" },
+        "acceptedUids": { "type": "array" },
+        "status": { "type": "string", "enum": ["RINGING", "CONNECTED", "DECLINED", "ENDED", "MISSED"] },
+        "videoEnabled": { "type": "boolean" },
+        "createdAtMillis": { "type": "integer" },
+        "endedAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["channelId", "channelTitle", "callerUid", "callerName", "calleeUids", "acceptedUids", "status", "videoEnabled", "createdAtMillis", "createdAt", "updatedAt"]
+    },
+    "ClientPortalLink": {
+      "title": "ClientPortalLink",
+      "description": "Tokenized read-only guest link for clients to inspect deliverable progress, approve milestones, and download GST invoices",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectTitle": { "type": "string" },
+        "quotationId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientCompanyName": { "type": "string" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "expiresAtMillis": { "type": "integer" },
+        "revoked": { "type": "boolean" },
+        "clientApprovedAtMillis": { "type": "integer" },
+        "clientApprovalNote": { "type": "string" },
+        "createdAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["token", "projectId", "projectTitle", "createdByUid", "expiresAtMillis", "revoked", "createdAt", "updatedAt"]
+    },
+    "PaymentNudgeLog": {
+      "title": "PaymentNudgeLog",
+      "description": "Audit log of automated WhatsApp and Email client payment reminders",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "projectTitle": { "type": "string" },
+        "quotationId": { "type": "string" },
+        "clientCompanyName": { "type": "string" },
+        "channel": { "type": "string", "enum": ["WHATSAPP", "EMAIL", "SMS"] },
+        "recipient": { "type": "string" },
+        "amountDuePaise": { "type": "integer" },
+        "status": { "type": "string" },
+        "summary": { "type": "string" },
+        "sentByUid": { "type": "string" },
+        "sentAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "channel", "amountDuePaise", "sentByUid", "sentAtMillis", "createdAt"]
     }
   },
   "firestore": {
@@ -545,6 +630,26 @@
     "/companies/{companyId}/staff_plans/{planId}": {
       "schema": { "$ref": "#/entities/StaffPlanItem" },
       "description": "Private member-owned monthly creative and daily task plan items"
+    },
+    "/companies/{companyId}/time_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/TimeEntry" },
+      "description": "Logged billable and internal team hours per project/deliverable"
+    },
+    "/companies/{companyId}/call_sessions/{callId}": {
+      "schema": { "$ref": "#/entities/ChatCallSession" },
+      "description": "Real-time workspace chat video call signaling sessions"
+    },
+    "/companies/{companyId}/client_portal_links/{token}": {
+      "schema": { "$ref": "#/entities/ClientPortalLink" },
+      "description": "Tokenized client portal guest links for progress inspection & invoice access"
+    },
+    "/companies/{companyId}/nudge_logs/{logId}": {
+      "schema": { "$ref": "#/entities/PaymentNudgeLog" },
+      "description": "Automated WhatsApp & Email payment nudge dispatch logs"
+    },
+    "/portal_tokens/{token}": {
+      "schema": { "$ref": "#/entities/ClientPortalLink" },
+      "description": "Lookup index mapping portal guest token to company and project"
     }
   }
 }

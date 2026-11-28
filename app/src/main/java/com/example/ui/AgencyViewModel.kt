@@ -6,12 +6,17 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.chat.ChatE2eeCrypto
 import com.example.chat.ChatFileManager
+import com.example.chat.ChatSettingsStore
 import com.example.chat.StagedChatAttachment
 import com.example.chat.realtime.RtdbPresenceManager
+import com.example.ui.theme.AppAppearanceStore
 import com.example.data.AgencyRepository
 import com.example.data.AuthSessionStatus
 import com.example.data.AuthenticationRepository
+import com.example.data.BackendDiagnosticReport
+import com.example.data.BackendHealthDiagnostics
 import com.example.data.ChatRepository
 import com.example.data.ClientRepository
 import com.example.data.CloudStorageSummary
@@ -26,6 +31,7 @@ import com.example.data.PhoneVerificationSession
 import com.example.data.ProjectRepository
 import com.example.data.QuotationRepository
 import com.example.data.SyncedData
+import com.example.data.VerifiedUserRole
 import com.example.data.findActivity
 import com.example.data.handleFirestoreError
 import com.example.domain.CatalogueSeedData
@@ -78,6 +84,10 @@ data class AgencyUiState(
     val chatStatuses: List<ChatStatus> = emptyList(),
     val notifications: List<WorkspaceNotification> = emptyList(),
     val staffPlanItems: List<StaffPlanItem> = emptyList(),
+    val timeEntries: List<TimeEntry> = emptyList(),
+    val portalLinks: List<ClientPortalLink> = emptyList(),
+    val nudgeLogs: List<PaymentNudgeLog> = emptyList(),
+    val activeCallSessions: List<ChatCallSession> = emptyList(),
     val soundEnabled: Boolean = true,
     val activeTimerDeliverableId: String? = null,
     val timerSecondsByDeliverable: Map<String, Long> = emptyMap(),
@@ -88,7 +98,9 @@ data class AgencyUiState(
     val statusMessage: String? = null,
     val errorMessage: String? = null,
     val authInProgress: Boolean = false,
-    val autoBootstrapInProgress: Boolean = false
+    val autoBootstrapInProgress: Boolean = false,
+    val verifiedUserRole: VerifiedUserRole = VerifiedUserRole(),
+    val backendDiagnostics: BackendDiagnosticReport = BackendDiagnosticReport()
 ) {
     val myNotifications: List<WorkspaceNotification>
         get() = notifications.filter { it.appliesTo(myMember) }
@@ -106,25 +118,37 @@ data class AgencyUiState(
     fun hasPerm(perm: AppPermission): Boolean =
         PermissionEngine.hasPermission(myMember, perm, membersByUid)
 
+    val verifiedEmail: String
+        get() = firebaseUser?.email?.trim().orEmpty()
+            .ifBlank { (authSessionStatus as? AuthSessionStatus.SignedIn)?.user?.email?.trim().orEmpty() }
+            .ifBlank { verifiedUserRole.email.trim() }
+            .ifBlank { runCatching { FirebaseAuth.getInstance().currentUser?.email }.getOrNull().orEmpty().trim() }
+
     val isSuperAdmin: Boolean
         get() {
-            val email = runCatching { FirebaseAuth.getInstance().currentUser?.email }.getOrNull().orEmpty().trim().lowercase()
-            val isXdotmax = email == "xdotmax@gmail.com"
-            return isXdotmax || (PermissionEngine.isActiveApproved(myMember) && myMember?.accessLevelEnum() == AccessLevel.SUPER_ADMIN)
+            val hasActiveUser = firebaseUser != null || authSessionStatus is AuthSessionStatus.SignedIn || verifiedUserRole.isAuthenticated
+            return if (hasActiveUser) {
+                CatalogueSeedData.isSuperAdminEmail(verifiedEmail)
+            } else {
+                // Fixture fallback only when no Firebase session is attached (e.g., Compose UI tests)
+                PermissionEngine.isActiveApproved(myMember) && myMember?.accessLevelEnum() == AccessLevel.SUPER_ADMIN
+            }
         }
+
+    val isCurrentUserSuperAdminEmail: Boolean
+        get() = CatalogueSeedData.isSuperAdminEmail(verifiedEmail)
 
     val isAdmin: Boolean
         get() = PermissionEngine.isActiveApproved(myMember) && myMember?.accessLevelEnum() == AccessLevel.ADMIN
 
     val isApprovedMember: Boolean
         get() {
-            val email = runCatching { FirebaseAuth.getInstance().currentUser?.email }.getOrNull().orEmpty().trim().lowercase()
-            if (email == "xdotmax@gmail.com") return true
+            if (CatalogueSeedData.isBootstrapEmail(verifiedEmail)) return true
             return PermissionEngine.isActiveApproved(myMember)
         }
 
     val isBootstrappedEmail: Boolean
-        get() = CatalogueSeedData.isBootstrapEmail(firebaseUser?.email)
+        get() = CatalogueSeedData.isBootstrapEmail(verifiedEmail)
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -150,6 +174,9 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _isDeletingCloudStorage = MutableStateFlow(false)
     val isDeletingCloudStorage: StateFlow<Boolean> = _isDeletingCloudStorage.asStateFlow()
+
+    private val _backendDiagnostics = MutableStateFlow(BackendDiagnosticReport())
+    val backendDiagnostics: StateFlow<BackendDiagnosticReport> = _backendDiagnostics.asStateFlow()
 
     private val _authInProgress = MutableStateFlow(false)
     private val _phoneSession = MutableStateFlow(PhoneVerificationSession())
@@ -179,6 +206,9 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     private val _userFlow: StateFlow<FirebaseUser?> = sessionStatus
         .map { (it as? AuthSessionStatus.SignedIn)?.user }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authRepository.currentUser)
+
+    private val _verifiedRoleFlow: StateFlow<VerifiedUserRole> = authRepository.verifiedUserRoleFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authRepository.currentVerifiedUserRole())
 
     /**
      * Emits the signed-in [FirebaseUser] ONLY after [FirestoreInitializationService.initializeAfterAuth]
@@ -216,12 +246,12 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                 val signedInNow = sessionStatus.value is AuthSessionStatus.SignedIn
                 flowOf(null to !signedInNow)
             } else {
-                val isXdotmax = user.email.orEmpty().trim().lowercase() == "xdotmax@gmail.com"
-                val defaultSuperAdmin = if (isXdotmax) {
+                val isBootstrap = CatalogueSeedData.isBootstrapEmail(user.email)
+                val defaultSuperAdmin = if (isBootstrap) {
                     Member(
                         id = user.uid,
                         uid = user.uid,
-                        fullName = user.displayName?.takeIf { it.isNotBlank() } ?: "Xdotmax",
+                        fullName = user.displayName?.takeIf { it.isNotBlank() } ?: "Super Admin",
                         accessLevel = AccessLevel.SUPER_ADMIN.name,
                         status = MembershipStatus.APPROVED.name,
                         active = true,
@@ -419,6 +449,26 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         else coreRepo.observeMyPlanItems(approved.uid).catch { emit(emptyList()) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _timeEntriesFlow = combine(_approvedGate, _projectGate) { approved, manager ->
+        approved to (manager != null)
+    }.distinctUntilChanged().flatMapLatest { (approved, isManager) ->
+        if (approved == null) flowOf(emptyList())
+        else workRepo.observeTimeEntries(approved.uid, isManager).catch { emit(emptyList()) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _portalLinksFlow = _commercialGate.flatMapLatest { m ->
+        if (m == null) flowOf(emptyList()) else workRepo.observePortalLinks().catch { emit(emptyList()) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _nudgeLogsFlow = _commercialGate.flatMapLatest { m ->
+        if (m == null) flowOf(emptyList()) else workRepo.observeNudgeLogs().catch { emit(emptyList()) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _activeCallSessionsFlow = _approvedGate.flatMapLatest { approved ->
+        if (approved == null) flowOf(emptyList())
+        else chatRepo.observeActiveCallSessions(approved.uid).catch { emit(emptyList()) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<AgencyUiState> = combine(
         sessionStatus,
@@ -454,7 +504,13 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _statusMessage,
         _errorMessage,
         _autoBootstrapInProgress,
-        _chatStatusesFlow
+        _chatStatusesFlow,
+        _timeEntriesFlow,
+        _portalLinksFlow,
+        _nudgeLogsFlow,
+        _activeCallSessionsFlow,
+        _verifiedRoleFlow,
+        _backendDiagnostics
     ) { values ->
         val authStatus = values[0] as AuthSessionStatus
         val delivSynced = values[17] as SyncedData<List<Deliverable>>
@@ -489,6 +545,10 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             chatStatuses = values[33] as List<ChatStatus>,
             notifications = values[21] as List<WorkspaceNotification>,
             staffPlanItems = values[22] as List<StaffPlanItem>,
+            timeEntries = values[34] as List<TimeEntry>,
+            portalLinks = values[35] as List<ClientPortalLink>,
+            nudgeLogs = values[36] as List<PaymentNudgeLog>,
+            activeCallSessions = values[37] as List<ChatCallSession>,
             soundEnabled = values[23] as Boolean,
             activeTimerDeliverableId = values[24] as String?,
             timerSecondsByDeliverable = values[25] as Map<String, Long>,
@@ -498,16 +558,27 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             syncFeedback = values[29] as SyncFeedback,
             statusMessage = values[30] as String?,
             errorMessage = values[31] as String?,
-            autoBootstrapInProgress = values[32] as Boolean
+            autoBootstrapInProgress = values[32] as Boolean,
+            verifiedUserRole = values[38] as VerifiedUserRole,
+            backendDiagnostics = values[39] as BackendDiagnosticReport
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AgencyUiState())
 
     init {
         AppHapticsAndNotifier.ensureNotificationChannel(application)
         viewModelScope.launch {
-            _approvedGate.collect { me ->
+            _approvedGate.collectLatest { me ->
                 if (me != null) {
                     RtdbPresenceManager.bindUserSession(getApplication(), coreRepo.companyId, me.uid)
+                    val pubKey = ChatE2eeCrypto.getOrCreatePublicKeyBase64(getApplication(), me.uid)
+                    if (pubKey.isNotBlank() && pubKey != me.e2eePublicKey) {
+                        runCatching { coreRepo.updateMyE2eePublicKey(me.uid, pubKey) }
+                    }
+                    while (true) {
+                        val avail = if (_isFocusTimerRunning.value) "BUSY" else "ACTIVE"
+                        runCatching { coreRepo.updateMyPresenceHeartbeat(me.uid, avail, online = true) }
+                        delay(45_000L)
+                    }
                 } else {
                     RtdbPresenceManager.unbindUserSession(getApplication(), coreRepo.companyId)
                 }
@@ -792,9 +863,19 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
 
     fun signOut(context: Context) {
         viewModelScope.launch {
+            val curUid = uiState.value.myMember?.uid ?: _userFlow.value?.uid
+            if (!curUid.isNullOrBlank()) {
+                runCatching {
+                    withTimeout(2_000L) {
+                        coreRepo.updateMyPresenceHeartbeat(curUid, "AWAY", online = false)
+                    }
+                }
+            }
             _phoneSession.value = PhoneVerificationSession()
             _errorMessage.value = null
             _statusMessage.value = null
+            AppAppearanceStore.setActiveProfile(context, null)
+            ChatSettingsStore.setActiveProfile(context, null)
             RtdbPresenceManager.unbindUserSession(getApplication(), coreRepo.companyId)
             firestoreInitService.onSignedOut()
             authRepository.signOut(context)
@@ -1447,6 +1528,7 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun refreshCloudStorageSummary(context: Context = getApplication()) {
+        if (!uiState.value.isSuperAdmin) return
         if (_isScanningCloudStorage.value) return
         viewModelScope.launch {
             _isScanningCloudStorage.value = true
@@ -1467,6 +1549,10 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         items: List<DeletableCloudItem>,
         onComplete: () -> Unit = {}
     ) {
+        if (!uiState.value.isSuperAdmin) {
+            _errorMessage.value = "Only Super Admin can manage cloud storage."
+            return
+        }
         if (items.isEmpty() || _isDeletingCloudStorage.value) return
         viewModelScope.launch {
             _isDeletingCloudStorage.value = true
@@ -1491,6 +1577,10 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteExpiredCloudStatuses(context: Context = getApplication()) {
+        if (!uiState.value.isSuperAdmin) {
+            _errorMessage.value = "Only Super Admin can clean up expired cloud statuses."
+            return
+        }
         if (_isDeletingCloudStorage.value) return
         viewModelScope.launch {
             _isDeletingCloudStorage.value = true
@@ -1518,7 +1608,174 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             ChatFileManager.clearChatMediaCache(context)
             _statusMessage.value = "On-device media cache cleared."
-            _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+            if (uiState.value.isSuperAdmin) {
+                _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+            }
+        }
+    }
+
+    // --- Time Tracking, Client Portal Links, Nudge Bot, GST Tax Invoice, Wallpaper & Video Calls ---
+
+    fun logTimeEntry(
+        project: Project,
+        deliverable: Deliverable?,
+        durationMinutes: Int,
+        billable: Boolean,
+        hourlyRatePaise: Long,
+        notes: String,
+        workDateMillis: Long = System.currentTimeMillis(),
+        onDone: () -> Unit = {}
+    ) = runWrite("time_entries") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        workRepo.logTimeEntry(
+            project = project,
+            deliverable = deliverable,
+            durationMinutes = durationMinutes,
+            billable = billable,
+            hourlyRatePaise = hourlyRatePaise,
+            notes = notes,
+            workDateMillis = workDateMillis,
+            actor = actor
+        )
+        _statusMessage.value = "Logged ${durationMinutes}m on ${project.title}."
+        onDone()
+    }
+
+    fun commitTimerToTimeEntry(
+        deliverable: Deliverable,
+        billable: Boolean = true,
+        hourlyRatePaise: Long = 150000L,
+        notes: String = "",
+        onDone: () -> Unit = {}
+    ) {
+        val secs = _timerSeconds.value[deliverable.id] ?: 0L
+        val mins = ((secs + 59L) / 60L).toInt().coerceAtLeast(1)
+        val project = uiState.value.projects.firstOrNull { it.id == deliverable.projectId }
+            ?: Project(
+                id = deliverable.projectId,
+                title = deliverable.projectTitle,
+                clientCompanyName = deliverable.clientCompanyName
+            )
+        logTimeEntry(
+            project = project,
+            deliverable = deliverable,
+            durationMinutes = mins,
+            billable = billable,
+            hourlyRatePaise = hourlyRatePaise,
+            notes = notes.ifBlank { "Deliverable focus timer (${secs}s)" },
+            workDateMillis = System.currentTimeMillis(),
+            onDone = {
+                resetDeliverableTimer(deliverable.id)
+                onDone()
+            }
+        )
+    }
+
+    fun deleteTimeEntry(entryId: String) = runWrite("time_entries/$entryId") {
+        workRepo.deleteTimeEntry(entryId)
+        _statusMessage.value = "Time entry deleted."
+    }
+
+    fun createPortalLink(
+        project: Project,
+        quotationId: String = "",
+        validDays: Int = 30,
+        onCreated: (ClientPortalLink) -> Unit = {}
+    ) = runWrite("client_portal_links") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        val link = workRepo.createClientPortalLink(project, quotationId, validDays, actor)
+        _statusMessage.value = "Client portal link created."
+        onCreated(link)
+    }
+
+    fun revokePortalLink(token: String) = runWrite("client_portal_links/$token") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        workRepo.revokeClientPortalLink(token, actor)
+        _statusMessage.value = "Client portal link revoked."
+    }
+
+    fun dispatchClientNudge(
+        context: Context,
+        project: Project,
+        client: Client?,
+        channel: String,
+        portalUrl: String = "",
+        onOutcome: (com.example.system.NudgeDispatchOutcome) -> Unit = {}
+    ) = runWrite("nudge_logs") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        val outcome = withContext(Dispatchers.IO) {
+            PaymentReminderAutomator.dispatchClientNudge(
+                context = context,
+                coreRepo = coreRepo,
+                commercialRepo = workRepo,
+                project = project,
+                client = client,
+                channel = channel,
+                actor = actor,
+                portalUrl = portalUrl
+            )
+        }
+        _statusMessage.value = when (outcome.statusLabel) {
+            "SENT" -> "Payment nudge dispatched via ${channel.lowercase()}."
+            "RATE_LIMITED" -> "Daily rate limit hit — retry shortly."
+            else -> "Reminder logged — opening ${if (channel == "EMAIL") "Email" else "WhatsApp"}."
+        }
+        onOutcome(outcome)
+    }
+
+    fun generateAndShareTaxInvoicePdf(
+        context: Context,
+        project: Project,
+        quotation: Quotation?,
+        onReady: (File) -> Unit = {}
+    ) = runWrite("projects/${project.id}/invoice") {
+        val state = uiState.value
+        val result = withContext(Dispatchers.IO) {
+            QuotationPdfGenerator.generateTaxInvoicePdf(
+                context = context,
+                project = project,
+                quotation = quotation,
+                payments = state.payments,
+                company = state.company,
+                timeEntries = state.timeEntries
+            )
+        }
+        _statusMessage.value = "GST Tax Invoice ready: ${result.file.name}"
+        onReady(result.file)
+        QuotationPdfGenerator.launchInvoiceShareSheet(context, result.file, project)
+    }
+
+    fun setCompanyDefaultWallpaper(presetId: String, customUrl: String = "") = runWrite("company/wallpaper") {
+        if (!uiState.value.isSuperAdmin) error("Only Super Admin can set the workspace default wallpaper.")
+        val actor = uiState.value.myMember ?: error("No active member")
+        coreRepo.setCompanyDefaultWallpaper(presetId, customUrl, actor)
+        _statusMessage.value = "Workspace default chat wallpaper updated for everyone."
+    }
+
+    fun startVideoCall(
+        channel: ChatChannel,
+        calleeUids: List<String>,
+        onStarted: (ChatCallSession) -> Unit = {}
+    ) = runWrite("call_sessions") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        val session = chatRepo.startCallSession(channel, actor, calleeUids, videoEnabled = true)
+        onStarted(session)
+    }
+
+    fun acceptVideoCall(callId: String) = runWrite("call_sessions/$callId/accept") {
+        val uid = uiState.value.myMember?.uid ?: error("No active member")
+        chatRepo.acceptCallSession(callId, uid)
+    }
+
+    fun endOrDeclineVideoCall(callId: String, status: String) = runWrite("call_sessions/$callId/end") {
+        chatRepo.endOrDeclineCallSession(callId, status)
+    }
+
+    fun runBackendDiagnostics() {
+        viewModelScope.launch {
+            _backendDiagnostics.value = _backendDiagnostics.value.copy(isRunning = true)
+            val report = BackendHealthDiagnostics.runFullDiagnostics(getApplication(), coreRepo.companyId)
+            _backendDiagnostics.value = report
         }
     }
 

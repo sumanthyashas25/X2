@@ -83,6 +83,7 @@ enum class SecondaryDestination(val label: String, val icon: ImageVector) {
     QUOTATIONS("Quotations", Icons.AutoMirrored.Filled.ReceiptLong),
     CATALOGUE("Catalogue", Icons.Filled.Sell),
     PAYMENTS("Payments", Icons.Filled.Payments),
+    ADMIN_DASHBOARD("Admin Dashboard", Icons.Filled.AdminPanelSettings),
     TEAM("Team & Permissions", Icons.Filled.Group),
     ORG_ROUTING("Departments, Roles & Routing", Icons.Filled.AccountTree),
     COMPANY_SETTINGS("Company Settings", Icons.Filled.Business),
@@ -99,6 +100,15 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
         )
         setContent {
+            val vm: AgencyViewModel = viewModel()
+            val userVm: UserViewModel = viewModel()
+            val state by vm.uiState.collectAsStateWithLifecycle()
+            val userProfileState by userVm.userProfileState.collectAsStateWithLifecycle()
+            val activeUid = state.myMember?.uid ?: state.firebaseUser?.uid
+            LaunchedEffect(activeUid) {
+                com.example.ui.theme.AppAppearanceStore.setActiveProfile(applicationContext, activeUid)
+                com.example.chat.ChatSettingsStore.setActiveProfile(applicationContext, activeUid)
+            }
             val themeMode by AppAppearanceStore.themeModeFlow.collectAsStateWithLifecycle()
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
@@ -116,10 +126,6 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             XMaxTheme(darkTheme = darkTheme) {
-                val vm: AgencyViewModel = viewModel()
-                val userVm: UserViewModel = viewModel()
-                val state by vm.uiState.collectAsStateWithLifecycle()
-                val userProfileState by userVm.userProfileState.collectAsStateWithLifecycle()
                 XMaxAppRoot(
                     state = state,
                     userProfileState = userProfileState,
@@ -162,38 +168,13 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         )
         return
     }
-    val isStaffOnly = member.accessLevelEnum() == AccessLevel.STAFF
     val chatViewModel: com.example.ui.ChatViewModel = viewModel()
-
-    val canSeeCommercial = state.isSuperAdmin || state.isAdmin ||
-        listOf(
-            AppPermission.MANAGE_CLIENTS,
-            AppPermission.CREATE_REQUESTS,
-            AppPermission.CREATE_QUOTATIONS,
-            AppPermission.ISSUE_QUOTATIONS,
-            AppPermission.VIEW_ALL_CLIENTS_AND_QUOTES
-        ).any { state.hasPerm(it) }
-
-    val canSeeProjects = state.isSuperAdmin || state.isAdmin ||
-        state.hasPerm(AppPermission.ASSIGN_WORK) ||
-        state.hasPerm(AppPermission.APPROVE_DELIVERABLES)
-
-    val canCreateQuote = state.hasPerm(AppPermission.CREATE_QUOTATIONS) || state.hasPerm(AppPermission.ISSUE_QUOTATIONS)
-
-    val visibleTabs = remember(isStaffOnly, canSeeCommercial) {
-        buildList {
-            if (isStaffOnly) {
-                add(PrimaryTab.MY_WORK)
-                if (canSeeCommercial) add(PrimaryTab.REQUESTS)
-                add(PrimaryTab.CHAT)
-            } else {
-                add(PrimaryTab.HOME)
-                add(PrimaryTab.REQUESTS)
-                add(PrimaryTab.CHAT)
-                add(PrimaryTab.MY_WORK)
-            }
-        }
-    }
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val isStaffOnly = uiPolicy.isStandardMember
+    val canSeeCommercial = uiPolicy.canSeeCommercialModule
+    val canSeeProjects = uiPolicy.canSeeProjectsBoard
+    val canCreateQuote = uiPolicy.canManageCommercialQuotes
+    val visibleTabs = uiPolicy.visiblePrimaryTabs
 
     val notifPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -213,6 +194,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
     var secondaryDest by remember { mutableStateOf<SecondaryDestination?>(null) }
     var chatInitialChannelId by remember { mutableStateOf<String?>(null) }
     var quoteBuilderMode by remember { mutableStateOf(false) }
+    var requirementsQuoteMode by remember { mutableStateOf(false) }
     var editingQuote by remember { mutableStateOf<Quotation?>(null) }
     var quoteRequest by remember { mutableStateOf<ProjectRequest?>(null) }
     var quoteLinkedProject by remember { mutableStateOf<Project?>(null) }
@@ -230,11 +212,13 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
     val isScanningCloudStorage by viewModel.isScanningCloudStorage.collectAsStateWithLifecycle()
     val isDeletingCloudStorage by viewModel.isDeletingCloudStorage.collectAsStateWithLifecycle()
 
-    LaunchedEffect(member.uid) {
-        viewModel.refreshCloudStorageSummary(context)
+    LaunchedEffect(member.uid, state.isSuperAdmin) {
+        if (state.isSuperAdmin) {
+            viewModel.refreshCloudStorageSummary(context)
+        }
     }
-    LaunchedEffect(drawerState.isOpen) {
-        if (drawerState.isOpen) {
+    LaunchedEffect(drawerState.isOpen, state.isSuperAdmin) {
+        if (drawerState.isOpen && state.isSuperAdmin) {
             viewModel.refreshCloudStorageSummary(context)
         }
     }
@@ -297,25 +281,12 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         quoteBuilderMode = true
     }
 
-    val permittedSecondary = remember(state.effectivePermissions, member.accessLevel) {
-        buildList {
-            if (canSeeProjects) add(SecondaryDestination.PROJECTS)
-            add(SecondaryDestination.NOTIFICATIONS)
-            if (canSeeCommercial) add(SecondaryDestination.CLIENTS)
-            if (canSeeCommercial) add(SecondaryDestination.QUOTATIONS)
-            if (canSeeCommercial || state.hasPerm(AppPermission.EDIT_CATALOGUE_PRICES)) add(SecondaryDestination.CATALOGUE)
-            if (state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) add(SecondaryDestination.PAYMENTS)
-            if (state.isSuperAdmin || state.isAdmin) add(SecondaryDestination.TEAM)
-            if (state.isSuperAdmin) add(SecondaryDestination.ORG_ROUTING)
-            if (state.isSuperAdmin) add(SecondaryDestination.COMPANY_SETTINGS)
-            if (state.isSuperAdmin || state.isAdmin) add(SecondaryDestination.ACTIVITY)
-        }
-    }
+    val permittedSecondary = uiPolicy.permittedSecondaryDestinations
 
     val pendingBadgeCount = state.members.count { it.statusEnum() == MembershipStatus.PENDING } +
         state.deliverables.count { it.statusEnum() == DeliverableStatus.BLOCKED }
     val notifBadgeCount = state.unreadNotificationCount +
-        (if (state.isSuperAdmin || state.isAdmin) pendingBadgeCount else 0)
+        (if (uiPolicy.isAdminOrAbove) pendingBadgeCount else 0)
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -363,7 +334,11 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                     scope.launch { drawerState.close() }
                     viewModel.signOut(context)
                 },
-                onCloseDrawer = { scope.launch { drawerState.close() } }
+                onCloseDrawer = { scope.launch { drawerState.close() } },
+                onOpenRequirementsQuote = {
+                    scope.launch { drawerState.close() }
+                    requirementsQuoteMode = true
+                }
             )
         }
     ) {
@@ -550,7 +525,10 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onOpenAddOnQuote = { proj -> openQuote(proj = proj) },
                                             onToggleDeleteProject = { proj, del -> viewModel.toggleDeleteProject(proj, del) },
                                             onPermanentlyDeleteProject = { proj -> viewModel.permanentlyDeleteProject(proj) },
-                                            onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() }
+                                            onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() },
+                                            onGenerateTaxInvoice = { proj, q -> viewModel.generateAndShareTaxInvoicePdf(context, proj, q) },
+                                            onCreatePortalLink = { proj, q, onDone -> viewModel.createPortalLink(proj, q?.id ?: proj.approvedQuoteId, 30, onDone) },
+                                            onRevokePortalLink = { token -> viewModel.revokePortalLink(token) }
                                         )
                                         SecondaryDestination.NOTIFICATIONS -> NotificationsScreen(
                                             state = state,
@@ -578,7 +556,14 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onSaveClient = { viewModel.saveClient(it) },
                                             onDeleteClient = { viewModel.deleteClient(it) }
                                         )
-                                        SecondaryDestination.QUOTATIONS -> QuotationsScreen(state, onOpenQuote = { openQuote(q = it) }, onDeleteQuotation = { viewModel.deleteQuotation(it) })
+                                        SecondaryDestination.QUOTATIONS -> QuotationsScreen(
+                                            state = state,
+                                            onOpenQuote = { openQuote(q = it) },
+                                            onDeleteQuotation = { viewModel.deleteQuotation(it) },
+                                            onOpenPayments = { secondaryDest = SecondaryDestination.PAYMENTS },
+                                            onShareQuotePdf = { q -> viewModel.generateAndSavePdf(context, q, shareAfterSave = true) },
+                                            onOpenRequirementsQuote = { requirementsQuoteMode = true }
+                                        )
                                         SecondaryDestination.CATALOGUE -> CatalogueScreen(
                                             state = state,
                                             onSaveItem = { viewModel.saveCatalogueItem(it) },
@@ -588,7 +573,26 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             state = state,
                                             onRecordPayment = { proj, amt, date, method, ref, note ->
                                                 viewModel.recordPayment(proj, amt, date, method, ref, note)
-                                            }
+                                            },
+                                            onGenerateTaxInvoice = { proj, q -> viewModel.generateAndShareTaxInvoicePdf(context, proj, q) },
+                                            onDispatchNudge = { proj, cli, ch, url ->
+                                                viewModel.dispatchClientNudge(context, proj, cli, ch, url) { outcome ->
+                                                    if (outcome.statusLabel != "SENT" && outcome.launchIntent != null) {
+                                                        runCatching { context.startActivity(outcome.launchIntent) }
+                                                    }
+                                                }
+                                            },
+                                            onCreatePortalLink = { proj, q, onDone -> viewModel.createPortalLink(proj, q?.id ?: proj.approvedQuoteId, 30, onDone) }
+                                        )
+                                        SecondaryDestination.ADMIN_DASHBOARD -> AdminDashboardScreen(
+                                            state = state,
+                                            onRunBackendDiagnostics = { viewModel.runBackendDiagnostics() },
+                                            onToggleDeleteProject = { proj, del -> viewModel.toggleDeleteProject(proj, del) },
+                                            onPermanentlyDeleteProject = { proj -> viewModel.permanentlyDeleteProject(proj) },
+                                            onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() },
+                                            onOpenTeamGovernance = { secondaryDest = SecondaryDestination.TEAM },
+                                            onOpenCompanySettings = { secondaryDest = SecondaryDestination.COMPANY_SETTINGS },
+                                            onBack = { secondaryDest = null }
                                         )
                                         SecondaryDestination.TEAM -> TeamGovernanceScreen(
                                             state = state,
@@ -629,6 +633,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onNavigateTeam = { secondaryDest = SecondaryDestination.TEAM },
                                             onNavigatePayments = { secondaryDest = SecondaryDestination.PAYMENTS },
                                             onNavigateQuotations = { secondaryDest = SecondaryDestination.QUOTATIONS },
+                                            onNavigateAdminDashboard = { secondaryDest = SecondaryDestination.ADMIN_DASHBOARD },
                                             onNavigateCompanySettings = { secondaryDest = SecondaryDestination.COMPANY_SETTINGS },
                                             onNavigateOrgRouting = { secondaryDest = SecondaryDestination.ORG_ROUTING },
                                             onOpenMenuPanel = { scope.launch { drawerState.open() } },
@@ -642,7 +647,8 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onOpenQuoteBuilder = { req, q -> openQuote(q = q, req = req) },
                                             onCreateRequest = { cli, t, b, s, d, mgr -> viewModel.createRequest(cli, t, b, s, d, mgr) },
                                             onAcceptRequest = { req, q, drafts -> viewModel.acceptRequest(req, q, drafts) },
-                                            onDeclineRequest = { req, note -> viewModel.declineRequest(req, note) }
+                                            onDeclineRequest = { req, note -> viewModel.declineRequest(req, note) },
+                                            onOpenRequirementsQuote = { requirementsQuoteMode = true }
                                         )
                                         PrimaryTab.CHAT -> TeamChatScreen(
                                             state = state,
@@ -667,6 +673,18 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             },
                                             onDeleteMessage = { channelId, messageId ->
                                                 viewModel.deleteChatMessage(channelId, messageId)
+                                            },
+                                            onSetCompanyDefaultWallpaper = { presetId, customUrl ->
+                                                viewModel.setCompanyDefaultWallpaper(presetId, customUrl)
+                                            },
+                                            onStartVideoCall = { ch, callees, onStarted ->
+                                                viewModel.startVideoCall(ch, callees, onStarted)
+                                            },
+                                            onAcceptVideoCall = { callId ->
+                                                viewModel.acceptVideoCall(callId)
+                                            },
+                                            onEndVideoCall = { callId, st ->
+                                                viewModel.endOrDeclineVideoCall(callId, st)
                                             },
                                             onCloseChat = {
                                                 chatInitialChannelId = null
@@ -700,7 +718,12 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onDeletePlanItem = { viewModel.deletePlanItem(it) },
                                             onToggleFocusTimer = { viewModel.toggleFocusTimer() },
                                             onResetFocusTimer = { viewModel.resetFocusTimer() },
-                                            onSetFocusPreset = { viewModel.setFocusPresetMinutes(it) }
+                                            onSetFocusPreset = { viewModel.setFocusPresetMinutes(it) },
+                                            onLogTimeEntry = { proj, deliv, mins, bill, rate, notes ->
+                                                viewModel.logTimeEntry(proj, deliv, mins, bill, rate, notes)
+                                            },
+                                            onCommitTimerToTimeEntry = { d -> viewModel.commitTimerToTimeEntry(d) },
+                                            onDeleteTimeEntry = { id -> viewModel.deleteTimeEntry(id) }
                                         )
                                     }
                                 }
@@ -734,12 +757,16 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             canCreateQuote = canCreateQuote,
             canSeeCommercial = canSeeCommercial,
             canSeeProjects = canSeeProjects,
-            isAdmin = state.isSuperAdmin || state.isAdmin,
+            isAdmin = uiPolicy.isAdminOrAbove,
             canSeePayments = state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS),
             onDismiss = { showQuickCreateSheet = false },
             onNewQuote = {
                 showQuickCreateSheet = false
                 openQuote()
+            },
+            onOpenRequirementsQuote = {
+                showQuickCreateSheet = false
+                requirementsQuoteMode = true
             },
             onOpenRequests = {
                 showQuickCreateSheet = false
@@ -769,6 +796,24 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         )
     }
 
+    if (requirementsQuoteMode && canCreateQuote) {
+        ProjectRequirementsQuoteSheet(
+            state = state,
+            onDismiss = { requirementsQuoteMode = false },
+            onSaveClient = { cli, cb -> viewModel.saveClient(cli, cb) },
+            onCreateRequest = { cli, title, brief, services, target, mgr, cb ->
+                viewModel.createRequest(cli, title, brief, services, target, mgr, cb)
+            },
+            onSaveQuoteDraft = { draft, issue, cb ->
+                viewModel.saveOrIssueQuote(draft, issue, cb)
+            },
+            onOpenInFullQuoteBuilder = { req, quote ->
+                requirementsQuoteMode = false
+                openQuote(q = quote, req = req)
+            }
+        )
+    }
+
     if (showProfilePhotoDialog) {
         ProfileOverviewDialog(
             member = member,
@@ -793,7 +838,61 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         )
     }
 
-    if (showCloudStorageSheet) {
+    var activeCallOverlayId by remember { mutableStateOf<String?>(null) }
+    var dismissedIncomingCallIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val ringingIncomingCall = remember(state.activeCallSessions, member.uid, activeCallOverlayId, dismissedIncomingCallIds) {
+        state.activeCallSessions.firstOrNull { s ->
+            s.id != activeCallOverlayId &&
+                s.id !in dismissedIncomingCallIds &&
+                s.status == "RINGING" &&
+                s.callerUid != member.uid &&
+                member.uid in s.calleeUids
+        }
+    }
+
+    if (ringingIncomingCall != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+        ) {
+            com.example.ui.chat.IncomingCallBanner(
+                session = ringingIncomingCall,
+                onAccept = {
+                    activeCallOverlayId = ringingIncomingCall.id
+                    viewModel.acceptVideoCall(ringingIncomingCall.id)
+                },
+                onDecline = {
+                    dismissedIncomingCallIds = dismissedIncomingCallIds + ringingIncomingCall.id
+                    viewModel.endOrDeclineVideoCall(ringingIncomingCall.id, "DECLINED")
+                },
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    }
+
+    activeCallOverlayId?.let { overlayId ->
+        val callSession = state.activeCallSessions.firstOrNull { it.id == overlayId }
+        val callChannel = state.chatChannels.firstOrNull { it.id == (callSession?.channelId ?: "") }
+            ?: ChatChannel(
+                id = callSession?.channelId ?: "",
+                title = callSession?.channelTitle ?: "Video Call",
+                participantUids = listOfNotNull(callSession?.callerUid) + (callSession?.calleeUids ?: emptyList())
+            )
+        val peers = state.members.filter { it.uid != member.uid && it.uid in callChannel.participantUids }
+        com.example.ui.chat.ChatVideoCallDialog(
+            channel = callChannel,
+            myMember = member,
+            peerMembers = peers,
+            callSession = callSession,
+            onAcceptCall = { callSession?.let { viewModel.acceptVideoCall(it.id) } },
+            onEndOrDeclineCall = { st -> callSession?.let { viewModel.endOrDeclineVideoCall(it.id, st) } },
+            onDismiss = { activeCallOverlayId = null },
+            onCallCompleted = { _ -> }
+        )
+    }
+
+    if (showCloudStorageSheet && state.isSuperAdmin) {
         CloudStorageManagerSheet(
             summary = cloudStorageSummary,
             isScanning = isScanningCloudStorage,
@@ -823,6 +922,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             onStartWork = { viewModel.startDeliverableWork(it) },
             onToggleTimer = { viewModel.toggleDeliverableTimer(it) },
             onResetTimer = { viewModel.resetDeliverableTimer(it) },
+            onCommitTimerToTimeEntry = { deliv -> viewModel.commitTimerToTimeEntry(deliv) },
             onDismiss = { activeDeliverable = null }
         )
     }
@@ -996,6 +1096,7 @@ private fun QuickWorkspaceSheet(
     canSeePayments: Boolean,
     onDismiss: () -> Unit,
     onNewQuote: () -> Unit,
+    onOpenRequirementsQuote: () -> Unit = {},
     onOpenRequests: () -> Unit,
     onOpenProjects: () -> Unit,
     onOpenMyWork: () -> Unit,
@@ -1006,6 +1107,16 @@ private fun QuickWorkspaceSheet(
     val firstName = member.fullName.trim().substringBefore(" ").ifBlank { "Member" }
     val tiles = buildList {
         if (canCreateQuote) {
+            add(
+                QuickActionTile(
+                    title = "Quote Summary",
+                    subtitle = "Brief -> client quote",
+                    icon = Icons.Outlined.AutoAwesome,
+                    bg = palette.kpiLavenderBg,
+                    tint = palette.kpiLavenderStroke,
+                    onClick = onOpenRequirementsQuote
+                )
+            )
             add(
                 QuickActionTile(
                     title = "New Quote",

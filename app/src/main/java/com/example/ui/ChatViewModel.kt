@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chat.ChatAudioManager
+import com.example.chat.ChatE2eeCrypto
 import com.example.chat.ChatFileManager
 import com.example.chat.ChatLocationManager
 import com.example.chat.ChatSettingsStore
@@ -28,6 +29,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 enum class ChatFilterTab(val label: String) {
@@ -130,6 +133,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _statusUploadJobs = MutableStateFlow<List<StatusUploadJob>>(emptyList())
     val statusUploadJobs: StateFlow<List<StatusUploadJob>> = _statusUploadJobs.asStateFlow()
 
+    private val memberPublicKeys = MutableStateFlow<Map<String, String>>(emptyMap())
+
     private val statusCoroutines = mutableMapOf<String, Job>()
     private val statusHttpCalls = mutableMapOf<String, okhttp3.Call>()
 
@@ -139,8 +144,50 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var recordingTimerJob: Job? = null
     private var liveLocationJob: Job? = null
 
+    private val _activeCall = MutableStateFlow<ChatCallSession?>(null)
+    val activeCall: StateFlow<ChatCallSession?> = _activeCall.asStateFlow()
+
+    private val _incomingCalls = MutableStateFlow<List<ChatCallSession>>(emptyList())
+    val incomingCalls: StateFlow<List<ChatCallSession>> = _incomingCalls.asStateFlow()
+
+    private var incomingCallsJob: Job? = null
+    private var activeCallJob: Job? = null
+
     init {
         ChatSettingsStore.ensureLoaded(application)
+    }
+
+    fun updateMemberDirectory(members: List<Member>) {
+        memberPublicKeys.value = members
+            .filter { it.uid.isNotBlank() && it.e2eePublicKey.isNotBlank() }
+            .associate { it.uid to it.e2eePublicKey }
+    }
+
+    fun resolveRecipientKeysForChannel(channel: ChatChannel?, myUid: String): Map<String, String> {
+        val uids = channel?.participantUids.orEmpty()
+        return resolveRecipientKeysByUids(uids, myUid)
+    }
+
+    fun resolveRecipientKeysByUids(participantUids: List<String>, myUid: String): Map<String, String> {
+        val dir = memberPublicKeys.value
+        val result = mutableMapOf<String, String>()
+        participantUids.forEach { uid ->
+            val key = dir[uid]
+            if (!key.isNullOrBlank()) result[uid] = key
+        }
+        if (myUid.isNotBlank()) {
+            val myKey = dir[myUid]?.takeIf { it.isNotBlank() }
+                ?: ChatE2eeCrypto.getOrCreatePublicKeyBase64(getApplication(), myUid)
+            if (myKey.isNotBlank()) result[myUid] = myKey
+        }
+        return result
+    }
+
+    fun decryptMessages(list: List<ChatMessage>, myUid: String): List<ChatMessage> {
+        if (myUid.isBlank()) return list
+        return list.map { msg ->
+            ChatE2eeCrypto.decryptMessageIfNeeded(getApplication(), myUid, msg)
+        }
     }
 
     fun observeMemberPresence(uid: String): Flow<MemberPresenceState> =
@@ -167,14 +214,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         messagesJob?.cancel()
         messagesJob = viewModelScope.launch {
             if (!coreRepo.firestoreInitService.isReady) {
-                _messages.value = emptyList()
-                _hasPendingWrites.value = false
-                return@launch
+                coreRepo.firestoreInitService.initState
+                    .filterIsInstance<com.example.data.FirestoreInitState.Ready>()
+                    .first()
             }
             chatRepo.observeMessages(channel.id)
                 .catch { emit(com.example.data.SyncedData(emptyList(), false)) }
                 .collectLatest { synced ->
-                    _messages.value = synced.data
+                    _messages.value = decryptMessages(synced.data, myUid)
                     _hasPendingWrites.value = synced.hasPendingWrites
                     if (synced.data.isNotEmpty() && myUid.isNotBlank() && coreRepo.firestoreInitService.isReady) {
                         runCatching { chatRepo.markMessagesDeliveredAndRead(channel.id, synced.data, myUid) }
@@ -369,11 +416,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _isUploading.value = attachments.isNotEmpty()
             var anyError: String? = null
             if (attachments.isEmpty()) {
+                val recipientKeys = resolveRecipientKeysForChannel(_activeChannel.value, actor.uid)
                 val opts = SendMessageOptions(
                     kind = ChatMessageKind.TEXT,
                     parentMessage = _replyTarget.value,
                     viewOnce = viewOnce,
-                    mentions = mentions
+                    mentions = mentions,
+                    recipientPublicKeysByUid = recipientKeys
                 )
                 runCatching {
                     chatRepo.sendRichMessage(channelId, clean, actor, opts)
@@ -522,6 +571,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun forwardMessage(message: ChatMessage, targetChannel: ChatChannel, actor: Member, onDone: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching {
+                val keys = resolveRecipientKeysByUids(targetChannel.participantUids, actor.uid)
                 val opts = SendMessageOptions(
                     kind = message.kindEnum(),
                     forwardedFromName = message.senderName,
@@ -532,7 +582,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     contactPhone = message.contactPhone,
                     locationLat = message.locationLat,
                     locationLng = message.locationLng,
-                    locationLabel = message.locationLabel
+                    locationLabel = message.locationLabel,
+                    recipientPublicKeysByUid = if (message.kindEnum() == ChatMessageKind.TEXT) keys else emptyMap()
                 )
                 val body = message.body.ifBlank { message.attachmentName.ifBlank { message.kindEnum().label } }
                 chatRepo.sendRichMessage(targetChannel.id, body, actor, opts)
@@ -988,5 +1039,100 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearBanner() {
         _statusBanner.value = null
+    }
+
+    fun listenForIncomingCalls(myUid: String) {
+        if (myUid.isBlank()) return
+        incomingCallsJob?.cancel()
+        incomingCallsJob = viewModelScope.launch {
+            if (!coreRepo.firestoreInitService.isReady) {
+                coreRepo.firestoreInitService.initState
+                    .filterIsInstance<com.example.data.FirestoreInitState.Ready>()
+                    .first()
+            }
+            chatRepo.observeIncomingCalls(myUid)
+                .catch { emit(emptyList()) }
+                .collectLatest { calls ->
+                    _incomingCalls.value = calls
+                }
+        }
+    }
+
+    fun startCall(
+        channelId: String,
+        callType: CallType,
+        callerUid: String,
+        callerName: String,
+        participantUids: List<String>
+    ) {
+        viewModelScope.launch {
+            chatRepo.initiateCall(channelId, callType, callerUid, callerName, participantUids)
+                .collectLatest { res ->
+                    res.onSuccess { callId ->
+                        observeActiveCall(callId)
+                    }.onFailure { err ->
+                        _statusBanner.value = err.message ?: "Failed to initiate call"
+                    }
+                }
+        }
+    }
+
+    fun observeActiveCall(callId: String) {
+        activeCallJob?.cancel()
+        activeCallJob = viewModelScope.launch {
+            chatRepo.observeActiveCall(callId)
+                .catch { emit(null) }
+                .collectLatest { session ->
+                    _activeCall.value = session
+                }
+        }
+    }
+
+    fun acceptIncomingCall(call: ChatCallSession) {
+        viewModelScope.launch {
+            chatRepo.acceptCall(call.id).collectLatest { res ->
+                res.onSuccess {
+                    observeActiveCall(call.id)
+                }.onFailure { err ->
+                    _statusBanner.value = err.message ?: "Failed to accept call"
+                }
+            }
+        }
+    }
+
+    fun declineIncomingCall(callId: String) {
+        viewModelScope.launch {
+            chatRepo.declineCall(callId).collectLatest {}
+            _incomingCalls.value = _incomingCalls.value.filter { it.id != callId }
+        }
+    }
+
+    fun endActiveCall(durationSeconds: Int = 0) {
+        val call = _activeCall.value ?: return
+        viewModelScope.launch {
+            chatRepo.endCall(call.id, durationSeconds).collectLatest {}
+            _activeCall.value = null
+        }
+    }
+
+    fun toggleActiveCallMute(myUid: String) {
+        val call = _activeCall.value ?: return
+        val isMuted = myUid in call.mutedUids
+        viewModelScope.launch {
+            chatRepo.toggleCallMute(call.id, myUid, !isMuted).collectLatest {}
+        }
+    }
+
+    fun toggleActiveCallCamera(myUid: String) {
+        val call = _activeCall.value ?: return
+        val isOff = myUid in call.cameraOffUids
+        viewModelScope.launch {
+            chatRepo.toggleCallCamera(call.id, myUid, !isOff).collectLatest {}
+        }
+    }
+
+    fun clearActiveCall() {
+        _activeCall.value = null
+        activeCallJob?.cancel()
     }
 }

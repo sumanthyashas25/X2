@@ -179,47 +179,6 @@ fun SignInScreen(
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Clean Outlined Pill: Continue with Phone
-                    Surface(
-                        onClick = {
-                            if (!authInProgress) {
-                                onResetPhoneAuth()
-                                showPhoneSheet = true
-                            }
-                        },
-                        enabled = !authInProgress,
-                        shape = RoundedCornerShape(999.dp),
-                        color = palette.surface,
-                        border = BorderStroke(1.dp, palette.outline),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                            .testTag("continue_with_phone_button")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 20.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PhoneAndroid,
-                                contentDescription = null,
-                                tint = palette.textPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                text = "Continue with Phone",
-                                style = XMaxType.button,
-                                color = palette.textPrimary
-                            )
-                        }
-                    }
                 }
 
                 // Bottom green-accent legal footer matching Login_ui_referance_f765934b.jpg

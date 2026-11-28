@@ -25,6 +25,7 @@ data class SyncedData<T>(
 class AgencyRepository(context: Context) {
 
     private val appContext: Context = context.applicationContext
+    val context: Context get() = appContext
 
     val companyId: String = CatalogueSeedData.DEFAULT_COMPANY_ID
 
@@ -173,6 +174,9 @@ class AgencyRepository(context: Context) {
     suspend fun bootstrapXMaxWorkspace(user: FirebaseUser, fullName: String, age: Int? = null) {
         val uid = user.uid
         val emailLower = (user.email ?: "").trim().lowercase()
+        if (!CatalogueSeedData.isBootstrapEmail(emailLower)) {
+            throw SecurityException("Only xdotmax@gmail.com is authorized for Super Admin bootstrap.")
+        }
         val companySnap = companyRef.get().await()
         if (!companySnap.exists()) {
             val profile = CatalogueSeedData.defaultCompanyProfile(uid)
@@ -443,10 +447,55 @@ class AgencyRepository(context: Context) {
                 "defaultRevisionRounds" to profile.defaultRevisionRounds.coerceIn(0, 20),
                 "defaultPaymentTerms" to profile.defaultPaymentTerms.trim(),
                 "defaultApprovalInstructions" to profile.defaultApprovalInstructions.trim(),
+                "defaultChatWallpaperId" to profile.defaultChatWallpaperId.ifBlank { "studio_white" },
+                "defaultChatWallpaperUrl" to profile.defaultChatWallpaperUrl.trim(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
         logActivity(ActivityCategory.COMPANY, "Company Profile Updated", "Updated X.MAX details & quote defaults", actor.uid, actor.fullName, companyId)
+    }
+
+    suspend fun setCompanyDefaultWallpaper(presetId: String, customUrl: String, actor: Member) {
+        companyRef.update(
+            mapOf(
+                "defaultChatWallpaperId" to presetId.trim().ifBlank { "studio_white" }.take(64),
+                "defaultChatWallpaperUrl" to customUrl.trim().take(500),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+        logActivity(
+            ActivityCategory.COMPANY,
+            "Workspace Chat Wallpaper Updated",
+            "Super Admin set default chat wallpaper to ${presetId.ifBlank { "Custom" }}",
+            actor.uid,
+            actor.fullName,
+            companyId
+        )
+    }
+
+    suspend fun updateMyPresenceHeartbeat(uid: String, availabilityStatus: String, online: Boolean) {
+        if (uid.isBlank()) return
+        runCatching {
+            sub("members").document(uid).update(
+                mapOf(
+                    "lastActiveAtMillis" to if (online) System.currentTimeMillis() else 0L,
+                    "availabilityStatus" to if (online) availabilityStatus.ifBlank { "ACTIVE" } else "AWAY",
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        }
+    }
+
+    suspend fun updateMyE2eePublicKey(uid: String, publicKeyB64: String) {
+        if (uid.isBlank() || publicKeyB64.isBlank()) return
+        runCatching {
+            sub("members").document(uid).update(
+                mapOf(
+                    "e2eePublicKey" to publicKeyB64.take(512),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        }
     }
 
     suspend fun createInvitation(

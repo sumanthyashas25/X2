@@ -342,4 +342,230 @@ object WorkDistributionEngine {
             projectReminders = projectReminders
         )
     }
+
+    // --- Resource Allocation Coach (Deterministic Live Workload Engine) ---
+
+    data class StaffAllocationRecommendation(
+        val draftId: String,
+        val recommendedMember: Member?,
+        val matchScore: Int,
+        val activeDeliverablesCount: Int,
+        val blockedCount: Int,
+        val recentHoursLogged: Double,
+        val rationale: String
+    )
+
+    fun recommendStaffAllocations(
+        drafts: List<DeliverableDraft>,
+        deliverables: List<Deliverable>,
+        timeEntries: List<com.example.model.TimeEntry>,
+        members: List<Member>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<StaffAllocationRecommendation> {
+        val activeMembers = members.filter { it.statusEnum() == MembershipStatus.APPROVED && it.active }
+        if (activeMembers.isEmpty()) return emptyList()
+        val sevenDaysAgo = nowMillis - 7L * 86_400_000L
+
+        val activeCountByUid = deliverables
+            .filter { it.statusEnum() != DeliverableStatus.APPROVED }
+            .groupingBy { it.assignedToUid }
+            .eachCount()
+        val blockedByUid = deliverables
+            .filter { it.statusEnum() == DeliverableStatus.BLOCKED }
+            .groupingBy { it.assignedToUid }
+            .eachCount()
+        val recentMinutesByUid = timeEntries
+            .filter { it.workDateMillis >= sevenDaysAgo }
+            .groupBy { it.uid }
+            .mapValues { (_, list) -> list.sumOf { it.durationMinutes } }
+
+        // Track virtual increments across drafts in the same project so one person isn't overloaded
+        val virtualExtraByUid = mutableMapOf<String, Int>()
+
+        return drafts.map { draft ->
+            val roleMatched = activeMembers.filter { it.departmentId == draft.departmentId && it.jobRoleId == draft.jobRoleId }
+            val deptMatched = activeMembers.filter { it.departmentId == draft.departmentId }
+            val pool = when {
+                roleMatched.isNotEmpty() -> roleMatched
+                deptMatched.isNotEmpty() -> deptMatched
+                else -> activeMembers
+            }
+
+            val best = pool.minByOrNull { m ->
+                val baseActive = (activeCountByUid[m.uid] ?: 0) + (virtualExtraByUid[m.uid] ?: 0)
+                val blocked = blockedByUid[m.uid] ?: 0
+                val hours = (recentMinutesByUid[m.uid] ?: 0) / 60.0
+                baseActive * 10.0 + blocked * 15.0 + hours * 1.5
+            }
+
+            if (best != null) {
+                virtualExtraByUid[best.uid] = (virtualExtraByUid[best.uid] ?: 0) + 1
+                val activeCount = activeCountByUid[best.uid] ?: 0
+                val blocked = blockedByUid[best.uid] ?: 0
+                val hours = ((recentMinutesByUid[best.uid] ?: 0) / 60.0)
+                val exactRole = best.departmentId == draft.departmentId && best.jobRoleId == draft.jobRoleId
+                val matchScore = (if (exactRole) 95 else if (best.departmentId == draft.departmentId) 80 else 65) -
+                    (activeCount * 5).coerceAtMost(25) - (blocked * 8).coerceAtMost(20)
+                val why = buildString {
+                    append(if (exactRole) "Exact role match" else if (best.departmentId == draft.departmentId) "Same department" else "Cross-team capacity")
+                    append(" • $activeCount active task")
+                    if (activeCount != 1) append("s")
+                    if (hours > 0.1) append(" • ${"%.1f".format(hours)}h this week")
+                }
+                StaffAllocationRecommendation(
+                    draftId = draft.draftId,
+                    recommendedMember = best,
+                    matchScore = matchScore.coerceIn(30, 99),
+                    activeDeliverablesCount = activeCount,
+                    blockedCount = blocked,
+                    recentHoursLogged = hours,
+                    rationale = why
+                )
+            } else {
+                StaffAllocationRecommendation(
+                    draftId = draft.draftId,
+                    recommendedMember = null,
+                    matchScore = 0,
+                    activeDeliverablesCount = 0,
+                    blockedCount = 0,
+                    recentHoursLogged = 0.0,
+                    rationale = "No active approved team member available"
+                )
+            }
+        }
+    }
+
+    // --- Cumulative Progress, Payment Trends & Monthly Revenue Forecast ---
+
+    data class MonthlyAnalyticsPoint(
+        val label: String,
+        val monthStartMillis: Long,
+        val cumulativeCompletionPct: Float,
+        val collectedPaise: Long,
+        val contractedPaise: Long,
+        val forecastPaise: Long,
+        val loggedMinutes: Int,
+        val isForecast: Boolean = false
+    )
+
+    data class AgencyAnalyticsSeries(
+        val historyPoints: List<MonthlyAnalyticsPoint>,
+        val forecastPoints: List<MonthlyAnalyticsPoint>,
+        val projectedNext3MonthsPaise: Long,
+        val collectionRatePercent: Int,
+        val averageCompletionPercent: Int
+    )
+
+    fun computeAgencyAnalyticsSeries(
+        projects: List<com.example.model.Project>,
+        deliverables: List<Deliverable>,
+        payments: List<com.example.model.PaymentRecord>,
+        timeEntries: List<com.example.model.TimeEntry>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): AgencyAnalyticsSeries {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = nowMillis
+        cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+
+        val monthFormat = java.text.SimpleDateFormat("MMM", java.util.Locale.getDefault())
+        val activeProjects = projects.filter { !it.deleted }
+
+        // 5 historical months + current month = 6 bars
+        val monthStarts = (-5..0).map { offset ->
+            val c = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, offset) }
+            c.timeInMillis
+        }
+
+        val totalDelivs = deliverables.size.coerceAtLeast(1)
+        val approvedSoFar = deliverables.count { it.statusEnum() == DeliverableStatus.APPROVED }
+        val currentCompletionPct = (approvedSoFar * 100f / totalDelivs).coerceIn(0f, 100f)
+
+        val history = monthStarts.mapIndexed { idx, startMs ->
+            val nextCal = java.util.Calendar.getInstance().apply {
+                timeInMillis = startMs
+                add(java.util.Calendar.MONTH, 1)
+            }
+            val endMs = nextCal.timeInMillis
+            val label = monthFormat.format(java.util.Date(startMs))
+
+            val monthCollected = payments
+                .filter { it.paymentDateMillis in startMs until endMs }
+                .sumOf { it.amountPaise }
+            val monthContracted = activeProjects
+                .filter { p ->
+                    val createdMs = (p.createdAt?.seconds ?: 0L) * 1000L
+                    createdMs in startMs until endMs
+                }
+                .sumOf { it.agreedValuePaise }
+            val monthMinutes = timeEntries
+                .filter { it.workDateMillis in startMs until endMs }
+                .sumOf { it.durationMinutes }
+
+            // Cumulative deliverable completion up to month end (approved deliverables updated/completed before endMs)
+            val approvedByEnd = deliverables.count { d ->
+                d.statusEnum() == DeliverableStatus.APPROVED &&
+                    (((d.updatedAt?.seconds ?: 0L) * 1000L).let { ts -> ts in 1L until endMs })
+            }
+            val pct = if (idx == monthStarts.lastIndex) {
+                currentCompletionPct
+            } else if (approvedSoFar > 0) {
+                (approvedByEnd * 100f / totalDelivs).coerceIn(0f, currentCompletionPct)
+            } else {
+                0f
+            }
+
+            MonthlyAnalyticsPoint(
+                label = label,
+                monthStartMillis = startMs,
+                cumulativeCompletionPct = pct,
+                collectedPaise = monthCollected,
+                contractedPaise = monthContracted,
+                forecastPaise = 0L,
+                loggedMinutes = monthMinutes,
+                isForecast = false
+            )
+        }
+
+        // Forecast next 3 months from outstanding balances + 3-month trailing collection average
+        val trailingAvg = history.takeLast(3).map { it.collectedPaise }.average().toLong().coerceAtLeast(0L)
+        val totalOutstanding = activeProjects.sumOf { it.outstandingPaise }.coerceAtLeast(0L)
+        val pipelineMonthly = (totalOutstanding * 0.35).toLong()
+
+        val forecast = (1..3).map { offset ->
+            val c = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, offset) }
+            val weight = when (offset) {
+                1 -> 0.50
+                2 -> 0.32
+                else -> 0.18
+            }
+            val projected = ((trailingAvg * 0.55) + (totalOutstanding * weight)).toLong().coerceAtLeast(pipelineMonthly / 2)
+            val estCompletion = (currentCompletionPct + offset * 12f).coerceAtMost(100f)
+            MonthlyAnalyticsPoint(
+                label = monthFormat.format(c.time) + "*",
+                monthStartMillis = c.timeInMillis,
+                cumulativeCompletionPct = estCompletion,
+                collectedPaise = 0L,
+                contractedPaise = 0L,
+                forecastPaise = projected,
+                loggedMinutes = 0,
+                isForecast = true
+            )
+        }
+
+        val totalAgreed = activeProjects.sumOf { it.agreedValuePaise }
+        val totalPaid = activeProjects.sumOf { it.paidPaise }
+        val collectionRate = if (totalAgreed > 0L) ((totalPaid * 100L) / totalAgreed).toInt().coerceIn(0, 100) else 0
+
+        return AgencyAnalyticsSeries(
+            historyPoints = history,
+            forecastPoints = forecast,
+            projectedNext3MonthsPaise = forecast.sumOf { it.forecastPaise },
+            collectionRatePercent = collectionRate,
+            averageCompletionPercent = currentCompletionPct.toInt()
+        )
+    }
 }

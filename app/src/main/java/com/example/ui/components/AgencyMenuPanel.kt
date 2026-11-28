@@ -52,11 +52,13 @@ fun AgencyMenuDrawerContent(
     onOpenNewQuote: () -> Unit,
     onOpenProfilePhoto: () -> Unit,
     onSignOut: () -> Unit,
-    onCloseDrawer: () -> Unit
+    onCloseDrawer: () -> Unit,
+    onOpenRequirementsQuote: (() -> Unit)? = null
 ) {
     val member = state.myMember ?: return
     val palette = XMaxTheme.colors
     val access = member.accessLevelEnum()
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
     val pendingMembersCount = state.members.count { it.statusEnum() == MembershipStatus.PENDING }
     val activeProjectsCount = state.projects.count { !it.deleted }
     val pendingRequestsCount = state.requests.count { it.decisionStatusEnum() == DecisionStatus.PENDING }
@@ -66,6 +68,7 @@ fun AgencyMenuDrawerContent(
 
     val adminSecondary = permittedSecondary.filter {
         it in setOf(
+            SecondaryDestination.ADMIN_DASHBOARD,
             SecondaryDestination.TEAM,
             SecondaryDestination.ORG_ROUTING,
             SecondaryDestination.COMPANY_SETTINGS,
@@ -191,10 +194,12 @@ fun AgencyMenuDrawerContent(
                         }
                     }
 
-                    if (state.isSuperAdmin || state.isAdmin) {
+                    AdminOnlyContent(policy = uiPolicy) {
                         Spacer(Modifier.height(10.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("drawer_admin_counters"),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             DrawerMiniCounter(
@@ -275,32 +280,44 @@ fun AgencyMenuDrawerContent(
                     )
                 }
 
-                if (adminSecondary.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    MenuSectionLabel(
-                        if (state.isSuperAdmin) "Super Admin Controls" else "Admin Controls"
-                    )
-                    adminSecondary.forEach { dest ->
-                        val badge = if (dest == SecondaryDestination.TEAM && pendingMembersCount > 0) {
-                            "$pendingMembersCount"
-                        } else null
-                        MinimalSidebarRow(
-                            title = formatTitleCase(dest.label),
-                            icon = dest.icon,
-                            activeIcon = dest.icon,
-                            selected = secondaryDest == dest,
-                            badgeText = badge,
-                            badgeAlert = dest == SecondaryDestination.TEAM && pendingMembersCount > 0,
-                            modifier = Modifier.testTag("menu_dest_${dest.name.lowercase()}"),
-                            onClick = { onSelectSecondary(dest) }
+                AdminOnlyContent(policy = uiPolicy) {
+                    if (adminSecondary.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        MenuSectionLabel(
+                            if (uiPolicy.isSuperAdmin) "Super Admin Controls" else "Admin Controls"
                         )
+                        adminSecondary.forEach { dest ->
+                            val badge = if (dest == SecondaryDestination.TEAM && pendingMembersCount > 0) {
+                                "$pendingMembersCount"
+                            } else null
+                            MinimalSidebarRow(
+                                title = formatTitleCase(dest.label),
+                                icon = dest.icon,
+                                activeIcon = dest.icon,
+                                selected = secondaryDest == dest,
+                                badgeText = badge,
+                                badgeAlert = dest == SecondaryDestination.TEAM && pendingMembersCount > 0,
+                                modifier = Modifier.testTag("menu_dest_${dest.name.lowercase()}"),
+                                onClick = { onSelectSecondary(dest) }
+                            )
+                        }
                     }
                 }
 
-                if (canCreateQuote || commercialSecondary.isNotEmpty()) {
+                RoleGate(visible = canCreateQuote || commercialSecondary.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     MenuSectionLabel("Commercial & Finance")
                     if (canCreateQuote) {
+                        if (onOpenRequirementsQuote != null) {
+                            MinimalSidebarRow(
+                                title = "Quote From Brief",
+                                icon = Icons.Outlined.AutoAwesome,
+                                activeIcon = Icons.Filled.AutoAwesome,
+                                selected = false,
+                                modifier = Modifier.testTag("menu_requirements_quote_button"),
+                                onClick = onOpenRequirementsQuote
+                            )
+                        }
                         MinimalSidebarRow(
                             title = "New Quote",
                             icon = Icons.Filled.AddCircleOutline,
@@ -336,15 +353,17 @@ fun AgencyMenuDrawerContent(
                     onChangeThemeMode = onChangeThemeMode
                 )
 
-                // Cloud Storage Tracker & Cleanup Card
-                Spacer(Modifier.height(10.dp))
-                MenuSectionLabel("Cloud Storage & Free Limits")
-                DrawerCloudStorageCard(
-                    summary = cloudStorageSummary,
-                    isScanning = isScanningStorage,
-                    onOpenManager = onOpenStorageManager,
-                    onRefresh = onRefreshStorage
-                )
+                AdminOnlyContent(policy = uiPolicy, requireSuperAdmin = true) {
+                    // Cloud Storage Tracker & Cleanup Card (Super Admin only)
+                    Spacer(Modifier.height(10.dp))
+                    MenuSectionLabel("Cloud Storage & Free Limits")
+                    DrawerCloudStorageCard(
+                        summary = cloudStorageSummary,
+                        isScanning = isScanningStorage,
+                        onOpenManager = onOpenStorageManager,
+                        onRefresh = onRefreshStorage
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
             }
 

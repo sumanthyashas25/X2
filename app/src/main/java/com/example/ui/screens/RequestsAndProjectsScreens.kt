@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -19,19 +23,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.chat.remote.WorkerBridgeClient
 import com.example.domain.DeliverableDraft
 import com.example.domain.MoneyFormatter
 import com.example.domain.WorkDistributionEngine
 import com.example.model.*
+import com.example.data.NetworkConnectivityMonitor
 import com.example.ui.AgencyUiState
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import kotlin.math.roundToInt
 
 @Composable
 fun RequestsScreen(
@@ -39,14 +49,16 @@ fun RequestsScreen(
     onOpenQuoteBuilder: (ProjectRequest?, Quotation?) -> Unit,
     onCreateRequest: (Client, String, String, List<String>, Long, Member) -> Unit,
     onAcceptRequest: (ProjectRequest, Quotation, List<DeliverableDraft>) -> Unit,
-    onDeclineRequest: (ProjectRequest, String) -> Unit
+    onDeclineRequest: (ProjectRequest, String) -> Unit,
+    onOpenRequirementsQuote: (() -> Unit)? = null
 ) {
     var filter by remember { mutableStateOf<DecisionStatus?>(DecisionStatus.PENDING) }
     var searchQuery by remember { mutableStateOf("") }
     var showNewRequestDialog by remember { mutableStateOf(false) }
     var selectedRequest by remember { mutableStateOf<ProjectRequest?>(null) }
 
-    val canCreateReq = state.hasPerm(AppPermission.CREATE_REQUESTS) || state.hasPerm(AppPermission.CREATE_QUOTATIONS)
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val canCreateReq = state.hasPerm(AppPermission.CREATE_REQUESTS) || uiPolicy.canManageCommercialQuotes
     val canAccept = state.hasPerm(AppPermission.ACCEPT_PROJECT)
     val canDecline = state.hasPerm(AppPermission.DECLINE_PROJECT)
 
@@ -70,16 +82,33 @@ fun RequestsScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Client Requests", style = XMaxType.sectionHeading, color = palette.textPrimary)
-                if (canCreateReq && state.clients.isNotEmpty()) {
-                    Button(
-                        onClick = { showNewRequestDialog = true },
-                        shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                        modifier = Modifier.height(42.dp).testTag("new_request_button")
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("New Request", style = XMaxType.buttonCompact)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CommercialFeatureGate(policy = uiPolicy) {
+                        if (onOpenRequirementsQuote != null) {
+                            OutlinedButton(
+                                onClick = onOpenRequirementsQuote,
+                                shape = RoundedCornerShape(999.dp),
+                                border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(42.dp).testTag("open_requirements_quote_button")
+                            ) {
+                                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = palette.accentViolet, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Quote Brief", style = XMaxType.buttonCompact, color = palette.textPrimary)
+                            }
+                        }
+                    }
+                    if (canCreateReq && state.clients.isNotEmpty()) {
+                        Button(
+                            onClick = { showNewRequestDialog = true },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                            modifier = Modifier.height(42.dp).testTag("new_request_button")
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("New Request", style = XMaxType.buttonCompact)
+                        }
                     }
                 }
             }
@@ -253,6 +282,18 @@ fun RequestDecisionDialog(
     var declineNote by remember { mutableStateOf("") }
     var showDeclineConfirm by remember { mutableStateOf(false) }
 
+    val coachRecommendations = remember(drafts, state.deliverables, state.timeEntries, state.members) {
+        WorkDistributionEngine.recommendStaffAllocations(
+            drafts = drafts,
+            deliverables = state.deliverables,
+            timeEntries = state.timeEntries,
+            members = state.members
+        )
+    }
+    val recByDraftId = remember(coachRecommendations) {
+        coachRecommendations.associateBy { it.draftId }
+    }
+
     val palette = XMaxTheme.colors
     val st = request.decisionStatusEnum()
     val (stBg, stFg) = when (st) {
@@ -362,12 +403,64 @@ fun RequestDecisionDialog(
                     }
 
                     if (request.decisionStatusEnum() == DecisionStatus.PENDING && targetQuote != null) {
+                        if (coachRecommendations.any { it.recommendedMember != null }) {
+                            item {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = palette.softVioletBg,
+                                    border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.25f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("resource_allocation_coach_card")
+                                ) {
+                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(18.dp))
+                                                Text("Resource Allocation Coach", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    val byDraft = coachRecommendations.associateBy { it.draftId }
+                                                    drafts = drafts.map { d ->
+                                                        val rec = byDraft[d.draftId]?.recommendedMember
+                                                        if (rec != null) WorkDistributionEngine.applyOverride(d, rec) else d
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(999.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary, contentColor = PureWhite),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier
+                                                    .height(34.dp)
+                                                    .testTag("apply_coach_picks_button")
+                                            ) {
+                                                Text("Apply Coach Picks", style = XMaxType.caption1Semibold)
+                                            }
+                                        }
+                                        Text(
+                                            text = "Balances active tasks, blocked flags, recent logged hours, and exact role/department fit.",
+                                            style = XMaxType.caption1,
+                                            color = palette.textSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         item {
                             Text("Deliverables & Routing (${drafts.size})", style = XMaxType.secondaryTitle.tabular(), color = palette.textPrimary)
                         }
                         items(drafts, key = { it.draftId }) { draft ->
                             var expanded by remember { mutableStateOf(false) }
                             val eligible = state.members.filter { it.statusEnum() == MembershipStatus.APPROVED && it.active }
+                            val coachPick = recByDraftId[draft.draftId]
                             Surface(shape = RoundedCornerShape(20.dp), color = palette.surfaceMuted) {
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -379,6 +472,34 @@ fun RequestDecisionDialog(
                                         )
                                     }
                                     Text("${draft.departmentName} • ${draft.jobRoleName}", style = XMaxType.footnote, color = palette.textSecondary)
+                                    if (coachPick?.recommendedMember != null) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Coach: ${coachPick.recommendedMember.fullName} (${coachPick.matchScore}% • ${coachPick.rationale})",
+                                                style = XMaxType.caption1Medium,
+                                                color = VioletPrimary,
+                                                modifier = Modifier.weight(1f).padding(end = 6.dp),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (draft.assignedToUid != coachPick.recommendedMember.uid) {
+                                                TextButton(
+                                                    onClick = {
+                                                        drafts = drafts.map {
+                                                            if (it.draftId == draft.draftId) WorkDistributionEngine.applyOverride(it, coachPick.recommendedMember) else it
+                                                        }
+                                                    },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Assign", style = XMaxType.caption1Semibold, color = VioletPrimary)
+                                                }
+                                            }
+                                        }
+                                    }
                                     Box {
                                         TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(0.dp)) {
                                             Text("Assignee: ${draft.assignedToName.ifBlank { "Pick Employee" }}", style = XMaxType.footnoteSemibold, color = palette.skyInk)
@@ -539,15 +660,21 @@ fun ProjectsScreen(
     onToggleDeleteProject: (Project, Boolean) -> Unit,
     onPermanentlyDeleteProject: (Project) -> Unit = {},
     onCleanupOldDoneProjects: () -> Unit = {},
-    onOpenPayments: () -> Unit = {}
+    onOpenPayments: () -> Unit = {},
+    onGenerateTaxInvoice: (Project, Quotation?) -> Unit = { _, _ -> },
+    onCreatePortalLink: (Project, Quotation?, (ClientPortalLink) -> Unit) -> Unit = { _, _, _ -> },
+    onRevokePortalLink: (String) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val isOnline by NetworkConnectivityMonitor.isOnline.collectAsState()
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
     var showDeleted by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedProject by remember { mutableStateOf<Project?>(null) }
     var showCleanupConfirm by remember { mutableStateOf(false) }
-    val canDelete = state.isSuperAdmin
+    val canDelete = uiPolicy.canManageProjectsLifecycle
     val canAssign = state.hasPerm(AppPermission.ASSIGN_WORK)
-    val canQuote = state.hasPerm(AppPermission.CREATE_QUOTATIONS) || state.hasPerm(AppPermission.ISSUE_QUOTATIONS)
+    val canQuote = uiPolicy.canManageCommercialQuotes
     val photoByUid = remember(state.members) { state.members.associate { it.uid to it.photoBase64 } }
     val cleanableCount = remember(state.projects) {
         state.projects.count { it.statusEnum() == ProjectStatus.COMPLETED || it.deleted }
@@ -570,10 +697,38 @@ fun ProjectsScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (!isOnline || state.deliverablesPendingSync) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (!isOnline) palette.butterBg else palette.skyBg,
+                    border = BorderStroke(1.dp, (if (!isOnline) palette.butterInk else palette.skyInk).copy(alpha = 0.25f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (!isOnline) Icons.Outlined.CloudOff else Icons.Outlined.CloudSync,
+                            contentDescription = null,
+                            tint = if (!isOnline) palette.butterInk else palette.skyInk,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (!isOnline) "Offline cache active — changes sync automatically when online" else "Syncing queued project updates…",
+                            style = XMaxType.caption1Medium,
+                            color = palette.textPrimary
+                        )
+                    }
+                }
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Projects (${list.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
-                if (canDelete) {
+                AdminOnlyContent(policy = uiPolicy, requireSuperAdmin = true) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (cleanableCount > 0) {
                             OutlinedButton(
@@ -626,10 +781,18 @@ fun ProjectsScreen(
                 val done = projDelivs.count { it.statusEnum() == DeliverableStatus.APPROVED }
                 val started = projDelivs.any { it.statusEnum() != DeliverableStatus.NOT_STARTED }
                 val allDone = projDelivs.isNotEmpty() && done == projDelivs.size
+                val completionFrac = if (projDelivs.isEmpty()) 0f else (done.toFloat() / projDelivs.size.toFloat()).coerceIn(0f, 1f)
+                val completionPct = (completionFrac * 100f).roundToInt()
+                val animatedProgress by animateFloatAsState(
+                    targetValue = completionFrac,
+                    animationSpec = tween(380, easing = FastOutSlowInEasing),
+                    label = "proj_deliv_bar_${proj.id}"
+                )
                 val assigneePairs = projDelivs
                     .filter { it.assignedToName.isNotBlank() }
                     .distinctBy { it.assignedToUid.ifBlank { it.assignedToName } }
                     .map { it.assignedToName to (photoByUid[it.assignedToUid] ?: "") }
+                val canSeeFinance = state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)
 
                 Surface(
                     onClick = { selectedProject = proj },
@@ -652,6 +815,32 @@ fun ProjectsScreen(
                             )
                         }
 
+                        // Real-time deliverable progress bar synced from Firestore
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    text = "$done of ${projDelivs.size} deliverables approved",
+                                    style = XMaxType.caption1Medium.tabular(),
+                                    color = palette.textSecondary
+                                )
+                                Text(
+                                    text = "$completionPct%",
+                                    style = XMaxType.caption1Semibold.tabular(),
+                                    color = if (allDone) EmeraldApproved else VioletPrimary
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { animatedProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(7.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .testTag("project_deliverable_progress_${proj.id}"),
+                                color = if (allDone) EmeraldApproved else VioletPrimary,
+                                trackColor = palette.surfaceMuted
+                            )
+                        }
+
                         StepProgressTimeline(
                             steps = listOf(
                                 TimelineStep("Accepted", "${projDelivs.size} items", completed = true),
@@ -660,13 +849,28 @@ fun ProjectsScreen(
                             )
                         )
 
+                        if (canSeeFinance && proj.agreedValuePaise > 0L) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Agreed: ${MoneyFormatter.formatInr(proj.agreedValuePaise)}", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
+                                Text("Paid: ${MoneyFormatter.formatInr(proj.paidPaise)}", style = XMaxType.caption1Medium.tabular(), color = palette.mintInk)
+                                Text(
+                                    "Bal: ${MoneyFormatter.formatInr(proj.outstandingPaise)}",
+                                    style = XMaxType.caption1Semibold.tabular(),
+                                    color = if (proj.outstandingPaise > 0L) palette.blushInk else palette.mintInk
+                                )
+                            }
+                        }
+
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             if (assigneePairs.isNotEmpty()) {
                                 OverlappingAvatarMembers(members = assigneePairs, avatarSize = 26.dp, borderColor = palette.surface)
                             } else {
                                 Text(WorkDistributionEngine.summarizeProjectProgress(projDelivs), style = XMaxType.caption1, color = palette.textSecondary)
                             }
-                            if (state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) {
+                            if (canSeeFinance) {
                                 StatusPill(
                                     "BAL: ${MoneyFormatter.formatInr(proj.outstandingPaise)}",
                                     palette.mintBg,
@@ -704,10 +908,12 @@ fun ProjectsScreen(
     selectedProject?.let { p ->
         val fresh = state.projects.firstOrNull { it.id == p.id } ?: p
         val projDelivs = state.deliverables.filter { it.projectId == fresh.id }
+        val linkedQuote = state.quotations.firstOrNull { it.id == fresh.approvedQuoteId }
         ProjectDetailDialog(
             state = state,
             project = fresh,
             deliverables = projDelivs,
+            linkedQuotation = linkedQuote,
             canAssign = canAssign,
             canQuote = canQuote,
             canDelete = canDelete,
@@ -732,6 +938,9 @@ fun ProjectsScreen(
                 selectedProject = null
                 onOpenPayments()
             },
+            onGenerateTaxInvoice = { onGenerateTaxInvoice(fresh, linkedQuote) },
+            onCreatePortalLink = { onDone -> onCreatePortalLink(fresh, linkedQuote, onDone) },
+            onRevokePortalLink = onRevokePortalLink,
             onDismiss = { selectedProject = null }
         )
     }
@@ -742,6 +951,7 @@ private fun ProjectDetailDialog(
     state: AgencyUiState,
     project: Project,
     deliverables: List<Deliverable>,
+    linkedQuotation: Quotation? = null,
     canAssign: Boolean,
     canQuote: Boolean,
     canDelete: Boolean,
@@ -751,9 +961,14 @@ private fun ProjectDetailDialog(
     onToggleDelete: (Boolean) -> Unit,
     onPermanentDelete: () -> Unit,
     onOpenPayments: () -> Unit = {},
+    onGenerateTaxInvoice: () -> Unit = {},
+    onCreatePortalLink: ((ClientPortalLink) -> Unit) -> Unit = {},
+    onRevokePortalLink: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    var detailTab by remember { mutableStateOf(0) } // 0 = Details & Deliverables, 1 = Summary & History
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    var detailTab by remember { mutableStateOf(0) } // 0 = Details & Deliverables, 1 = Summary, Finance & Portal
     var showPermanentDeleteConfirm by remember { mutableStateOf(false) }
     val done = deliverables.count { it.statusEnum() == DeliverableStatus.APPROVED }
     val allDone = deliverables.isNotEmpty() && done == deliverables.size
@@ -906,6 +1121,12 @@ private fun ProjectDetailDialog(
                             }
                         }
                     } else {
+                        val projTimeEntries = state.timeEntries.filter { it.projectId == project.id }
+                        val loggedMinutes = projTimeEntries.sumOf { it.durationMinutes }
+                        val billableCostPaise = projTimeEntries.sumOf { it.billableAmountPaise() }
+                        val canFinance = state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)
+                        val projPortalLinks = state.portalLinks.filter { it.projectId == project.id }
+
                         item {
                             val rows = buildList {
                                 add(DetailKeyValueRow("Client", project.clientCompanyName))
@@ -913,19 +1134,164 @@ private fun ProjectDetailDialog(
                                 if (earliestDue > 0L) {
                                     add(DetailKeyValueRow("Next Deadline", MoneyFormatter.formatDate(earliestDue)))
                                 }
-                                if (state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) {
+                                add(DetailKeyValueRow("Logged Hours", "${"%.1f".format(loggedMinutes / 60.0)} hrs (${projTimeEntries.size} entries)"))
+                                if (canFinance) {
                                     add(DetailKeyValueRow("Agreed Value", MoneyFormatter.formatInr(project.agreedValuePaise)))
+                                    add(DetailKeyValueRow("Paid so far", MoneyFormatter.formatInr(project.paidPaise)))
                                     add(DetailKeyValueRow("Balance Due", MoneyFormatter.formatInr(project.outstandingPaise)))
+                                    if (billableCostPaise > 0L) {
+                                        add(DetailKeyValueRow("Billable Labor", MoneyFormatter.formatInr(billableCostPaise)))
+                                    }
                                 }
                                 if (anyBlocked) {
                                     add(DetailKeyValueRow("Alert", "Contains blocked deliverables", isWarning = true))
                                 }
                             }
                             DetailKeyValueCard(
-                                title = "Project Details",
+                                title = "Project Details & Financials",
                                 icon = Icons.Outlined.LocalShipping,
                                 rows = rows
                             )
+                        }
+
+                        if (canFinance) {
+                            item {
+                                Button(
+                                    onClick = onGenerateTaxInvoice,
+                                    shape = RoundedCornerShape(999.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("project_tax_invoice_button")
+                                ) {
+                                    Icon(Icons.AutoMirrored.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Generate GST Tax Invoice PDF", style = XMaxType.button)
+                                }
+                            }
+                        }
+
+                        // Client Portal Guest Link Access
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = palette.surface,
+                                border = BorderStroke(1.dp, palette.outline),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("client_portal_links_card")
+                            ) {
+                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Outlined.Link, contentDescription = null, tint = VioletPrimary, modifier = Modifier.size(18.dp))
+                                            Text("Client Portal Guest Links", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                                        }
+                                        Button(
+                                            onClick = { onCreatePortalLink { } },
+                                            shape = RoundedCornerShape(999.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = VioletPrimary, contentColor = PureWhite),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                            modifier = Modifier
+                                                .height(34.dp)
+                                                .testTag("create_portal_link_button")
+                                        ) {
+                                            Text("+ Guest Link", style = XMaxType.caption1Semibold)
+                                        }
+                                    }
+                                    Text(
+                                        text = "Read-only client links to inspect deliverable progress, approve milestones & download GST invoices.",
+                                        style = XMaxType.caption1,
+                                        color = palette.textSecondary
+                                    )
+                                    if (projPortalLinks.isEmpty()) {
+                                        Text(
+                                            text = "No guest links generated yet for ${formatTitleCase(project.clientCompanyName)}.",
+                                            style = XMaxType.footnote,
+                                            color = palette.textSecondary
+                                        )
+                                    } else {
+                                        projPortalLinks.take(4).forEach { link ->
+                                            val portalUrl = WorkerBridgeClient.buildPublicPortalUrl(link.token)
+                                            val active = link.isActive()
+                                            Surface(
+                                                shape = RoundedCornerShape(14.dp),
+                                                color = palette.surfaceMuted,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = portalUrl,
+                                                            style = XMaxType.caption1.tabular(),
+                                                            color = palette.skyInk,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                                        )
+                                                        StatusPill(
+                                                            label = if (active) "Active" else if (link.revoked) "Revoked" else "Expired",
+                                                            containerColor = if (active) palette.mintBg else palette.blushBg,
+                                                            contentColor = if (active) palette.mintInk else palette.blushInk
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = "Expires ${MoneyFormatter.formatDate(link.expiresAtMillis)}" +
+                                                            if (link.clientApprovedAtMillis > 0L) " • Client Approved ${MoneyFormatter.formatDate(link.clientApprovedAtMillis)}" else "",
+                                                        style = XMaxType.caption1,
+                                                        color = palette.textSecondary
+                                                    )
+                                                    if (link.clientApprovalNote.isNotBlank()) {
+                                                        Text("Client Note: ${link.clientApprovalNote}", style = XMaxType.caption1Medium, color = palette.mintInk)
+                                                    }
+                                                    if (active) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            OutlinedButton(
+                                                                onClick = { clipboardManager.setText(AnnotatedString(portalUrl)) },
+                                                                shape = RoundedCornerShape(999.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                                modifier = Modifier.height(34.dp)
+                                                            ) { Text("Copy URL", style = XMaxType.caption1Semibold, color = palette.textPrimary) }
+                                                            OutlinedButton(
+                                                                onClick = {
+                                                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                                        type = "text/plain"
+                                                                        putExtra(Intent.EXTRA_SUBJECT, "Client Portal: ${project.title}")
+                                                                        putExtra(Intent.EXTRA_TEXT, "Track deliverables & GST invoice for ${project.title}: $portalUrl")
+                                                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                    }
+                                                                    context.startActivity(Intent.createChooser(shareIntent, "Share Client Portal Link"))
+                                                                },
+                                                                shape = RoundedCornerShape(999.dp),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                                modifier = Modifier.height(34.dp)
+                                                            ) { Text("Share", style = XMaxType.caption1Semibold, color = palette.skyInk) }
+                                                            TextButton(
+                                                                onClick = { onRevokePortalLink(link.token) },
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                                modifier = Modifier.height(34.dp)
+                                                            ) { Text("Revoke", style = XMaxType.caption1Semibold, color = CrimsonBlocked) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         if ((state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)) && paymentReminder != null) {

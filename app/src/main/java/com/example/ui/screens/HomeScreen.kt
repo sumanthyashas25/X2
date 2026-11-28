@@ -30,12 +30,14 @@ import androidx.compose.ui.unit.dp
 import com.example.domain.MoneyFormatter
 import com.example.domain.WorkDistributionEngine
 import com.example.model.*
+import com.example.data.NetworkConnectivityMonitor
 import com.example.ui.AgencyUiState
 import com.example.ui.components.*
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class OverviewWindow(val label: String) {
     TODAY("Today"),
@@ -61,6 +63,7 @@ fun HomeScreen(
     onNavigateTeam: () -> Unit,
     onNavigatePayments: () -> Unit,
     onNavigateQuotations: () -> Unit = onOpenNewQuote,
+    onNavigateAdminDashboard: () -> Unit = {},
     onNavigateCompanySettings: () -> Unit = {},
     onNavigateOrgRouting: () -> Unit = {},
     onOpenMenuPanel: () -> Unit = {},
@@ -71,6 +74,7 @@ fun HomeScreen(
 ) {
     val member = state.myMember ?: return
     val access = member.accessLevelEnum()
+    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
 
     var selectedWindow by remember { mutableStateOf(OverviewWindow.THIS_WEEK) }
     var showWindowMenu by remember { mutableStateOf(false) }
@@ -80,8 +84,8 @@ fun HomeScreen(
     var showProjectFilterMenu by remember { mutableStateOf(false) }
     var showCleanupConfirm by remember { mutableStateOf(false) }
 
-    val canCreateQuote = state.hasPerm(AppPermission.CREATE_QUOTATIONS) || state.hasPerm(AppPermission.ISSUE_QUOTATIONS)
-    val canDeleteProject = state.isSuperAdmin
+    val canCreateQuote = uiPolicy.canManageCommercialQuotes
+    val canDeleteProject = uiPolicy.canManageProjectsLifecycle
     val memberPhotoByUid = remember(state.members) { state.members.associate { it.uid to it.photoBase64 } }
 
     val activeProjects = remember(state.projects) { state.projects.filter { !it.deleted } }
@@ -173,6 +177,16 @@ fun HomeScreen(
         buildSeriesBuckets(taskTimestamps, selectedWindow, nowMillis)
     }
 
+    val isOnline by NetworkConnectivityMonitor.isOnline.collectAsState()
+    val analyticsSeries = remember(state.projects, state.deliverables, state.payments, state.timeEntries) {
+        WorkDistributionEngine.computeAgencyAnalyticsSeries(
+            projects = state.projects,
+            deliverables = state.deliverables,
+            payments = state.payments,
+            timeEntries = state.timeEntries
+        )
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -180,6 +194,43 @@ fun HomeScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (!isOnline || state.deliverablesPendingSync) {
+            item {
+                val palette = XMaxTheme.colors
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (!isOnline) palette.butterBg else palette.skyBg,
+                    border = BorderStroke(1.dp, (if (!isOnline) palette.butterInk else palette.skyInk).copy(alpha = 0.28f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_offline_persistence_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (!isOnline) Icons.Outlined.CloudOff else Icons.Outlined.CloudSync,
+                            contentDescription = null,
+                            tint = if (!isOnline) palette.butterInk else palette.skyInk,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = if (!isOnline) {
+                                "Offline persistence active — viewing cached projects & financials"
+                            } else {
+                                "Syncing local offline updates to Firestore…"
+                            },
+                            style = XMaxType.footnoteMedium,
+                            color = palette.textPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
         // 1. Overview Section Header + Timeframe Dropdown ("This Week v")
         item {
             val palette = XMaxTheme.colors
@@ -278,7 +329,75 @@ fun HomeScreen(
             }
         }
 
-
+        item {
+            AdminOnlyContent(
+                policy = uiPolicy,
+                fallback = {
+                    if (uiPolicy.showStandardMemberFocusedHome) {
+                        StandardMemberCleanFocusCard(
+                            pendingTaskCount = myAssigned.size,
+                            departmentName = member.departmentName
+                        )
+                    }
+                }
+            ) {
+                val palette = XMaxTheme.colors
+                val isSuperEmail = uiPolicy.isSuperAdmin
+                Surface(
+                    onClick = onNavigateAdminDashboard,
+                    shape = RoundedCornerShape(20.dp),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_admin_dashboard_card")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(palette.kpiLavenderBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AdminPanelSettings,
+                                contentDescription = "Admin Dashboard",
+                                tint = palette.accentViolet,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Admin Dashboard",
+                                style = XMaxType.subheadlineSemibold,
+                                color = palette.textPrimary
+                            )
+                            Text(
+                                text = if (isSuperEmail) {
+                                    "Super Admin • Project lifecycle & cloud health"
+                                } else {
+                                    "Restricted to xdotmax@gmail.com"
+                                },
+                                style = XMaxType.caption1,
+                                color = palette.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        StatusPill(
+                            label = if (isSuperEmail) "super_admin" else "standard_member",
+                            containerColor = if (isSuperEmail) palette.mintBg else palette.surfaceMuted,
+                            contentColor = if (isSuperEmail) palette.mintInk else palette.textSecondary
+                        )
+                    }
+                }
+            }
+        }
 
         // 3. Projects Section + Dropdown ("All time v") + Segmented Pills ("Active (X)" / "Requests (Y)" / "Completed (Z)")
         item {
@@ -404,7 +523,10 @@ fun HomeScreen(
                     items(list.take(4), key = { "dash_proj_${it.id}" }) { proj ->
                         val projDelivs = state.deliverables.filter { it.projectId == proj.id }
                         val doneCount = projDelivs.count { it.statusEnum() == DeliverableStatus.APPROVED }
+                        val progressFrac = if (projDelivs.isEmpty()) 0f else (doneCount.toFloat() / projDelivs.size.toFloat()).coerceIn(0f, 1f)
+                        val progressPct = (progressFrac * 100f).roundToInt()
                         val dateMillis = proj.createdAt?.seconds?.times(1000L) ?: System.currentTimeMillis()
+                        val showFinance = state.hasPerm(AppPermission.VIEW_PAYMENTS) || state.hasPerm(AppPermission.RECORD_PAYMENTS)
                         DashboardReferenceProjectCard(
                             dateText = formatShortDate(dateMillis),
                             title = formatTitleCase(proj.title),
@@ -412,9 +534,15 @@ fun HomeScreen(
                             primaryDotColor = VioletPrimary,
                             primaryStatText = "Tasks: ${projDelivs.size}",
                             secondaryDotColor = EmeraldApproved,
-                            secondaryStatText = "Done: $doneCount",
-                            trailingBadge = if (state.hasPerm(AppPermission.VIEW_PAYMENTS) && proj.outstandingPaise > 0L) {
+                            secondaryStatText = "Done: $doneCount ($progressPct%)",
+                            trailingBadge = if (showFinance && proj.outstandingPaise > 0L) {
                                 MoneyFormatter.formatInr(proj.outstandingPaise)
+                            } else if (showFinance && proj.agreedValuePaise > 0L) {
+                                "Settled"
+                            } else null,
+                            progressFraction = progressFrac,
+                            financialSummaryLine = if (showFinance && proj.agreedValuePaise > 0L) {
+                                "Agreed ${MoneyFormatter.formatInr(proj.agreedValuePaise)} • Paid ${MoneyFormatter.formatInr(proj.paidPaise)}"
                             } else null,
                             canEdit = canCreateQuote,
                             canDelete = canDeleteProject,
@@ -585,6 +713,16 @@ fun HomeScreen(
             }
         }
 
+        // 4b. Interactive Cumulative Progress & Monthly Revenue Forecast Visualizer
+        if (uiPolicy.canViewAnalyticsAndFinance) {
+            item {
+                AnalyticsVisualizer(
+                    series = analyticsSeries,
+                    title = "Progress & Revenue Forecast"
+                )
+            }
+        }
+
         // 5. Current Tracking / Recent Deliverable Activities
         item {
             SectionHeader(
@@ -691,7 +829,9 @@ private fun DashboardReferenceProjectCard(
     onClick: () -> Unit,
     onEditQuote: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    progressFraction: Float? = null,
+    financialSummaryLine: String? = null
 ) {
     val palette = XMaxTheme.colors
     var menuExpanded by remember { mutableStateOf(false) }
@@ -845,6 +985,31 @@ private fun DashboardReferenceProjectCard(
                         contentColor = palette.mintInk
                     )
                 }
+            }
+            if (progressFraction != null) {
+                val animatedProg by animateFloatAsState(
+                    targetValue = progressFraction.coerceIn(0f, 1f),
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    label = "proj_card_progress"
+                )
+                LinearProgressIndicator(
+                    progress = { animatedProg },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(999.dp)),
+                    color = if (progressFraction >= 0.99f) EmeraldApproved else VioletPrimary,
+                    trackColor = palette.surfaceMuted
+                )
+            }
+            if (!financialSummaryLine.isNullOrBlank()) {
+                Text(
+                    text = financialSummaryLine,
+                    style = XMaxType.caption1Medium.tabular(),
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

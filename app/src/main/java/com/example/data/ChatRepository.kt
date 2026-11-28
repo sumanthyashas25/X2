@@ -12,6 +12,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.tasks.await
 import java.security.SecureRandom
 import java.util.UUID
@@ -34,7 +35,8 @@ data class SendMessageOptions(
     val liveLocationUntilMillis: Long = 0L,
     val eventTitle: String = "",
     val eventLocation: String = "",
-    val eventTimeMillis: Long = 0L
+    val eventTimeMillis: Long = 0L,
+    val recipientPublicKeysByUid: Map<String, String> = emptyMap()
 )
 
 data class NewStatusSubmission(
@@ -193,10 +195,9 @@ class ChatRepository(private val core: AgencyRepository) {
         val reg = sub("chat_channels").document(channelId).collection("messages")
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .limitToLast(150)
-            .addSnapshotListener { snap, err ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
                 if (err != null) {
                     handleFirestoreError(err, OperationType.LIST, "companies/${core.companyId}/chat_channels/$channelId/messages")
-                    close(err)
                     return@addSnapshotListener
                 }
                 val now = System.currentTimeMillis()
@@ -1741,5 +1742,326 @@ class ChatRepository(private val core: AgencyRepository) {
             "createdAt" to FieldValue.serverTimestamp()
         )
         sub("chatReports").document(reportId).set(payload).await()
+    }
+
+    // --- Call Signaling Methods ---
+    fun initiateCall(
+        channelId: String,
+        callType: CallType,
+        callerUid: String,
+        callerName: String,
+        participantUids: List<String>
+    ): Flow<Result<String>> = flow {
+        try {
+            val callId = "call_" + UUID.randomUUID().toString().replace("-", "").take(16)
+            val participants = (participantUids + callerUid).distinct()
+            val payload = mapOf(
+                "channelId" to channelId,
+                "callType" to callType.name,
+                "callerUid" to callerUid,
+                "callerName" to callerName.take(120),
+                "participantUids" to participants,
+                "status" to CallStatus.RINGING.name,
+                "mutedUids" to emptyList<String>(),
+                "cameraOffUids" to emptyList<String>(),
+                "durationSeconds" to 0,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            sub("calls").document(callId).set(payload).await()
+            emit(Result.success(callId))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun observeIncomingCalls(myUid: String): Flow<List<ChatCallSession>> = callbackFlow {
+        if (myUid.isBlank()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val reg = sub("calls")
+            .whereArrayContains("participantUids", myUid)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
+                if (err != null) {
+                    return@addSnapshotListener
+                }
+                val calls = snap?.documents?.mapNotNull { doc ->
+                    doc.get("createdAt", est)
+                    doc.get("updatedAt", est)
+                    doc.toObject(ChatCallSession::class.java)
+                }.orEmpty().filter {
+                    it.callerUid != myUid && it.status == CallStatus.RINGING.name
+                }
+                trySend(calls)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    fun observeActiveCallSessions(myUid: String): Flow<List<ChatCallSession>> = callbackFlow {
+        if (myUid.isBlank()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val reg = sub("calls")
+            .whereArrayContains("participantUids", myUid)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
+                if (err != null) {
+                    return@addSnapshotListener
+                }
+                val calls = snap?.documents?.mapNotNull { doc ->
+                    doc.get("createdAt", est)
+                    doc.get("updatedAt", est)
+                    doc.toObject(ChatCallSession::class.java)
+                }.orEmpty().filter {
+                    it.status == CallStatus.RINGING.name || it.status == CallStatus.CONNECTED.name
+                }
+                trySend(calls)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun startCallSession(
+        channel: ChatChannel,
+        actor: Member,
+        calleeUids: List<String>,
+        videoEnabled: Boolean = true
+    ): ChatCallSession {
+        val callId = "call_" + UUID.randomUUID().toString().replace("-", "").take(16)
+        val callees = if (calleeUids.isNotEmpty()) calleeUids else (channel.participantUids - actor.uid)
+        val allParticipants = (callees + actor.uid).distinct()
+        val session = ChatCallSession(
+            id = callId,
+            channelId = channel.id,
+            channelTitle = channel.title.take(120),
+            callType = if (videoEnabled) CallType.VIDEO.name else CallType.AUDIO.name,
+            callerUid = actor.uid,
+            callerName = actor.fullName.take(120),
+            calleeUids = callees,
+            participantUids = allParticipants,
+            status = CallStatus.RINGING.name,
+            videoEnabled = videoEnabled,
+            mutedUids = emptyList(),
+            cameraOffUids = emptyList(),
+            durationSeconds = 0
+        )
+        val payload = mapOf(
+            "channelId" to session.channelId,
+            "channelTitle" to session.channelTitle,
+            "callType" to session.callType,
+            "callerUid" to session.callerUid,
+            "callerName" to session.callerName,
+            "calleeUids" to session.calleeUids,
+            "participantUids" to session.participantUids,
+            "status" to session.status,
+            "videoEnabled" to session.videoEnabled,
+            "mutedUids" to session.mutedUids,
+            "cameraOffUids" to session.cameraOffUids,
+            "durationSeconds" to session.durationSeconds,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        sub("calls").document(callId).set(payload).await()
+        return session
+    }
+
+    suspend fun acceptCallSession(callId: String, uid: String) {
+        sub("calls").document(callId).update(
+            mapOf(
+                "status" to CallStatus.CONNECTED.name,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+    }
+
+    suspend fun endOrDeclineCallSession(callId: String, status: String) {
+        val finalStatus = if (status.uppercase() in listOf("DECLINED", "ENDED", "MISSED")) status.uppercase() else "ENDED"
+        sub("calls").document(callId).update(
+            mapOf(
+                "status" to finalStatus,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+    }
+
+    fun observeActiveCall(callId: String): Flow<ChatCallSession?> = callbackFlow {
+        if (callId.isBlank()) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+        val reg = sub("calls").document(callId)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { doc, err ->
+                if (err != null) {
+                    return@addSnapshotListener
+                }
+                if (doc != null && doc.exists()) {
+                    doc.get("createdAt", est)
+                    doc.get("updatedAt", est)
+                    trySend(doc.toObject(ChatCallSession::class.java))
+                } else {
+                    trySend(null)
+                }
+            }
+        awaitClose { reg.remove() }
+    }
+
+    fun acceptCall(callId: String): Flow<Result<Unit>> = flow {
+        try {
+            sub("calls").document(callId).update(
+                mapOf(
+                    "status" to CallStatus.CONNECTED.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun declineCall(callId: String): Flow<Result<Unit>> = flow {
+        try {
+            sub("calls").document(callId).update(
+                mapOf(
+                    "status" to CallStatus.DECLINED.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun endCall(callId: String, durationSeconds: Int): Flow<Result<Unit>> = flow {
+        try {
+            sub("calls").document(callId).update(
+                mapOf(
+                    "status" to CallStatus.ENDED.name,
+                    "durationSeconds" to durationSeconds,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun toggleCallMute(callId: String, myUid: String, isMuted: Boolean): Flow<Result<Unit>> = flow {
+        try {
+            val update = if (isMuted) {
+                mapOf(
+                    "mutedUids" to FieldValue.arrayUnion(myUid),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            } else {
+                mapOf(
+                    "mutedUids" to FieldValue.arrayRemove(myUid),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            }
+            sub("calls").document(callId).update(update).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun toggleCallCamera(callId: String, myUid: String, isCameraOff: Boolean): Flow<Result<Unit>> = flow {
+        try {
+            val update = if (isCameraOff) {
+                mapOf(
+                    "cameraOffUids" to FieldValue.arrayUnion(myUid),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            } else {
+                mapOf(
+                    "cameraOffUids" to FieldValue.arrayRemove(myUid),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            }
+            sub("calls").document(callId).update(update).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    // --- Real-time Ephemeral & Presence Methods (Firestore-backed) ---
+    fun setEphemeralTyping(channelId: String, uid: String, isTyping: Boolean, isRecording: Boolean): Flow<Result<Unit>> = flow {
+        if (channelId.isBlank() || uid.isBlank()) return@flow
+        try {
+            val payload = mapOf(
+                "isTyping" to isTyping,
+                "isRecording" to isRecording,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            sub("chat_channels").document(channelId).collection("ephemeral").document(uid).set(payload).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun observeChannelEphemeral(channelId: String): Flow<Map<String, EphemeralChannelState>> = callbackFlow {
+        if (channelId.isBlank()) {
+            trySend(emptyMap())
+            close()
+            return@callbackFlow
+        }
+        val reg = sub("chat_channels").document(channelId).collection("ephemeral")
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
+                if (err != null) {
+                    return@addSnapshotListener
+                }
+                val map = mutableMapOf<String, EphemeralChannelState>()
+                snap?.documents?.forEach { doc ->
+                    val state = doc.toObject(EphemeralChannelState::class.java)
+                    if (state != null) {
+                        map[doc.id] = state
+                    }
+                }
+                trySend(map)
+            }
+        awaitClose { reg.remove() }
+    }
+
+    fun setUserPresence(uid: String, isOnline: Boolean, statusMessage: String = ""): Flow<Result<Unit>> = flow {
+        if (uid.isBlank()) return@flow
+        try {
+            val payload = mapOf(
+                "uid" to uid,
+                "isOnline" to isOnline,
+                "statusMessage" to statusMessage.take(120),
+                "lastSeenAtMillis" to System.currentTimeMillis(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            sub("presence").document(uid).set(payload).await()
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }
+
+    fun observeAllPresence(): Flow<Map<String, UserPresence>> = callbackFlow {
+        val reg = sub("presence")
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
+                if (err != null) {
+                    return@addSnapshotListener
+                }
+                val map = mutableMapOf<String, UserPresence>()
+                snap?.documents?.forEach { doc ->
+                    val p = doc.toObject(UserPresence::class.java)
+                    if (p != null) {
+                        map[doc.id] = p
+                    }
+                }
+                trySend(map)
+            }
+        awaitClose { reg.remove() }
     }
 }

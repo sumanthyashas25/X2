@@ -60,7 +60,27 @@ data class WorkerHealthStatus(
     val plan: String,
     val storageProvider: String,
     val firebaseProjectId: String,
-    val firestoreDbId: String
+    val firestoreDbId: String,
+    val r2Configured: Boolean = false,
+    val supabaseConfigured: Boolean = false,
+    val fcmConfigured: Boolean = false,
+    val workerVersion: String = ""
+)
+
+data class WorkerAuthVerifyStatus(
+    val ok: Boolean,
+    val uid: String,
+    val email: String,
+    val emailVerified: Boolean,
+    val firebaseProjectId: String,
+    val firestoreDbId: String,
+    val storageProvider: String,
+    val r2Configured: Boolean = false,
+    val supabaseConfigured: Boolean = false,
+    val fcmConfigured: Boolean = false,
+    val memberStatus: String = "",
+    val memberAccessLevel: String = "",
+    val memberActive: Boolean = false
 )
 
 data class ResetChunkResult(
@@ -103,6 +123,14 @@ data class CloudStorageDeleteTarget(
     val bucket: String,
     val storagePath: String,
     val chatId: String = ""
+)
+
+data class NudgeDispatchResult(
+    val ok: Boolean,
+    val mode: String,
+    val whatsappDispatched: Boolean,
+    val emailDispatched: Boolean,
+    val note: String = ""
 )
 
 /**
@@ -276,6 +304,39 @@ object WorkerBridgeClient {
         }.getOrNull()
     }
 
+    internal fun parseHealthResponse(json: JSONObject): WorkerHealthStatus {
+        return WorkerHealthStatus(
+            ok = json.optBoolean("ok", false),
+            plan = json.optString("plan", "free"),
+            storageProvider = json.optString("storageProvider", "UNKNOWN"),
+            firebaseProjectId = json.optString("firebaseProjectId"),
+            firestoreDbId = json.optString("firestoreDbId"),
+            r2Configured = json.optBoolean("r2Configured", false),
+            supabaseConfigured = json.optBoolean("supabaseConfigured", false),
+            fcmConfigured = json.optBoolean("fcmConfigured", false),
+            workerVersion = json.optString("workerVersion", "")
+        )
+    }
+
+    internal fun parseAuthVerifyResponse(json: JSONObject): WorkerAuthVerifyStatus {
+        val memberObj = json.optJSONObject("member")
+        return WorkerAuthVerifyStatus(
+            ok = json.optBoolean("ok", false),
+            uid = json.optString("uid"),
+            email = json.optString("email"),
+            emailVerified = json.optBoolean("emailVerified", false),
+            firebaseProjectId = json.optString("firebaseProjectId"),
+            firestoreDbId = json.optString("firestoreDbId"),
+            storageProvider = json.optString("storageProvider", "UNKNOWN"),
+            r2Configured = json.optBoolean("r2Configured", false),
+            supabaseConfigured = json.optBoolean("supabaseConfigured", false),
+            fcmConfigured = json.optBoolean("fcmConfigured", false),
+            memberStatus = memberObj?.optString("status").orEmpty(),
+            memberAccessLevel = memberObj?.optString("accessLevel").orEmpty(),
+            memberActive = memberObj?.optBoolean("active", false) ?: false
+        )
+    }
+
     suspend fun checkHealth(): WorkerResult<WorkerHealthStatus> = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext WorkerResult.NotConfigured
         runCatching {
@@ -289,13 +350,7 @@ object WorkerBridgeClient {
                     return@use WorkerResult.Error("Health check failed (${resp.code})", resp.code)
                 }
                 val json = JSONObject(text)
-                val status = WorkerHealthStatus(
-                    ok = json.optBoolean("ok", false),
-                    plan = json.optString("plan", "free"),
-                    storageProvider = json.optString("storageProvider", "UNKNOWN"),
-                    firebaseProjectId = json.optString("firebaseProjectId"),
-                    firestoreDbId = json.optString("firestoreDbId")
-                )
+                val status = parseHealthResponse(json)
                 cachedStorageProvider = status.storageProvider
                 _lastHealthStatus.value = status
                 WorkerResult.Success(status)
@@ -305,9 +360,43 @@ object WorkerBridgeClient {
         }
     }
 
+    suspend fun verifyAuth(companyId: String = "xmax"): WorkerResult<WorkerAuthVerifyStatus> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext WorkerResult.NotConfigured
+        val idToken = fetchFirebaseIdToken(forceRefresh = false)
+            ?: return@withContext WorkerResult.Error("Sign in required to verify Worker auth.")
+        val parsedUrl = baseUrl().toHttpUrlOrNull()?.newBuilder()
+            ?.addPathSegments("v1/auth/verify")
+            ?.addQueryParameter("companyId", companyId)
+            ?.build()
+            ?.toString()
+            ?: return@withContext WorkerResult.NotConfigured
+
+        runCatching {
+            val req = Request.Builder()
+                .url(parsedUrl)
+                .header("Authorization", "Bearer $idToken")
+                .get()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val msg = runCatching { JSONObject(text).optString("error") }.getOrNull()
+                        .orEmpty().ifBlank { "Auth verify failed (${resp.code})" }
+                    return@use WorkerResult.Error(msg, resp.code)
+                }
+                val status = parseAuthVerifyResponse(JSONObject(text))
+                cachedStorageProvider = status.storageProvider
+                WorkerResult.Success(status)
+            }
+        }.getOrElse { err ->
+            WorkerResult.Error(err.message ?: "Worker auth verification error")
+        }
+    }
+
     private fun shouldPreferSignedSupabase(explicitHint: String = ""): Boolean {
         if (explicitHint == "SUPABASE_STORAGE") return true
         val sp = cachedStorageProvider
+        if (sp == "CLOUDFLARE_R2") return false
         return sp.isBlank() || sp.contains("SUPABASE")
     }
 
@@ -1093,6 +1182,52 @@ object WorkerBridgeClient {
                 nextCursorDocId = json.optString("nextCursorDocId", ""),
                 deletedDocsInChunk = json.optInt("deletedDocsInChunk", 0),
                 deletedStorageInChunk = json.optInt("deletedStorageInChunk", 0)
+            )
+        }
+    }
+
+    fun buildPublicPortalUrl(token: String): String {
+        val base = baseUrl()
+        return if (base.isNotBlank()) "$base/portal/$token" else "https://portal.xmax.agency/portal/$token"
+    }
+
+    suspend fun dispatchPaymentNudge(
+        companyId: String,
+        projectId: String,
+        clientName: String,
+        phone: String,
+        email: String,
+        amountDueFormatted: String,
+        dueLabel: String,
+        channels: String,
+        messageBody: String,
+        portalUrl: String = "",
+        dispatchKey: String = ""
+    ): WorkerResult<NudgeDispatchResult> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext WorkerResult.NotConfigured
+        val idToken = fetchFirebaseIdToken()
+            ?: return@withContext WorkerResult.Error("Sign in required.")
+
+        val payload = JSONObject().apply {
+            put("companyId", companyId)
+            put("projectId", projectId)
+            put("clientName", clientName.take(120))
+            put("phone", phone.take(40))
+            put("email", email.take(160))
+            put("amountDueFormatted", amountDueFormatted.take(40))
+            put("dueLabel", dueLabel.take(80))
+            put("channels", channels)
+            put("messageBody", messageBody.take(1000))
+            put("portalUrl", portalUrl.take(300))
+            put("dispatchKey", dispatchKey.take(120))
+        }
+        executeWorkerPost("/v1/nudges/dispatch", idToken, payload) { json ->
+            NudgeDispatchResult(
+                ok = json.optBoolean("ok", true),
+                mode = json.optString("mode", "LINK_FALLBACK"),
+                whatsappDispatched = json.optBoolean("whatsappDispatched", false),
+                emailDispatched = json.optBoolean("emailDispatched", false),
+                note = json.optString("note", "")
             )
         }
     }

@@ -14,8 +14,13 @@ object CatalogueSeedData {
     const val DEFAULT_COMPANY_ID = "xmax"
     const val DEFAULT_SUPER_ADMIN_EMAIL = "xdotmax@gmail.com"
     val BOOTSTRAP_SUPER_ADMIN_EMAILS = setOf(
-        DEFAULT_SUPER_ADMIN_EMAIL
+        "xdotmax@gmail.com"
     )
+
+    fun isSuperAdminEmail(email: String?): Boolean {
+        if (email.isNullOrBlank()) return false
+        return email.trim().equals(DEFAULT_SUPER_ADMIN_EMAIL, ignoreCase = true)
+    }
 
     fun isBootstrapEmail(email: String?): Boolean {
         if (email.isNullOrBlank()) return false

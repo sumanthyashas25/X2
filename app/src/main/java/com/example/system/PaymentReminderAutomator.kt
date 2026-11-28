@@ -1,9 +1,15 @@
 package com.example.system
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import com.example.chat.remote.WorkerBridgeClient
+import com.example.chat.remote.WorkerResult
 import com.example.data.AgencyRepository
+import com.example.data.CommercialWorkflowRepository
 import com.example.domain.MoneyFormatter
 import com.example.model.*
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,6 +27,13 @@ data class PaymentReminderAlert(
     val body: String,
     val entityId: String,
     val amountPaise: Long
+)
+
+data class NudgeDispatchOutcome(
+    val mode: String,
+    val statusLabel: String,
+    val messageBody: String,
+    val launchIntent: Intent?
 )
 
 object PaymentReminderAutomator {
@@ -128,6 +141,118 @@ object PaymentReminderAutomator {
         return alerts.distinctBy { it.uniqueKey }
     }
 
+    fun composeClientNudgeMessage(
+        project: Project,
+        client: Client?,
+        amountDuePaise: Long,
+        portalUrl: String = ""
+    ): String {
+        val contact = client?.contactPerson?.ifBlank { client.companyName } ?: project.clientCompanyName.ifBlank { "there" }
+        val amountStr = MoneyFormatter.formatInr(amountDuePaise.coerceAtLeast(0L))
+        return buildString {
+            append("Hi $contact, friendly reminder from X.MAX regarding project \"${project.title}\". ")
+            append("An outstanding balance of $amountStr is due. ")
+            if (portalUrl.isNotBlank()) {
+                append("Inspect deliverables & GST invoice here: $portalUrl")
+            } else {
+                append("Please confirm once settled so we can share the updated receipt.")
+            }
+        }
+    }
+
+    fun buildWhatsAppNudgeIntent(phone: String, message: String): Intent {
+        val digits = phone.filter { it.isDigit() }
+        val encoded = URLEncoder.encode(message, "UTF-8")
+        val uri = if (digits.isNotBlank()) {
+            Uri.parse("https://wa.me/$digits?text=$encoded")
+        } else {
+            Uri.parse("https://wa.me/?text=$encoded")
+        }
+        return Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun buildEmailNudgeIntent(email: String, subject: String, body: String): Intent {
+        val uri = Uri.parse(
+            "mailto:${Uri.encode(email)}?subject=${Uri.encode(subject)}&body=${Uri.encode(body)}"
+        )
+        return Intent(Intent.ACTION_SENDTO, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    suspend fun dispatchClientNudge(
+        context: Context,
+        coreRepo: AgencyRepository,
+        commercialRepo: CommercialWorkflowRepository,
+        project: Project,
+        client: Client?,
+        channel: String, // WHATSAPP, EMAIL, WHATSAPP_AND_EMAIL
+        actor: Member,
+        portalUrl: String = ""
+    ): NudgeDispatchOutcome {
+        val outstanding = (project.agreedValuePaise - project.paidPaise).coerceAtLeast(0L)
+        val messageBody = composeClientNudgeMessage(project, client, outstanding, portalUrl)
+        val phone = client?.phone.orEmpty()
+        val email = client?.email.orEmpty()
+        val amountFormatted = MoneyFormatter.formatInr(outstanding)
+
+        val workerRes = WorkerBridgeClient.dispatchPaymentNudge(
+            companyId = coreRepo.companyId,
+            projectId = project.id,
+            clientName = client?.companyName ?: project.clientCompanyName,
+            phone = phone,
+            email = email,
+            amountDueFormatted = amountFormatted,
+            dueLabel = project.statusEnum().label,
+            channels = channel,
+            messageBody = messageBody,
+            portalUrl = portalUrl,
+            dispatchKey = "nudge_${project.id}_${dayStamp()}"
+        )
+
+        val (statusLabel, modeLabel) = when (workerRes) {
+            is WorkerResult.Success -> {
+                if (workerRes.data.whatsappDispatched || workerRes.data.emailDispatched) {
+                    "SENT" to "CLOUD_API"
+                } else {
+                    "LOGGED_HANDOFF" to "LINK_FALLBACK"
+                }
+            }
+            is WorkerResult.NotConfigured -> "LOGGED_HANDOFF" to "DEVICE_INTENT"
+            is WorkerResult.RateLimited -> "RATE_LIMITED" to "RETRY"
+            is WorkerResult.Error -> "LOGGED_HANDOFF" to "DEVICE_INTENT"
+        }
+
+        commercialRepo.logPaymentNudge(
+            project = project,
+            quotationId = project.approvedQuoteId,
+            channel = channel,
+            recipient = listOfNotNull(phone.takeIf { it.isNotBlank() }, email.takeIf { it.isNotBlank() }).joinToString(" / "),
+            amountDuePaise = outstanding,
+            status = statusLabel,
+            summary = messageBody.take(280),
+            actor = actor
+        )
+
+        val launchIntent = when {
+            channel == "EMAIL" -> buildEmailNudgeIntent(
+                email = email,
+                subject = "Payment Reminder: ${project.title} ($amountFormatted)",
+                body = messageBody
+            )
+            else -> buildWhatsAppNudgeIntent(phone, messageBody)
+        }
+
+        return NudgeDispatchOutcome(
+            mode = modeLabel,
+            statusLabel = statusLabel,
+            messageBody = messageBody,
+            launchIntent = launchIntent
+        )
+    }
+
     fun wasDispatchedToday(context: Context, uid: String, uniqueKey: String, nowMillis: Long = System.currentTimeMillis()): Boolean {
         if (uid.isBlank()) return true
         val prefKey = "sent_${uid}_${uniqueKey}_${dayStamp(nowMillis)}"
@@ -192,3 +317,4 @@ object PaymentReminderAutomator {
         return dispatched
     }
 }
+

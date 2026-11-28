@@ -8,6 +8,7 @@ import com.example.data.AuthSessionStatus
 import com.example.data.AuthenticationRepository
 import com.example.data.FirestoreInitializationService
 import com.example.data.OperationType
+import com.example.data.VerifiedUserRole
 import com.example.data.handleFirestoreError
 import com.example.model.User
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -18,7 +19,11 @@ import kotlinx.coroutines.flow.*
 sealed interface UserProfileState {
     data object Unauthenticated : UserProfileState
     data object Loading : UserProfileState
-    data class Loaded(val user: User?, val email: String?) : UserProfileState
+    data class Loaded(
+        val user: User?,
+        val email: String?,
+        val verifiedRole: VerifiedUserRole = VerifiedUserRole()
+    ) : UserProfileState
     data class Error(val message: String) : UserProfileState
 }
 
@@ -34,6 +39,13 @@ class UserViewModel(application: Application) : AndroidViewModel(application) {
     private val firestoreInitService = FirestoreInitializationService.getInstance(application)
 
     private val _retryTrigger = MutableStateFlow(0)
+
+    val verifiedUserRole: StateFlow<VerifiedUserRole> = authRepository.verifiedUserRoleFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = authRepository.currentVerifiedUserRole()
+        )
 
     fun retryProfileSync() {
         _retryTrigger.value += 1
@@ -85,7 +97,8 @@ class UserViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                     UserProfileState.Loaded(
                                         user = domainUser,
-                                        email = session.user.email
+                                        email = session.user.email,
+                                        verifiedRole = AuthenticationRepository.verifyUserRole(session.user)
                                     ) as UserProfileState
                                 }.catch { err ->
                                     if (err is CancellationException) throw err

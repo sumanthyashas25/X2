@@ -32,9 +32,15 @@ service cloud.firestore {
       return ts is timestamp && ts <= request.time;
     }
 
-    function isBootstrappedSuperAdmin() {
+    function hasVerifiedEmail() {
       return isSignedIn() &&
              ('email' in request.auth.token) &&
+             ('email_verified' in request.auth.token) &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return hasVerifiedEmail() &&
              request.auth.token.email.matches('(?i)^xdotmax@gmail\\.com$');
     }
 
@@ -104,6 +110,11 @@ service cloud.firestore {
       return meExists(companyId) && mHas(companyId, fetchMe(companyId), perm);
     }
 
+    function hasStaffGrant(companyId, m, perm) {
+      return m.delegatedGrants.get(perm, {}).get('allowed', false) == true &&
+             grantorCanDelegate(companyId, m.delegatedGrants[perm].get('grantedByUid', ''), perm);
+    }
+
     function hasCommercialRead(companyId) {
       return meExists(companyId) && hasCommercialReadFor(companyId, fetchMe(companyId));
     }
@@ -112,13 +123,15 @@ service cloud.firestore {
       return isApproved(m) && (
         m.accessLevel == 'SUPER_ADMIN' ||
         m.accessLevel == 'ADMIN' ||
-        hasDelegated(companyId, m, 'MANAGE_CLIENTS') ||
-        hasDelegated(companyId, m, 'CREATE_REQUESTS') ||
-        hasDelegated(companyId, m, 'CREATE_QUOTATIONS') ||
-        hasDelegated(companyId, m, 'ISSUE_QUOTATIONS') ||
-        hasDelegated(companyId, m, 'VIEW_ALL_CLIENTS_AND_QUOTES') ||
-        hasDelegated(companyId, m, 'VIEW_PAYMENTS') ||
-        hasDelegated(companyId, m, 'RECORD_PAYMENTS')
+        (m.accessLevel == 'STAFF' && (
+          hasStaffGrant(companyId, m, 'MANAGE_CLIENTS') ||
+          hasStaffGrant(companyId, m, 'CREATE_REQUESTS') ||
+          hasStaffGrant(companyId, m, 'CREATE_QUOTATIONS') ||
+          hasStaffGrant(companyId, m, 'ISSUE_QUOTATIONS') ||
+          hasStaffGrant(companyId, m, 'VIEW_ALL_CLIENTS_AND_QUOTES') ||
+          hasStaffGrant(companyId, m, 'VIEW_PAYMENTS') ||
+          hasStaffGrant(companyId, m, 'RECORD_PAYMENTS')
+        ))
       );
     }
 
@@ -130,29 +143,27 @@ service cloud.firestore {
       return isApproved(m) && (
         m.accessLevel == 'SUPER_ADMIN' ||
         m.accessLevel == 'ADMIN' ||
-        hasDelegated(companyId, m, 'ASSIGN_WORK') ||
-        hasDelegated(companyId, m, 'APPROVE_DELIVERABLES') ||
-        hasDelegated(companyId, m, 'VIEW_PAYMENTS') ||
-        hasDelegated(companyId, m, 'RECORD_PAYMENTS')
+        (m.accessLevel == 'STAFF' && (
+          hasStaffGrant(companyId, m, 'ASSIGN_WORK') ||
+          hasStaffGrant(companyId, m, 'APPROVE_DELIVERABLES') ||
+          hasStaffGrant(companyId, m, 'VIEW_PAYMENTS') ||
+          hasStaffGrant(companyId, m, 'RECORD_PAYMENTS')
+        ))
       );
     }
 
-    function canDelegateKey(adminData, diffKeys, key) {
-      return !(key in diffKeys) ||
-             !(key in incoming().delegatedGrants) ||
+    function canDelegateKey(adminData, staffExisting, key) {
+      return !(key in incoming().delegatedGrants) ||
+             incoming().delegatedGrants[key] == staffExisting.delegatedGrants.get(key, null) ||
              (
-               key in adminData.permissions &&
-               adminData.permissions[key].allowed == true &&
-               adminData.permissions[key].canDelegate == true &&
-               incoming().delegatedGrants[key] is map &&
-               incoming().delegatedGrants[key].allowed == true &&
-               incoming().delegatedGrants[key].grantedByUid == request.auth.uid
+               adminData.permissions.get(key, {}) == {'allowed': true, 'canDelegate': true} &&
+               incoming().delegatedGrants[key].get('allowed', false) == true &&
+               incoming().delegatedGrants[key].get('grantedByUid', '') == request.auth.uid
              );
     }
 
     function canAdminDelegate(companyId, staffExisting) {
       let adminData = fetchMe(companyId);
-      let diffKeys = incoming().delegatedGrants.diff(staffExisting.delegatedGrants).affectedKeys();
       return isAdminData(adminData) &&
              staffExisting.accessLevel == 'STAFF' &&
              staffExisting.status == 'APPROVED' &&
@@ -162,18 +173,18 @@ service cloud.firestore {
                'VIEW_ALL_CLIENTS_AND_QUOTES', 'EDIT_CATALOGUE_PRICES', 'OVERRIDE_QUOTE_PRICE',
                'APPLY_DISCOUNTS', 'VIEW_PAYMENTS', 'RECORD_PAYMENTS', 'ASSIGN_WORK', 'APPROVE_DELIVERABLES'
              ]) &&
-             canDelegateKey(adminData, diffKeys, 'MANAGE_CLIENTS') &&
-             canDelegateKey(adminData, diffKeys, 'CREATE_REQUESTS') &&
-             canDelegateKey(adminData, diffKeys, 'CREATE_QUOTATIONS') &&
-             canDelegateKey(adminData, diffKeys, 'ISSUE_QUOTATIONS') &&
-             canDelegateKey(adminData, diffKeys, 'VIEW_ALL_CLIENTS_AND_QUOTES') &&
-             canDelegateKey(adminData, diffKeys, 'EDIT_CATALOGUE_PRICES') &&
-             canDelegateKey(adminData, diffKeys, 'OVERRIDE_QUOTE_PRICE') &&
-             canDelegateKey(adminData, diffKeys, 'APPLY_DISCOUNTS') &&
-             canDelegateKey(adminData, diffKeys, 'VIEW_PAYMENTS') &&
-             canDelegateKey(adminData, diffKeys, 'RECORD_PAYMENTS') &&
-             canDelegateKey(adminData, diffKeys, 'ASSIGN_WORK') &&
-             canDelegateKey(adminData, diffKeys, 'APPROVE_DELIVERABLES');
+             canDelegateKey(adminData, staffExisting, 'MANAGE_CLIENTS') &&
+             canDelegateKey(adminData, staffExisting, 'CREATE_REQUESTS') &&
+             canDelegateKey(adminData, staffExisting, 'CREATE_QUOTATIONS') &&
+             canDelegateKey(adminData, staffExisting, 'ISSUE_QUOTATIONS') &&
+             canDelegateKey(adminData, staffExisting, 'VIEW_ALL_CLIENTS_AND_QUOTES') &&
+             canDelegateKey(adminData, staffExisting, 'EDIT_CATALOGUE_PRICES') &&
+             canDelegateKey(adminData, staffExisting, 'OVERRIDE_QUOTE_PRICE') &&
+             canDelegateKey(adminData, staffExisting, 'APPLY_DISCOUNTS') &&
+             canDelegateKey(adminData, staffExisting, 'VIEW_PAYMENTS') &&
+             canDelegateKey(adminData, staffExisting, 'RECORD_PAYMENTS') &&
+             canDelegateKey(adminData, staffExisting, 'ASSIGN_WORK') &&
+             canDelegateKey(adminData, staffExisting, 'APPROVE_DELIVERABLES');
     }
 
     // --- Validation Helpers ---
@@ -214,6 +225,9 @@ service cloud.firestore {
              (!('photoUpdatedAtMillis' in data) || (data.photoUpdatedAtMillis is int && data.photoUpdatedAtMillis >= 0)) &&
              (!('messagingSuspended' in data) || data.messagingSuspended is bool) &&
              (!('lastActiveAtMillis' in data) || (data.lastActiveAtMillis is int && data.lastActiveAtMillis >= 0)) &&
+             (!('online' in data) || data.online is bool) &&
+             (!('availabilityStatus' in data) || (data.availabilityStatus is string && data.availabilityStatus.size() <= 40)) &&
+             (!('e2eePublicKey' in data) || (data.e2eePublicKey is string && data.e2eePublicKey.size() <= 512)) &&
              data.accessLevel in ['SUPER_ADMIN', 'ADMIN', 'STAFF'] &&
              data.status in ['PENDING', 'APPROVED', 'DECLINED', 'SUSPENDED'] &&
              data.active is bool &&
@@ -473,7 +487,65 @@ service cloud.firestore {
              isValidTimestamp(data.updatedAt);
     }
 
+    function isValidCall(data) {
+      return data.channelId is string && data.channelId.size() >= 1 && data.channelId.size() <= 128 &&
+             (!('channelTitle' in data) || (data.channelTitle is string && data.channelTitle.size() <= 160)) &&
+             data.callType in ['AUDIO', 'VIDEO'] &&
+             data.callerUid is string && data.callerUid.size() >= 1 && data.callerUid.size() <= 128 &&
+             data.callerName is string && data.callerName.size() >= 1 && data.callerName.size() <= 120 &&
+             (!('calleeUids' in data) || (data.calleeUids is list && data.calleeUids.size() <= 50)) &&
+             data.participantUids is list && data.participantUids.size() >= 1 && data.participantUids.size() <= 50 &&
+             data.status in ['RINGING', 'CONNECTED', 'DECLINED', 'ENDED', 'MISSED'] &&
+             (!('videoEnabled' in data) || data.videoEnabled is bool) &&
+             data.mutedUids is list && data.mutedUids.size() <= 50 &&
+             data.cameraOffUids is list && data.cameraOffUids.size() <= 50 &&
+             data.durationSeconds is int && data.durationSeconds >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTimeEntry(data) {
+      return data.projectId is string && data.projectId.size() >= 1 && data.projectId.size() <= 128 &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 1440 &&
+             data.billable is bool &&
+             (!('hourlyRatePaise' in data) || (data.hourlyRatePaise is int && data.hourlyRatePaise >= 0)) &&
+             data.workDateMillis is int && data.workDateMillis > 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPortalLink(data) {
+      return data.token is string && data.token.size() >= 12 && data.token.size() <= 128 &&
+             data.projectId is string && data.projectId.size() >= 1 && data.projectId.size() <= 128 &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.revoked is bool &&
+             data.expiresAtMillis is int && data.expiresAtMillis > 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
     // --- Collection Rules ---
+    match /portal_tokens/{token} {
+      allow get, list: if false;
+      allow create: if isValidId(token) &&
+                       incoming().token == token &&
+                       incoming().revoked == false &&
+                       incoming().companyId is string &&
+                       isValidId(incoming().companyId) &&
+                       hasCommercialRead(incoming().companyId) &&
+                       incoming().expiresAtMillis is int && incoming().expiresAtMillis > 0;
+      allow update: if isValidId(token) &&
+                       existing().companyId is string &&
+                       hasCommercialRead(existing().companyId) &&
+                       incoming().companyId == existing().companyId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['revoked', 'updatedAt']);
+      allow delete: if isValidId(token) &&
+                       existing().companyId is string &&
+                       meExists(existing().companyId) &&
+                       isSuper(fetchMe(existing().companyId));
+    }
+
     match /companies/{companyId} {
       allow get: if isValidId(companyId) && (isBootstrappedSuperAdmin() || (meExists(companyId) && isApproved(fetchMe(companyId))));
       allow create: if isValidId(companyId) &&
@@ -519,12 +591,25 @@ service cloud.firestore {
                          incoming().createdAt == existing().createdAt && (
                            (
                              request.auth.uid == uid &&
-                             incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'photoBase64', 'photoUrl', 'photoUpdatedAtMillis', 'lastActiveAtMillis', 'updatedAt'])
+                             isApproved(existing()) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'fullName', 'photoBase64', 'photoUrl', 'photoUpdatedAtMillis',
+                               'lastActiveAtMillis', 'availabilityStatus', 'online', 'e2eePublicKey', 'updatedAt'
+                             ])
                            ) ||
-                           (isBootstrappedSuperAdmin() && request.auth.uid == uid && incoming().accessLevel == 'SUPER_ADMIN' && incoming().status == 'APPROVED') ||
+                           (
+                             request.auth.uid == uid &&
+                             existing().status in ['PENDING', 'DECLINED'] &&
+                             hasVerifiedEmail() &&
+                             exists(/databases/$(database)/documents/companies/$(companyId)/invitations/$(request.auth.token.email.lower())) &&
+                             invMatchesMember(companyId)
+                           ) ||
+                           (isBootstrappedSuperAdmin() && request.auth.uid == uid && incoming().accessLevel == 'SUPER_ADMIN' && incoming().status == 'APPROVED' && incoming().active == true) ||
                            (meExists(companyId) && isSuper(fetchMe(companyId))) ||
                            (
                              incoming().diff(existing()).affectedKeys().hasOnly(['delegatedGrants', 'updatedAt']) &&
+                             existing().accessLevel == 'STAFF' &&
+                             existing().status == 'APPROVED' &&
                              meExists(companyId) &&
                              canAdminDelegate(companyId, existing())
                            )
@@ -808,6 +893,18 @@ service cloud.firestore {
                            );
           allow delete: if isValidId(companyId) && isValidId(channelId) && isValidId(messageId) && meExists(companyId) && isSuper(fetchMe(companyId));
         }
+
+        match /ephemeral/{uid} {
+          allow get, list: if isValidId(companyId) && isValidId(channelId) &&
+                              meExists(companyId) && isApproved(fetchMe(companyId));
+          allow create, update: if isValidId(companyId) && isValidId(channelId) && isValidId(uid) &&
+                                   meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                                   request.auth.uid == uid &&
+                                   isValidTimestamp(incoming().updatedAt);
+          allow delete: if isValidId(companyId) && isValidId(channelId) && isValidId(uid) &&
+                           meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                           request.auth.uid == uid;
+        }
       }
 
       function canReadStatusDoc(d) {
@@ -1037,6 +1134,91 @@ service cloud.firestore {
                          meExists(companyId) && isApproved(fetchMe(companyId)) &&
                          existing().ownerUid == request.auth.uid;
       }
+
+      match /presence/{uid} {
+        allow get, list: if isValidId(companyId) && meExists(companyId) && isApproved(fetchMe(companyId));
+        allow create, update: if isValidId(companyId) && isValidId(uid) &&
+                                 meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                                 request.auth.uid == uid &&
+                                 incoming().uid == uid &&
+                                 isValidTimestamp(incoming().updatedAt);
+        allow delete: if isValidId(companyId) && isValidId(uid) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         request.auth.uid == uid;
+      }
+
+      match /calls/{callId} {
+        allow get: if isValidId(companyId) && isValidId(callId) &&
+                      meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                      (resource == null || request.auth.uid in existing().participantUids || existing().callerUid == request.auth.uid || isSuper(fetchMe(companyId)));
+        allow list: if isValidId(companyId) &&
+                       meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                       (request.auth.uid in resource.data.participantUids || resource.data.callerUid == request.auth.uid || isSuper(fetchMe(companyId)));
+        allow create: if isValidId(companyId) && isValidId(callId) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         isValidCall(incoming()) &&
+                         incoming().callerUid == request.auth.uid &&
+                         request.auth.uid in incoming().participantUids;
+        allow update: if isValidId(companyId) && isValidId(callId) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         isValidCall(incoming()) &&
+                         incoming().channelId == existing().channelId &&
+                         incoming().callerUid == existing().callerUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         (request.auth.uid in existing().participantUids || existing().callerUid == request.auth.uid);
+        allow delete: if isValidId(companyId) && isValidId(callId) &&
+                         meExists(companyId) &&
+                         (isSuper(fetchMe(companyId)) || (isApproved(fetchMe(companyId)) && existing().callerUid == request.auth.uid));
+      }
+
+      match /time_entries/{entryId} {
+        allow get: if isValidId(companyId) && isValidId(entryId) &&
+                      meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                      (resource == null || existing().uid == request.auth.uid || hasProjectReadFor(companyId, fetchMe(companyId)));
+        allow list: if isValidId(companyId) &&
+                       meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                       (resource.data.uid == request.auth.uid || hasProjectReadFor(companyId, fetchMe(companyId)));
+        allow create: if isValidId(companyId) && isValidId(entryId) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         isValidTimeEntry(incoming()) &&
+                         incoming().uid == request.auth.uid;
+        allow update: if isValidId(companyId) && isValidId(entryId) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         isValidTimeEntry(incoming()) &&
+                         incoming().uid == existing().uid &&
+                         incoming().createdAt == existing().createdAt &&
+                         (existing().uid == request.auth.uid || isSuper(fetchMe(companyId)));
+        allow delete: if isValidId(companyId) && isValidId(entryId) &&
+                         meExists(companyId) && isApproved(fetchMe(companyId)) &&
+                         (existing().uid == request.auth.uid || isSuper(fetchMe(companyId)));
+      }
+
+      match /client_portal_links/{token} {
+        allow get, list: if isValidId(companyId) && hasCommercialRead(companyId);
+        allow create: if isValidId(companyId) && isValidId(token) &&
+                         hasCommercialRead(companyId) &&
+                         isValidPortalLink(incoming()) &&
+                         incoming().token == token &&
+                         incoming().createdByUid == request.auth.uid;
+        allow update: if isValidId(companyId) && isValidId(token) &&
+                         hasCommercialRead(companyId) &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['revoked', 'updatedAt']);
+        allow delete: if isValidId(companyId) && isValidId(token) &&
+                         meExists(companyId) && isSuper(fetchMe(companyId));
+      }
+
+      match /nudge_logs/{logId} {
+        allow get, list: if isValidId(companyId) && hasCommercialRead(companyId);
+        allow create: if isValidId(companyId) && isValidId(logId) &&
+                         hasCommercialRead(companyId) &&
+                         incoming().sentByUid == request.auth.uid &&
+                         incoming().amountDuePaise is int && incoming().amountDuePaise >= 0 &&
+                         isValidTimestamp(incoming().createdAt);
+        allow delete: if isValidId(companyId) && isValidId(logId) &&
+                         meExists(companyId) && isSuper(fetchMe(companyId));
+      }
     }
 
     // --- Single-Fetch Action Helpers (keep AST < 250 expressions) ---
@@ -1052,6 +1234,7 @@ service cloud.firestore {
       let inv = get(/databases/$(database)/documents/companies/$(companyId)/invitations/$(request.auth.token.email.lower())).data;
       return inv.status == 'PENDING' &&
              incoming().status == 'APPROVED' &&
+             incoming().active == true &&
              incoming().accessLevel == inv.accessLevel &&
              incoming().departmentId == inv.departmentId &&
              incoming().jobRoleId == inv.jobRoleId &&
@@ -1061,12 +1244,11 @@ service cloud.firestore {
     }
 
     function canCreateMember(companyId, uid) {
-      let hasVerifiedEmail = ('email' in request.auth.token) && ('email_verified' in request.auth.token) && request.auth.token.email_verified == true;
-      return (isBootstrappedSuperAdmin() && request.auth.uid == uid && incoming().accessLevel == 'SUPER_ADMIN' && incoming().status == 'APPROVED') ||
+      return (isBootstrappedSuperAdmin() && request.auth.uid == uid && incoming().accessLevel == 'SUPER_ADMIN' && incoming().status == 'APPROVED' && incoming().active == true) ||
              (meExists(companyId) && isSuper(fetchMe(companyId))) ||
              (
                request.auth.uid == uid &&
-               hasVerifiedEmail &&
+               hasVerifiedEmail() &&
                exists(/databases/$(database)/documents/companies/$(companyId)/invitations/$(request.auth.token.email.lower())) &&
                invMatchesMember(companyId)
              ) ||

@@ -4,6 +4,9 @@
         name="quotations"
         path="quotations/" />
     <files-path
+        name="invoices"
+        path="invoices/" />
+    <files-path
         name="chat_uploads"
         path="chat_uploads/" />
     <cache-path

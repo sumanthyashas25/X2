@@ -7,13 +7,18 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.example.BuildConfig
+import com.example.data.AgencyRepository
 import com.example.data.FirebaseStartup
+import com.google.firebase.FirebaseApp
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,6 +99,17 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         }.getOrNull()
     }
 
+    private fun resolveFirestore(context: Context? = null): FirebaseFirestore? {
+        val app = runCatching { FirebaseApp.getInstance() }.getOrNull() ?: return null
+        val dbId = runCatching {
+            context?.getString(com.example.R.string.firestore_database_id)?.trim()
+        }.getOrNull().orEmpty().ifBlank {
+            AgencyRepository.TARGET_FIRESTORE_DATABASE_ID
+        }
+        return runCatching { FirebaseFirestore.getInstance(app, dbId) }
+            .getOrElse { runCatching { FirebaseFirestore.getInstance(dbId) }.getOrNull() }
+    }
+
     private fun rootRef(companyId: String, context: Context? = null): DatabaseReference? {
         val safeCompany = companyId.trim().ifBlank { "xmax" }
         return resolveDb(context)?.reference?.child("companies")?.child(safeCompany)
@@ -149,6 +165,23 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         currentAvailability = availability
         if (uid.isBlank()) return
         val cid = companyId.trim().ifBlank { currentCompanyId }
+        val isOnline = availability != MemberAvailability.AWAY
+        val firestore = resolveFirestore(context)
+        if (firestore != null) {
+            scope.launch {
+                runCatching {
+                    val payload = mapOf(
+                        "uid" to uid,
+                        "isOnline" to isOnline,
+                        "statusMessage" to availability.label,
+                        "lastSeenAtMillis" to System.currentTimeMillis(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    firestore.collection("companies").document(cid)
+                        .collection("presence").document(uid).set(payload)
+                }
+            }
+        }
         val ref = rootRef(cid, context)?.child("presence")?.child(uid)?.child(currentDeviceId) ?: return
         runCatching {
             ref.onDisconnect().setValue(
@@ -160,7 +193,7 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
             )
             ref.setValue(
                 mapOf(
-                    "online" to (availability != MemberAvailability.AWAY),
+                    "online" to isOnline,
                     "status" to availability.name,
                     "lastSeen" to ServerValue.TIMESTAMP
                 )
@@ -170,6 +203,23 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
 
     private fun setOnline(context: Context?, companyId: String, uid: String, online: Boolean) {
         if (uid.isBlank()) return
+        val firestore = resolveFirestore(context)
+        if (firestore != null) {
+            scope.launch {
+                runCatching {
+                    val safeCompany = companyId.trim().ifBlank { "xmax" }
+                    val payload = mapOf(
+                        "uid" to uid,
+                        "isOnline" to online,
+                        "statusMessage" to currentAvailability.label,
+                        "lastSeenAtMillis" to System.currentTimeMillis(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    firestore.collection("companies").document(safeCompany)
+                        .collection("presence").document(uid).set(payload)
+                }
+            }
+        }
         val ref = rootRef(companyId, context)?.child("presence")?.child(uid)?.child(currentDeviceId) ?: return
         runCatching {
             if (online) {
@@ -200,6 +250,23 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
 
     fun setTyping(companyId: String, chatId: String, uid: String, displayName: String, isTyping: Boolean) {
         if (chatId.isBlank() || uid.isBlank()) return
+        val firestore = resolveFirestore()
+        if (firestore != null) {
+            scope.launch {
+                runCatching {
+                    val safeCompany = companyId.trim().ifBlank { "xmax" }
+                    val payload = mapOf(
+                        "isTyping" to isTyping,
+                        "isRecording" to false,
+                        "userName" to displayName.take(60),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    firestore.collection("companies").document(safeCompany)
+                        .collection("chat_channels").document(chatId)
+                        .collection("ephemeral").document(uid).set(payload)
+                }
+            }
+        }
         val ref = rootRef(companyId)?.child("typing")?.child(chatId)?.child(uid) ?: return
         typingClearJob?.cancel()
         runCatching {
@@ -224,6 +291,23 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
 
     fun setRecording(companyId: String, chatId: String, uid: String, displayName: String, isRecording: Boolean) {
         if (chatId.isBlank() || uid.isBlank()) return
+        val firestore = resolveFirestore()
+        if (firestore != null) {
+            scope.launch {
+                runCatching {
+                    val safeCompany = companyId.trim().ifBlank { "xmax" }
+                    val payload = mapOf(
+                        "isTyping" to false,
+                        "isRecording" to isRecording,
+                        "userName" to displayName.take(60),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    firestore.collection("companies").document(safeCompany)
+                        .collection("chat_channels").document(chatId)
+                        .collection("ephemeral").document(uid).set(payload)
+                }
+            }
+        }
         val ref = rootRef(companyId)?.child("recording")?.child(chatId)?.child(uid) ?: return
         runCatching {
             if (isRecording) {
@@ -286,8 +370,56 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         }
     }
 
+    fun isMemberOnlineNow(
+        member: com.example.model.Member?,
+        presence: MemberPresenceState?,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (presence?.online == true) return true
+        if (member?.availabilityStatus?.uppercase() == "ONLINE") {
+            val lastActive = member.lastActiveAtMillis
+            if (lastActive > 0L && (nowMillis - lastActive) < 5 * 60_000L) {
+                return true
+            }
+        }
+        val lastSeen = effectiveLastSeenMillis(member, presence)
+        return lastSeen > 0L && (nowMillis - lastSeen) < 5 * 60_000L
+    }
+
+    fun effectiveLastSeenMillis(member: com.example.model.Member?, presence: MemberPresenceState?): Long {
+        val rtdbSeen = presence?.lastSeenMillis ?: 0L
+        val memberSeen = member?.lastActiveAtMillis ?: 0L
+        return maxOf(rtdbSeen, memberSeen)
+    }
+
     fun observeMemberPresence(companyId: String, targetUid: String): Flow<MemberPresenceState> {
         if (targetUid.isBlank()) return flowOf(MemberPresenceState())
+        val firestore = resolveFirestore()
+        if (firestore != null) {
+            val safeCompany = companyId.trim().ifBlank { "xmax" }
+            return callbackFlow {
+                val reg = firestore.collection("companies").document(safeCompany)
+                    .collection("presence").document(targetUid)
+                    .addSnapshotListener(MetadataChanges.INCLUDE) { doc, err ->
+                        if (err != null) {
+                            trySend(MemberPresenceState(uid = targetUid))
+                            return@addSnapshotListener
+                        }
+                        if (doc != null && doc.exists()) {
+                            val online = doc.getBoolean("isOnline") == true
+                            val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
+                            val statusMsg = doc.getString("statusMessage").orEmpty()
+                            val avail = if (online) {
+                                if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
+                            } else MemberAvailability.AWAY
+                            trySend(MemberPresenceState(uid = targetUid, online = online, lastSeenMillis = lastSeen, availability = avail))
+                        } else {
+                            trySend(MemberPresenceState(uid = targetUid))
+                        }
+                    }
+                awaitClose { reg.remove() }
+            }
+        }
         val ref = rootRef(companyId)?.child("presence")?.child(targetUid)
             ?: return flowOf(MemberPresenceState(uid = targetUid))
         return callbackFlow {
@@ -306,6 +438,33 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
     }
 
     fun observeCompanyPresence(companyId: String): Flow<Map<String, MemberPresenceState>> {
+        val firestore = resolveFirestore()
+        if (firestore != null) {
+            val safeCompany = companyId.trim().ifBlank { "xmax" }
+            return callbackFlow {
+                val reg = firestore.collection("companies").document(safeCompany)
+                    .collection("presence")
+                    .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
+                        if (err != null) {
+                            trySend(emptyMap())
+                            return@addSnapshotListener
+                        }
+                        val map = mutableMapOf<String, MemberPresenceState>()
+                        snap?.documents?.forEach { doc ->
+                            val uid = doc.id
+                            val online = doc.getBoolean("isOnline") == true
+                            val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
+                            val statusMsg = doc.getString("statusMessage").orEmpty()
+                            val avail = if (online) {
+                                if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
+                            } else MemberAvailability.AWAY
+                            map[uid] = MemberPresenceState(uid = uid, online = online, lastSeenMillis = lastSeen, availability = avail)
+                        }
+                        trySend(map)
+                    }
+                awaitClose { reg.remove() }
+            }
+        }
         val ref = rootRef(companyId)?.child("presence") ?: return flowOf(emptyMap())
         return callbackFlow {
             val listener = object : ValueEventListener {
@@ -330,6 +489,33 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
 
     fun observeChatActivity(companyId: String, chatId: String, myUid: String): Flow<EphemeralChatActivity> {
         if (chatId.isBlank()) return flowOf(EphemeralChatActivity())
+        val firestore = resolveFirestore()
+        if (firestore != null) {
+            val safeCompany = companyId.trim().ifBlank { "xmax" }
+            return callbackFlow {
+                val reg = firestore.collection("companies").document(safeCompany)
+                    .collection("chat_channels").document(chatId)
+                    .collection("ephemeral")
+                    .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
+                        if (err != null) {
+                            trySend(EphemeralChatActivity())
+                            return@addSnapshotListener
+                        }
+                        val typers = mutableListOf<String>()
+                        val recorders = mutableListOf<String>()
+                        snap?.documents?.forEach { doc ->
+                            if (doc.id == myUid) return@forEach
+                            val isTyping = doc.getBoolean("isTyping") == true
+                            val isRecording = doc.getBoolean("isRecording") == true
+                            val userName = doc.getString("userName")?.ifBlank { "Member" } ?: "Member"
+                            if (isTyping) typers.add(userName)
+                            if (isRecording) recorders.add(userName)
+                        }
+                        trySend(EphemeralChatActivity(typingNames = typers, recordingNames = recorders))
+                    }
+                awaitClose { reg.remove() }
+            }
+        }
         val base = rootRef(companyId) ?: return flowOf(EphemeralChatActivity())
         val typingRef = base.child("typing").child(chatId)
         val recordingRef = base.child("recording").child(chatId)
