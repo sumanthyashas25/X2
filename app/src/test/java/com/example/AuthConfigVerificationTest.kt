@@ -25,18 +25,18 @@ class AuthConfigVerificationTest {
         val webClientId = context.getString(R.string.default_web_client_id)
         assertFalse("Web client ID must not be empty", webClientId.isBlank())
         assertFalse("Web client ID must not use dummy client ID", webClientId.contains("dummyclientid", ignoreCase = true))
-        assertEquals("894541050606-lg3alkbimc27c78i2pplisflv26otc4m.apps.googleusercontent.com", webClientId)
+        assertEquals("759433729943-qqsrk0fu3gagmq5274suobuvu5u87hbo.apps.googleusercontent.com", webClientId)
 
         val databaseId = context.getString(R.string.firestore_database_id)
-        assertEquals("ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed", databaseId)
+        assertEquals("ai-studio-android-x2-f008d1bb-6c44-4fa2-9fd3-87ddefd4d583", databaseId)
 
         val options = FirebaseApp.getInstance().options
-        assertEquals("gen-lang-client-0137668580", options.projectId)
+        assertEquals("gen-lang-client-0411475132", options.projectId)
         assertNotEquals("AIzaSyDummyKeyForInitializationCheck00", options.apiKey)
         assertTrue(options.applicationId.isNotBlank())
 
         assertEquals(
-            "https://gen-lang-client-0137668580-default-rtdb.firebaseio.com",
+            "https://gen-lang-client-0411475132-default-rtdb.asia-southeast1.firebasedatabase.app",
             com.example.chat.realtime.RtdbPresenceManager.resolveRtdbUrl(
                 configuredUrl = BuildConfig.FIREBASE_RTDB_URL,
                 activeProjectId = options.projectId,
@@ -44,7 +44,7 @@ class AuthConfigVerificationTest {
             )
         )
         assertEquals(
-            "https://gen-lang-client-0137668580-default-rtdb.firebaseio.com",
+            "https://gen-lang-client-0411475132-default-rtdb.firebaseio.com",
             com.example.chat.realtime.RtdbPresenceManager.resolveRtdbUrl(
                 configuredUrl = "https://gen-lang-client-0461366135-default-rtdb.firebaseio.com",
                 activeProjectId = options.projectId,

@@ -3,8 +3,8 @@ main = "worker.js"
 compatibility_date = "2026-01-01"
 
 [vars]
-FIREBASE_PROJECT_ID = "gen-lang-client-0137668580"
-FIRESTORE_DB_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
+FIREBASE_PROJECT_ID = "gen-lang-client-0411475132"
+FIRESTORE_DB_ID = "ai-studio-android-x2-f008d1bb-6c44-4fa2-9fd3-87ddefd4d583"
 # Leave empty for native mobile clients (prevents wildcard CORS on authenticated endpoints).
 # Add comma-separated origins only if a web dashboard calls this Worker directly.
 # "AUTO" uses Cloudflare R2 when bound, or set "SUPABASE_STORAGE" to force Supabase.

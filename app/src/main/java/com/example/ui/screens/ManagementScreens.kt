@@ -7,6 +7,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -213,7 +215,9 @@ fun QuotationsScreen(
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
-    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val uiPolicy = remember(state.verifiedEmail, state.verifiedUserRole, state.myMember, state.members) {
+        WorkspaceUiPolicy.fromState(state)
+    }
     var statusFilter by remember { mutableStateOf<QuotationStatus?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var deleteConfirmQuote by remember { mutableStateOf<Quotation?>(null) }
@@ -236,25 +240,42 @@ fun QuotationsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Quotations (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Quotations (${filtered.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                )
                 CommercialFeatureGate(policy = uiPolicy) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         if (onOpenRequirementsQuote != null) {
                             OutlinedButton(
                                 onClick = onOpenRequirementsQuote,
                                 shape = RoundedCornerShape(999.dp),
                                 border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(42.dp).testTag("quotations_from_brief_button")
-                            ) { Text("From Brief", style = XMaxType.buttonCompact, color = palette.textPrimary) }
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("quotations_from_brief_button")
+                            ) { Text("From Brief", style = XMaxType.buttonCompact, color = palette.textPrimary, maxLines = 1, softWrap = false) }
                         }
                         Button(
                             onClick = { onOpenQuote(null) },
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                            modifier = Modifier.height(42.dp)
-                        ) { Text("+ New Quote", style = XMaxType.buttonCompact) }
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                        ) { Text("+ New Quote", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false) }
                     }
                 }
             }
@@ -443,10 +464,26 @@ fun CatalogueScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Catalogue (${filtered.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Catalogue (${filtered.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                )
                 if (canEdit) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         if (onSyncOfficialCatalogue != null) {
                             OutlinedButton(
                                 onClick = {
@@ -455,12 +492,12 @@ fun CatalogueScreen(
                                 },
                                 shape = RoundedCornerShape(999.dp),
                                 border = BorderStroke(1.dp, palette.outline),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                                 modifier = Modifier
-                                    .height(40.dp)
+                                    .defaultMinSize(minHeight = 48.dp)
                                     .testTag("sync_official_catalogue_button")
                             ) {
-                                Text("Sync PDF", style = XMaxType.caption1Semibold, color = palette.textPrimary)
+                                Text("Sync PDF", style = XMaxType.caption1Semibold, color = palette.textPrimary, maxLines = 1, softWrap = false)
                             }
                         }
                         FilterChip(
@@ -474,14 +511,15 @@ fun CatalogueScreen(
                                 labelColor = palette.textPrimary
                             ),
                             border = null,
-                            label = { Text("Archived", style = XMaxType.footnoteMedium) }
+                            label = { Text("Archived", style = XMaxType.footnoteMedium, maxLines = 1, softWrap = false) }
                         )
                         Button(
                             onClick = { editing = CatalogueItem(sortOrder = state.catalogue.size + 1) },
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                            modifier = Modifier.height(40.dp)
-                        ) { Text("+ Add", style = XMaxType.buttonCompact) }
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                        ) { Text("+ Add", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false) }
                     }
                 }
             }

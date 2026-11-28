@@ -9,9 +9,9 @@
 
 const GOOGLE_JWKS_URL =
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
-const DEFAULT_FIREBASE_PROJECT_ID = "gen-lang-client-0137668580";
+const DEFAULT_FIREBASE_PROJECT_ID = "gen-lang-client-0411475132";
 const DEFAULT_FIRESTORE_DB_ID =
-  "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed";
+  "ai-studio-android-x2-f008d1bb-6c44-4fa2-9fd3-87ddefd4d583";
 
 function hasSupabaseConfig(env) {
   return Boolean(
@@ -733,35 +733,51 @@ async function handleR2Download(url, uid, idToken, projectId, firestoreDbId, env
   assertApprovedNotSuspended(member);
 
   const isStatusMedia = storagePath.startsWith(`companies/${companyId}/statuses/`);
-  const isAvatarOrGroup =
-    storagePath.startsWith(`companies/${companyId}/avatars/`) ||
-    storagePath.startsWith(`companies/${companyId}/group-photos/`);
+  const isAvatar = storagePath.startsWith(`companies/${companyId}/avatars/`);
+  const isGroupPhoto = storagePath.startsWith(`companies/${companyId}/group-photos/`);
 
   if (isStatusMedia) {
-    if (statusId) {
-      const stUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/chat_statuses/${statusId}`;
-      const stRes = await fetch(stUrl, { headers: { Authorization: `Bearer ${idToken}` } });
-      if (!stRes.ok) {
-        return jsonResponse({ error: "Status access denied or unavailable" }, stRes.status === 404 ? 404 : 403, cors);
+    if (!statusId) {
+      return jsonResponse({ error: "Missing statusId for status media" }, 400, cors);
+    }
+    const stUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/chat_statuses/${statusId}`;
+    const stRes = await fetch(stUrl, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (!stRes.ok) {
+      return jsonResponse({ error: "Status access denied or unavailable" }, stRes.status === 404 ? 404 : 403, cors);
+    }
+    const stDoc = parseFirestoreDoc(await stRes.json());
+    if (stDoc.expiresAtMillis && Number(stDoc.expiresAtMillis) < Date.now()) {
+      return jsonResponse({ error: "Status has expired" }, 410, cors);
+    }
+    if (stDoc.ownerUid && stDoc.ownerUid !== uid) {
+      const blocked = Array.isArray(stDoc.ownerBlockedUids) ? stDoc.ownerBlockedUids : [];
+      if (blocked.includes(uid)) {
+        return jsonResponse({ error: "Blocked user cannot view status media" }, 403, cors);
       }
-      const stDoc = parseFirestoreDoc(await stRes.json());
-      if (stDoc.ownerUid && stDoc.ownerUid !== uid) {
-        const blocked = Array.isArray(stDoc.ownerBlockedUids) ? stDoc.ownerBlockedUids : [];
-        if (blocked.includes(uid)) {
-          return jsonResponse({ error: "Blocked user cannot view status media" }, 403, cors);
-        }
-        const mode = stDoc.privacyMode || "ALL_APPROVED";
-        const allowed = Array.isArray(stDoc.allowedUids) ? stDoc.allowedUids : [];
-        const excluded = Array.isArray(stDoc.excludedUids) ? stDoc.excludedUids : [];
-        if (mode === "SELECTED_ONLY" && !allowed.includes(uid)) {
-          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
-        }
-        if (mode === "ALL_EXCEPT" && excluded.includes(uid)) {
-          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
-        }
+      const mode = stDoc.privacyMode || "ALL_APPROVED";
+      const allowed = Array.isArray(stDoc.allowedUids) ? stDoc.allowedUids : [];
+      const excluded = Array.isArray(stDoc.excludedUids) ? stDoc.excludedUids : [];
+      if (mode === "SELECTED_ONLY" && !allowed.includes(uid)) {
+        return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
+      }
+      if (mode === "ALL_EXCEPT" && excluded.includes(uid)) {
+        return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
       }
     }
-  } else if (!isAvatarOrGroup) {
+  } else if (isGroupPhoto) {
+    const inferredGroupChatId = storagePath
+      .slice(`companies/${companyId}/group-photos/`.length)
+      .split("/")[0] || "";
+    const resolvedChatId = chatId || sanitizeId(inferredGroupChatId);
+    if (!resolvedChatId) {
+      return jsonResponse({ error: "Missing chatId for group photo" }, 400, cors);
+    }
+    const expectedGroupPrefix = `companies/${companyId}/group-photos/${resolvedChatId}/`;
+    if (!storagePath.startsWith(expectedGroupPrefix)) {
+      return jsonResponse({ error: "Path mismatch for group photo" }, 403, cors);
+    }
+    await assertChatParticipant(companyId, resolvedChatId, uid, member, idToken, projectId, firestoreDbId);
+  } else if (!isAvatar) {
     if (!chatId) return jsonResponse({ error: "Missing chatId" }, 400, cors);
     const expectedPrefix = `companies/${companyId}/chats/${chatId}/`;
     if (!storagePath.startsWith(expectedPrefix)) {
@@ -1271,35 +1287,51 @@ async function handleSupabaseSignDownload(uid, idToken, companyId, body, project
   assertApprovedNotSuspended(member);
 
   const isStatusMedia = storagePath.startsWith(`companies/${companyId}/statuses/`);
-  const isAvatarOrGroup =
-    storagePath.startsWith(`companies/${companyId}/avatars/`) ||
-    storagePath.startsWith(`companies/${companyId}/group-photos/`);
+  const isAvatar = storagePath.startsWith(`companies/${companyId}/avatars/`);
+  const isGroupPhoto = storagePath.startsWith(`companies/${companyId}/group-photos/`);
 
   if (isStatusMedia) {
-    if (statusId) {
-      const stUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/chat_statuses/${statusId}`;
-      const stRes = await fetch(stUrl, { headers: { Authorization: `Bearer ${idToken}` } });
-      if (!stRes.ok) {
-        return jsonResponse({ error: "Status access denied or unavailable" }, stRes.status === 404 ? 404 : 403, cors);
+    if (!statusId) {
+      return jsonResponse({ error: "Missing statusId for status media" }, 400, cors);
+    }
+    const stUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}/chat_statuses/${statusId}`;
+    const stRes = await fetch(stUrl, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (!stRes.ok) {
+      return jsonResponse({ error: "Status access denied or unavailable" }, stRes.status === 404 ? 404 : 403, cors);
+    }
+    const stDoc = parseFirestoreDoc(await stRes.json());
+    if (stDoc.expiresAtMillis && Number(stDoc.expiresAtMillis) < Date.now()) {
+      return jsonResponse({ error: "Status has expired" }, 410, cors);
+    }
+    if (stDoc.ownerUid && stDoc.ownerUid !== uid) {
+      const blocked = Array.isArray(stDoc.ownerBlockedUids) ? stDoc.ownerBlockedUids : [];
+      if (blocked.includes(uid)) {
+        return jsonResponse({ error: "Blocked user cannot view status media" }, 403, cors);
       }
-      const stDoc = parseFirestoreDoc(await stRes.json());
-      if (stDoc.ownerUid && stDoc.ownerUid !== uid) {
-        const blocked = Array.isArray(stDoc.ownerBlockedUids) ? stDoc.ownerBlockedUids : [];
-        if (blocked.includes(uid)) {
-          return jsonResponse({ error: "Blocked user cannot view status media" }, 403, cors);
-        }
-        const mode = stDoc.privacyMode || "ALL_APPROVED";
-        const allowed = Array.isArray(stDoc.allowedUids) ? stDoc.allowedUids : [];
-        const excluded = Array.isArray(stDoc.excludedUids) ? stDoc.excludedUids : [];
-        if (mode === "SELECTED_ONLY" && !allowed.includes(uid)) {
-          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
-        }
-        if (mode === "ALL_EXCEPT" && excluded.includes(uid)) {
-          return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
-        }
+      const mode = stDoc.privacyMode || "ALL_APPROVED";
+      const allowed = Array.isArray(stDoc.allowedUids) ? stDoc.allowedUids : [];
+      const excluded = Array.isArray(stDoc.excludedUids) ? stDoc.excludedUids : [];
+      if (mode === "SELECTED_ONLY" && !allowed.includes(uid)) {
+        return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
+      }
+      if (mode === "ALL_EXCEPT" && excluded.includes(uid)) {
+        return jsonResponse({ error: "You do not have permission to view this status" }, 403, cors);
       }
     }
-  } else if (!isAvatarOrGroup) {
+  } else if (isGroupPhoto) {
+    const inferredGroupChatId = storagePath
+      .slice(`companies/${companyId}/group-photos/`.length)
+      .split("/")[0] || "";
+    const resolvedChatId = chatId || sanitizeId(inferredGroupChatId);
+    if (!resolvedChatId) {
+      return jsonResponse({ error: "Missing chatId for group photo" }, 400, cors);
+    }
+    const expectedGroupPrefix = `companies/${companyId}/group-photos/${resolvedChatId}/`;
+    if (!storagePath.startsWith(expectedGroupPrefix)) {
+      return jsonResponse({ error: "Path mismatch for group photo" }, 403, cors);
+    }
+    await assertChatParticipant(companyId, resolvedChatId, uid, member, idToken, projectId, firestoreDbId);
+  } else if (!isAvatar) {
     if (!chatId) return jsonResponse({ error: "Missing chatId" }, 400, cors);
     const expectedPrefix = `companies/${companyId}/chats/${chatId}/`;
     if (!storagePath.startsWith(expectedPrefix)) {
@@ -1411,6 +1443,7 @@ async function handlePushDispatch(uid, idToken, companyId, body, projectId, fire
 
 async function handleResetChunk(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {
   const member = await fetchMemberDoc(companyId, uid, idToken, projectId, firestoreDbId);
+  assertApprovedNotSuspended(member);
   const accessLevel = member.accessLevel || member.role;
   if (accessLevel !== "SUPER_ADMIN") {
     return jsonResponse({ error: "Only Super Admin can perform chat reset operations" }, 403, cors);
@@ -1579,15 +1612,50 @@ async function fetchDocAsService(path, projectId, firestoreDbId, accessToken) {
   return parseFirestoreDoc(raw);
 }
 
-async function listSubcollectionAsService(path, projectId, firestoreDbId, accessToken) {
-  const colUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/${path}?pageSize=100`;
-  const res = await fetch(colUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+async function queryProjectDeliverablesAsService(companyId, projId, projectId, firestoreDbId, accessToken) {
+  const queryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDbId}/documents/companies/${companyId}:runQuery`;
+  const res = await fetch(queryUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "deliverables" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "projectId" },
+            op: "EQUAL",
+            value: { stringValue: projId },
+          },
+        },
+        limit: 100,
+      },
+    }),
+  });
   if (!res.ok) return [];
-  const data = await res.json();
-  return (data.documents || []).map(parseFirestoreDoc);
+  const rows = await res.json().catch(() => []);
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((r) => r && r.document).map((r) => parseFirestoreDoc(r.document));
 }
 
 async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, env, cors) {
+  const clientIp = request.headers.get("CF-Connecting-IP") || "global";
+  if (!checkRateLimit(`portal:${clientIp}:${url.pathname}`, 30, 60_000)) {
+    return jsonResponse({ error: "Rate limit exceeded" }, 429, { ...cors, "Retry-After": "30" });
+  }
+
+  const htmlSecurityHeaders = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy":
+      "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    ...cors,
+  };
+
   const parts = url.pathname.split("/").filter(Boolean); // ["portal", token, sub?]
   const token = sanitizeId(parts[1] || "");
   const sub = parts[2] || "";
@@ -1597,7 +1665,7 @@ async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, e
   if (!env.SERVICE_ACCOUNT_JSON && !env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return new Response(
       `<html><body style="font-family:sans-serif;padding:32px;max-width:640px;margin:auto"><h2>X.MAX Client Portal</h2><p>Portal backend credentials are not configured yet on the Worker. Contact your account manager.</p></body></html>`,
-      { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } }
+      { status: 503, headers: htmlSecurityHeaders }
     );
   }
 
@@ -1614,11 +1682,11 @@ async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, e
   const projId = sanitizeId(linkDoc.projectId || "");
   const quoteId = sanitizeId(linkDoc.quotationId || "");
 
-  const [company, project, quotation, allDelivs] = await Promise.all([
+  const [company, project, quotation, projectDeliverableDocs] = await Promise.all([
     fetchDocAsService(`companies/${companyId}`, projectId, firestoreDbId, accessToken),
     projId ? fetchDocAsService(`companies/${companyId}/projects/${projId}`, projectId, firestoreDbId, accessToken) : Promise.resolve(null),
     quoteId ? fetchDocAsService(`companies/${companyId}/quotations/${quoteId}`, projectId, firestoreDbId, accessToken) : Promise.resolve(null),
-    projId ? listSubcollectionAsService(`companies/${companyId}/deliverables`, projectId, firestoreDbId, accessToken) : Promise.resolve([]),
+    projId ? queryProjectDeliverablesAsService(companyId, projId, projectId, firestoreDbId, accessToken) : Promise.resolve([]),
   ]);
 
   if (request.method === "POST" && sub === "approve") {
@@ -1651,7 +1719,7 @@ async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, e
     return jsonResponse({ ok: true, approvedAtMillis: Date.now(), note }, 200, cors);
   }
 
-  const projectDeliverables = (allDelivs || [])
+  const projectDeliverables = (projectDeliverableDocs || [])
     .filter((d) => d.projectId === projId)
     .map((d) => ({ title: d.title || "Deliverable", status: d.status || "NOT_STARTED", progressPercent: Number(d.progressPercent || 0) }));
 
@@ -1672,7 +1740,7 @@ async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, e
   if (sub === "invoice") {
     const balance = Math.max(0, safePayload.agreedValuePaise - safePayload.paidPaise);
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GST Tax Invoice</title><style>body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:20px;color:#0f172a} .box{border:1px solid #cbd5e1;border-radius:14px;padding:18px;background:#f8fafc}</style></head><body><h1>${escapeHtml(safePayload.companyName)} — Tax Invoice</h1><div class="box"><p><b>Client:</b> ${escapeHtml(safePayload.clientName)}</p><p><b>Project:</b> ${escapeHtml(safePayload.projectTitle)}</p><p><b>GSTIN:</b> ${escapeHtml(safePayload.gstin || "Registered")}</p><p><b>Total Contract:</b> ${formatInrPaise(safePayload.agreedValuePaise)}</p><p><b>Paid:</b> ${formatInrPaise(safePayload.paidPaise)}</p><p><b>Balance Due:</b> ${formatInrPaise(balance)}</p><button onclick="window.print()" style="margin-top:12px;padding:10px 18px;border-radius:999px;border:none;background:#111;color:#fff;cursor:pointer">Download / Print GST Invoice</button></div></body></html>`;
-    return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } });
+    return new Response(html, { status: 200, headers: htmlSecurityHeaders });
   }
 
   const accept = request.headers.get("Accept") || "";
@@ -1684,7 +1752,7 @@ async function handlePublicPortalRoute(request, url, projectId, firestoreDbId, e
     .map((d) => `<li><b>${escapeHtml(d.title)}</b> — ${escapeHtml(d.status)} (${d.progressPercent}%)</li>`)
     .join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(safePayload.projectTitle)} Portal</title><style>body{font-family:system-ui,sans-serif;max-width:740px;margin:24px auto;padding:20px;background:#f8fafc;color:#0f172a}.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:16px}</style></head><body><div class="card"><h2>${escapeHtml(safePayload.companyName)} — Client Portal</h2><p><b>Project:</b> ${escapeHtml(safePayload.projectTitle)} (${escapeHtml(safePayload.status)})</p><p><b>Client:</b> ${escapeHtml(safePayload.clientName)}</p><p><b>Total:</b> ${formatInrPaise(safePayload.agreedValuePaise)} | <b>Paid:</b> ${formatInrPaise(safePayload.paidPaise)}</p><a href="/portal/${escapeHtml(token)}/invoice">View GST Tax Invoice</a></div><div class="card"><h3>Deliverables</h3><ul>${rowsHtml || "<li>In progress</li>"}</ul></div><div class="card"><button onclick="fetch('/portal/${escapeHtml(token)}/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:'Approved milestone via Portal'})}).then(()=>location.reload())" style="padding:10px 18px;border-radius:999px;border:none;background:#4f46e5;color:#fff;cursor:pointer">Approve Milestone</button>${safePayload.approvedAtMillis ? `<p>Approved: ${escapeHtml(safePayload.approvalNote)}</p>` : ""}</div></body></html>`;
-  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", ...cors } });
+  return new Response(html, { status: 200, headers: htmlSecurityHeaders });
 }
 
 async function handlePaymentNudgeDispatch(uid, idToken, companyId, body, projectId, firestoreDbId, env, cors) {

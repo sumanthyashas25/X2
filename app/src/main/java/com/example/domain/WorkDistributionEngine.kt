@@ -9,6 +9,7 @@ import com.example.model.JobRole
 import com.example.model.Member
 import com.example.model.MembershipStatus
 import com.example.model.PricingMode
+import com.example.model.ProjectStatus
 import com.example.model.QuoteLineItem
 import com.example.model.RoutingRule
 
@@ -456,6 +457,28 @@ object WorkDistributionEngine {
         val averageCompletionPercent: Int
     )
 
+    private fun deliverableProgressFraction(d: Deliverable): Float = when (d.statusEnum()) {
+        DeliverableStatus.APPROVED -> 1f
+        DeliverableStatus.READY_FOR_REVIEW -> 0.8f
+        DeliverableStatus.IN_PROGRESS, DeliverableStatus.CHANGES_REQUESTED -> {
+            val total = if (d.checklist.isNotEmpty()) d.checklist.size else d.totalChecklistCount
+            val done = if (d.checklist.isNotEmpty()) d.checklist.count { it.done } else d.completedChecklistCount
+            if (total > 0) (0.2f + 0.55f * (done.toFloat() / total.toFloat())).coerceIn(0.2f, 0.75f)
+            else 0.35f
+        }
+        DeliverableStatus.BLOCKED -> 0.25f
+        DeliverableStatus.NOT_STARTED -> 0f
+    }
+
+    private fun deliverableEventMillis(d: Deliverable, fallbackMillis: Long): Long {
+        val ts = (d.updatedAt?.seconds ?: d.createdAt?.seconds ?: 0L) * 1000L
+        return when {
+            ts > 0L -> ts
+            d.dueDateMillis in 1L..fallbackMillis -> d.dueDateMillis
+            else -> fallbackMillis
+        }
+    }
+
     fun computeAgencyAnalyticsSeries(
         projects: List<com.example.model.Project>,
         deliverables: List<Deliverable>,
@@ -480,9 +503,36 @@ object WorkDistributionEngine {
             c.timeInMillis
         }
 
-        val totalDelivs = deliverables.size.coerceAtLeast(1)
-        val approvedSoFar = deliverables.count { it.statusEnum() == DeliverableStatus.APPROVED }
-        val currentCompletionPct = (approvedSoFar * 100f / totalDelivs).coerceIn(0f, 100f)
+        // Reconcile Project.paidPaise deltas if payments list doesn't contain matching PaymentRecord rows
+        val recordedPaidByProject = payments.groupBy { it.projectId }
+            .mapValues { (_, list) -> list.sumOf { it.amountPaise } }
+        val syntheticPaidBuckets = mutableListOf<Pair<Long, Long>>()
+        activeProjects.forEach { proj ->
+            val recorded = recordedPaidByProject[proj.id] ?: 0L
+            val delta = (proj.paidPaise - recorded).coerceAtLeast(0L)
+            if (delta > 0L) {
+                val ts = ((proj.updatedAt?.seconds ?: proj.createdAt?.seconds ?: 0L) * 1000L)
+                    .let { if (it > 0L) it else nowMillis }
+                syntheticPaidBuckets += ts to delta
+            }
+        }
+
+        val currentCompletionPct = if (deliverables.isNotEmpty()) {
+            val totalWeight = deliverables.sumOf { deliverableProgressFraction(it).toDouble() }
+            ((totalWeight * 100.0) / deliverables.size.toDouble()).toFloat().coerceIn(0f, 100f)
+        } else if (activeProjects.isNotEmpty()) {
+            val projectPcts = activeProjects.map { p ->
+                when {
+                    p.statusEnum() == ProjectStatus.COMPLETED -> 100f
+                    p.totalDeliverables > 0 -> (p.approvedDeliverables * 100f / p.totalDeliverables).coerceIn(0f, 100f)
+                    p.statusEnum() == ProjectStatus.IN_PROGRESS -> 35f
+                    else -> 0f
+                }
+            }
+            projectPcts.average().toFloat().coerceIn(0f, 100f)
+        } else {
+            0f
+        }
 
         val history = monthStarts.mapIndexed { idx, startMs ->
             val nextCal = java.util.Calendar.getInstance().apply {
@@ -492,12 +542,18 @@ object WorkDistributionEngine {
             val endMs = nextCal.timeInMillis
             val label = monthFormat.format(java.util.Date(startMs))
 
-            val monthCollected = payments
+            val recordedMonthCollected = payments
                 .filter { it.paymentDateMillis in startMs until endMs }
                 .sumOf { it.amountPaise }
+            val syntheticMonthCollected = syntheticPaidBuckets
+                .filter { (ts, _) -> ts in startMs until endMs || (idx == monthStarts.lastIndex && ts >= endMs) || (idx == monthStarts.lastIndex && ts < monthStarts.first()) }
+                .sumOf { (_, amt) -> amt }
+            val monthCollected = recordedMonthCollected + syntheticMonthCollected
+
             val monthContracted = activeProjects
                 .filter { p ->
-                    val createdMs = (p.createdAt?.seconds ?: 0L) * 1000L
+                    val createdMs = ((p.createdAt?.seconds ?: p.updatedAt?.seconds ?: 0L) * 1000L)
+                        .let { if (it > 0L) it else nowMillis }
                     createdMs in startMs until endMs
                 }
                 .sumOf { it.agreedValuePaise }
@@ -505,15 +561,14 @@ object WorkDistributionEngine {
                 .filter { it.workDateMillis in startMs until endMs }
                 .sumOf { it.durationMinutes }
 
-            // Cumulative deliverable completion up to month end (approved deliverables updated/completed before endMs)
-            val approvedByEnd = deliverables.count { d ->
-                d.statusEnum() == DeliverableStatus.APPROVED &&
-                    (((d.updatedAt?.seconds ?: 0L) * 1000L).let { ts -> ts in 1L until endMs })
-            }
             val pct = if (idx == monthStarts.lastIndex) {
                 currentCompletionPct
-            } else if (approvedSoFar > 0) {
-                (approvedByEnd * 100f / totalDelivs).coerceIn(0f, currentCompletionPct)
+            } else if (deliverables.isNotEmpty()) {
+                val weightedByEnd = deliverables.sumOf { d ->
+                    val ts = deliverableEventMillis(d, nowMillis)
+                    if (ts in 1L until endMs) deliverableProgressFraction(d).toDouble() else 0.0
+                }
+                ((weightedByEnd * 100.0) / deliverables.size.toDouble()).toFloat().coerceIn(0f, currentCompletionPct)
             } else {
                 0f
             }
@@ -533,17 +588,32 @@ object WorkDistributionEngine {
         // Forecast next 3 months from outstanding balances + 3-month trailing collection average
         val trailingAvg = history.takeLast(3).map { it.collectedPaise }.average().toLong().coerceAtLeast(0L)
         val totalOutstanding = activeProjects.sumOf { it.outstandingPaise }.coerceAtLeast(0L)
-        val pipelineMonthly = (totalOutstanding * 0.35).toLong()
+        val hasPipeline = totalOutstanding > 0L || trailingAvg > 0L
 
         val forecast = (1..3).map { offset ->
             val c = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, offset) }
-            val weight = when (offset) {
-                1 -> 0.50
+            val outstandingWeight = when (offset) {
+                1 -> 0.48
                 2 -> 0.32
-                else -> 0.18
+                else -> 0.20
             }
-            val projected = ((trailingAvg * 0.55) + (totalOutstanding * weight)).toLong().coerceAtLeast(pipelineMonthly / 2)
-            val estCompletion = (currentCompletionPct + offset * 12f).coerceAtMost(100f)
+            val trailingWeight = when (offset) {
+                1 -> 0.40
+                2 -> 0.30
+                else -> 0.20
+            }
+            val projected = if (hasPipeline) {
+                ((trailingAvg * trailingWeight) + (totalOutstanding * outstandingWeight)).toLong()
+                    .coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            val remainingPct = (100f - currentCompletionPct).coerceAtLeast(0f)
+            val estCompletion = if (deliverables.isEmpty() && activeProjects.isEmpty()) {
+                0f
+            } else {
+                (currentCompletionPct + remainingPct * (offset / 3.5f)).coerceIn(currentCompletionPct, 100f)
+            }
             MonthlyAnalyticsPoint(
                 label = monthFormat.format(c.time) + "*",
                 monthStartMillis = c.timeInMillis,
@@ -557,7 +627,7 @@ object WorkDistributionEngine {
         }
 
         val totalAgreed = activeProjects.sumOf { it.agreedValuePaise }
-        val totalPaid = activeProjects.sumOf { it.paidPaise }
+        val totalPaid = maxOf(activeProjects.sumOf { it.paidPaise }, payments.sumOf { it.amountPaise })
         val collectionRate = if (totalAgreed > 0L) ((totalPaid * 100L) / totalAgreed).toInt().coerceIn(0, 100) else 0
 
         return AgencyAnalyticsSeries(

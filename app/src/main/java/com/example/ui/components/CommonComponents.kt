@@ -82,6 +82,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,6 +99,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -237,8 +239,19 @@ fun StudioAvatar(
         else -> clean.uppercase()
     }
     val (bg, fg) = avatarPalette[abs(clean.hashCode()) % avatarPalette.size]
-    val decodedBitmap = remember(photoBase64) {
-        ChatFileManager.decodeBase64Bitmap(photoBase64)?.asImageBitmap()
+    val cachedBitmap = remember(photoBase64) {
+        ChatFileManager.peekCachedBase64Bitmap(photoBase64)?.asImageBitmap()
+    }
+    val decodedBitmap by produceState<ImageBitmap?>(initialValue = cachedBitmap, key1 = photoBase64) {
+        if (cachedBitmap != null) {
+            value = cachedBitmap
+        } else if (photoBase64.isNotBlank()) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ChatFileManager.decodeBase64Bitmap(photoBase64)?.asImageBitmap()
+            }
+        } else {
+            value = null
+        }
     }
 
     Box(
@@ -255,9 +268,10 @@ fun StudioAvatar(
                 .border(1.5.dp, borderColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            if (decodedBitmap != null) {
+            val avatarBmp = decodedBitmap
+            if (avatarBmp != null) {
                 Image(
-                    bitmap = decodedBitmap,
+                    bitmap = avatarBmp,
                     contentDescription = clean.uppercase(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -518,17 +532,6 @@ fun SlideToActionButton(
     val thumbSize = 50.dp
     val thumbPadding = 4.dp
 
-    val shimmerTransition = rememberInfiniteTransition(label = "slide_shimmer")
-    val shimmerProgress by shimmerTransition.animateFloat(
-        initialValue = -0.4f,
-        targetValue = 1.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "slide_shimmer_progress"
-    )
-
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -560,7 +563,7 @@ fun SlideToActionButton(
         val dragFraction = (dragOffsetPx.value / maxDragPx).coerceIn(0f, 1f)
         val textAlpha = (1f - dragFraction * 1.45f).coerceIn(0f, 1f)
 
-        // Centered fading & shimmering text
+        // Centered fading label (static crisp PureWhite to save GPU/battery on low-end devices)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -568,24 +571,12 @@ fun SlideToActionButton(
                 .alpha(textAlpha),
             contentAlignment = Alignment.Center
         ) {
-            val shimmerBrush = remember(shimmerProgress) {
-                Brush.horizontalGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color(0xFF14161D),
-                        (shimmerProgress - 0.18f).coerceIn(0.01f, 0.98f) to Color(0xFF1C1F27),
-                        shimmerProgress.coerceIn(0.02f, 0.99f) to Color(0xFFE7EAF2),
-                        (shimmerProgress + 0.18f).coerceIn(0.03f, 0.995f) to Color(0xFF1C1F27),
-                        1.0f to Color(0xFF14161D)
-                    )
-                )
-            }
             Text(
                 text = label.uppercase(),
                 style = XMaxType.subheadlineSemibold.copy(
-                    brush = if (enabled) shimmerBrush else null,
                     letterSpacing = 0.4.sp
                 ),
-                color = if (enabled) Color.Unspecified else PureWhite.copy(alpha = 0.55f),
+                color = if (enabled) PureWhite else PureWhite.copy(alpha = 0.55f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2266,6 +2257,8 @@ private fun WavySparklineCanvas(
         anim
     }
 
+    val midDashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f) }
+
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
@@ -2289,7 +2282,7 @@ private fun WavySparklineCanvas(
             start = Offset(padX, padY + usableH * 0.5f),
             end = Offset(w - padX, padY + usableH * 0.5f),
             strokeWidth = 0.8.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f), 0f)
+            pathEffect = midDashEffect
         )
 
         val coords = animatedValues.mapIndexed { idx, v ->

@@ -2,6 +2,7 @@ package com.example.ui.navigation
 
 import android.app.Activity
 import com.example.domain.CatalogueSeedData
+import com.example.domain.PermissionEngine
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -85,7 +86,11 @@ fun resolveAuthRoute(
     if (authStatus is AuthSessionStatus.SignedIn) {
         val userEmail = authStatus.user.email.orEmpty().trim().lowercase()
         if (CatalogueSeedData.isBootstrapEmail(userEmail)) {
-            return XMaxRoute.Dashboard
+            return if (state.myMember != null && PermissionEngine.isActiveApproved(state.myMember)) {
+                XMaxRoute.Dashboard
+            } else {
+                XMaxRoute.Loading
+            }
         }
 
         if (state.errorMessage != null && !state.memberLoaded && !state.isApprovedMember) {

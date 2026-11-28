@@ -41,7 +41,7 @@ class AgencyRepository(context: Context) {
             ?: throw IllegalStateException("Authenticated user required.")
 
     companion object {
-        const val TARGET_FIRESTORE_DATABASE_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
+        const val TARGET_FIRESTORE_DATABASE_ID = "ai-studio-android-x2-f008d1bb-6c44-4fa2-9fd3-87ddefd4d583"
     }
 
     internal val companyRef get() = db.collection("companies").document(companyId)
@@ -203,7 +203,7 @@ class AgencyRepository(context: Context) {
             companyRef.set(cMap).await()
         }
 
-        // Member doc for Super Admin (preserve createdAt and existing name if updating an existing doc)
+        // Member doc for Super Admin (preserve createdAt and existing name; avoid redundant write if already valid)
         val memberRef = sub("members").document(uid)
         val existingMember = memberRef.get().await()
         val existingName = existingMember.getString("fullName")?.trim().orEmpty()
@@ -211,54 +211,75 @@ class AgencyRepository(context: Context) {
             .ifBlank { existingName }
             .ifBlank { user.displayName?.trim().orEmpty() }
             .ifBlank { "X.MAX Director" }
-        val memberMap = mutableMapOf<String, Any>(
-            "uid" to uid,
-            "companyNameInput" to "X.MAX",
-            "fullName" to resolvedName,
-            "accessLevel" to AccessLevel.SUPER_ADMIN.name,
-            "status" to MembershipStatus.APPROVED.name,
-            "active" to true,
-            "departmentId" to "dept_ops",
-            "departmentName" to "Operations",
-            "jobRoleId" to "role_pm",
-            "jobRoleName" to "Project Manager",
-            "requestedDepartment" to "Operations",
-            "requestedJobRole" to "Agency Director",
-            "scopeType" to ScopeType.COMPANY.name,
-            "scopeDepartmentIds" to emptyList<String>(),
-            "permissions" to emptyMap<String, Any>(),
-            "delegatedGrants" to emptyMap<String, Any>(),
-            "invitedByUid" to "",
-            "approvedByUid" to uid,
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
-        if (existingMember.exists()) {
-            memberRef.update(memberMap).await()
-        } else {
-            memberMap["createdAt"] = FieldValue.serverTimestamp()
-            memberRef.set(memberMap).await()
+            .take(120)
+        val alreadyProvisionedSuperAdmin = existingMember.exists() &&
+            existingMember.getString("accessLevel") == AccessLevel.SUPER_ADMIN.name &&
+            existingMember.getString("status") == MembershipStatus.APPROVED.name &&
+            existingMember.getBoolean("active") == true &&
+            existingName == resolvedName
+        if (!alreadyProvisionedSuperAdmin) {
+            val memberMap = mutableMapOf<String, Any>(
+                "uid" to uid,
+                "companyNameInput" to "X.MAX",
+                "fullName" to resolvedName,
+                "accessLevel" to AccessLevel.SUPER_ADMIN.name,
+                "status" to MembershipStatus.APPROVED.name,
+                "active" to true,
+                "departmentId" to "dept_ops",
+                "departmentName" to "Operations",
+                "jobRoleId" to "role_pm",
+                "jobRoleName" to "Project Manager",
+                "requestedDepartment" to "Operations",
+                "requestedJobRole" to "Agency Director",
+                "scopeType" to ScopeType.COMPANY.name,
+                "scopeDepartmentIds" to emptyList<String>(),
+                "permissions" to emptyMap<String, Any>(),
+                "delegatedGrants" to emptyMap<String, Any>(),
+                "invitedByUid" to "",
+                "approvedByUid" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (existingMember.exists()) {
+                memberRef.update(memberMap).await()
+            } else {
+                memberMap["createdAt"] = FieldValue.serverTimestamp()
+                memberRef.set(memberMap).await()
+            }
         }
         saveMemberPrivateInfo(uid, age, emailLower, null)
-        seedCatalogueAndOrgIfNeeded()
-        runCatching {
-            syncOfficialCatalogueAndRouting(syncRouting = true, syncCompanyTerms = true, actor = null)
+        val seededFresh = seedCatalogueAndOrgIfNeeded()
+        if (!seededFresh) {
+            val pkg04 = runCatching { sub("catalogue").document("pkg_04").get().await() }.getOrNull()
+            val add08 = runCatching { sub("catalogue").document("add_08").get().await() }.getOrNull()
+            val catalogueUpToDate = pkg04?.exists() == true &&
+                pkg04.getString("name") == "BUSINESS LAUNCH" &&
+                pkg04.getLong("pricePaise") == 5500000L &&
+                add08?.exists() == true &&
+                add08.getLong("pricePaise") == 200000L
+            if (!catalogueUpToDate) {
+                runCatching {
+                    syncOfficialCatalogueAndRouting(syncRouting = true, syncCompanyTerms = true, actor = null)
+                }
+            }
         }
-        logActivity(
-            ActivityCategory.COMPANY,
-            "X.MAX Workspace Provisioned",
-            "Trusted Super Admin setup completed by $resolvedName",
-            uid,
-            resolvedName,
-            companyId
-        )
+        if (!alreadyProvisionedSuperAdmin) {
+            logActivity(
+                ActivityCategory.COMPANY,
+                "X.MAX Workspace Provisioned",
+                "Trusted Super Admin setup completed by $resolvedName",
+                uid,
+                resolvedName,
+                companyId
+            )
+        }
     }
 
-    suspend fun seedCatalogueAndOrgIfNeeded() {
+    suspend fun seedCatalogueAndOrgIfNeeded(): Boolean {
         val deptsEmpty = sub("departments").limit(1).get().await().isEmpty
         val rolesEmpty = sub("job_roles").limit(1).get().await().isEmpty
         val rulesEmpty = sub("routing_rules").limit(1).get().await().isEmpty
         val catEmpty = sub("catalogue").limit(1).get().await().isEmpty
-        if (!deptsEmpty && !rolesEmpty && !rulesEmpty && !catEmpty) return
+        if (!deptsEmpty && !rolesEmpty && !rulesEmpty && !catEmpty) return false
 
         // Idempotent batched writes with deterministic IDs for any unseeded collection
         val batch = db.batch()
@@ -323,6 +344,7 @@ class AgencyRepository(context: Context) {
             }
         }
         batch.commit().await()
+        return true
     }
 
     suspend fun submitOnboardingOrAcceptInvite(
@@ -341,7 +363,65 @@ class AgencyRepository(context: Context) {
             saveMemberPrivateInfo(uid, age, emailLower, phone.trim())
             return
         }
-        val invite = checkPendingInvitation(emailLower)
+        val safeName = fullName.trim().ifBlank { user.displayName?.trim().orEmpty() }.ifBlank { "Member" }.take(120)
+        val safeCompanyInput = companyNameInput.trim().ifBlank { "X.MAX" }.take(120)
+        val safeDept = requestedDepartment.trim().take(80)
+        val safeRole = requestedJobRole.trim().take(80)
+        val safePhone = phone.trim().take(40)
+        val resolvedPrivateEmail = emailLower.ifBlank {
+            safePhone.takeIf { it.length >= 3 } ?: "${uid.take(12)}@phone.xmax"
+        }.take(160)
+
+        val memberDocRef = sub("members").document(uid)
+        val existingSnap = runCatching { memberDocRef.get().await() }.getOrNull()
+
+        val rawInvite = if (emailLower.isNotBlank() && user.isEmailVerified) {
+            checkPendingInvitation(emailLower)
+        } else null
+        // Never allow non-bootstrap accounts to claim a SUPER_ADMIN invitation
+        val invite = rawInvite?.takeIf { it.accessLevel != AccessLevel.SUPER_ADMIN.name }
+
+        if (existingSnap?.exists() == true) {
+            val existingStatus = existingSnap.getString("status").orEmpty()
+            if (invite != null && existingStatus == MembershipStatus.PENDING.name) {
+                val permsMap = invite.permissions.mapValues { (_, v) ->
+                    mapOf("allowed" to v.allowed, "canDelegate" to v.canDelegate)
+                }
+                val batch = db.batch()
+                batch.update(
+                    memberDocRef,
+                    mapOf(
+                        "companyNameInput" to safeCompanyInput,
+                        "fullName" to safeName,
+                        "accessLevel" to invite.accessLevel,
+                        "status" to MembershipStatus.APPROVED.name,
+                        "active" to true,
+                        "departmentId" to invite.departmentId,
+                        "departmentName" to invite.departmentName,
+                        "jobRoleId" to invite.jobRoleId,
+                        "jobRoleName" to invite.jobRoleName,
+                        "requestedDepartment" to safeDept,
+                        "requestedJobRole" to safeRole,
+                        "scopeType" to invite.scopeType,
+                        "scopeDepartmentIds" to invite.scopeDepartmentIds,
+                        "permissions" to permsMap,
+                        "delegatedGrants" to emptyMap<String, Any>(),
+                        "invitedByUid" to invite.invitedByUid,
+                        "approvedByUid" to invite.invitedByUid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                if (emailLower.isNotBlank()) {
+                    batch.update(
+                        sub("invitations").document(emailLower),
+                        mapOf("status" to "ACCEPTED", "updatedAt" to FieldValue.serverTimestamp())
+                    )
+                }
+                batch.commit().await()
+            }
+            saveMemberPrivateInfo(uid, age, resolvedPrivateEmail, safePhone)
+            return
+        }
 
         val memberMap = if (invite != null) {
             val permsMap = invite.permissions.mapValues { (_, v) ->
@@ -349,8 +429,8 @@ class AgencyRepository(context: Context) {
             }
             mapOf(
                 "uid" to uid,
-                "companyNameInput" to companyNameInput.trim(),
-                "fullName" to fullName.trim(),
+                "companyNameInput" to safeCompanyInput,
+                "fullName" to safeName,
                 "accessLevel" to invite.accessLevel,
                 "status" to MembershipStatus.APPROVED.name,
                 "active" to true,
@@ -358,8 +438,8 @@ class AgencyRepository(context: Context) {
                 "departmentName" to invite.departmentName,
                 "jobRoleId" to invite.jobRoleId,
                 "jobRoleName" to invite.jobRoleName,
-                "requestedDepartment" to requestedDepartment.trim(),
-                "requestedJobRole" to requestedJobRole.trim(),
+                "requestedDepartment" to safeDept,
+                "requestedJobRole" to safeRole,
                 "scopeType" to invite.scopeType,
                 "scopeDepartmentIds" to invite.scopeDepartmentIds,
                 "permissions" to permsMap,
@@ -373,8 +453,8 @@ class AgencyRepository(context: Context) {
             // Security invariant: self-registration ALWAYS creates STAFF + PENDING with 0 permissions
             mapOf(
                 "uid" to uid,
-                "companyNameInput" to companyNameInput.trim(),
-                "fullName" to fullName.trim(),
+                "companyNameInput" to safeCompanyInput,
+                "fullName" to safeName,
                 "accessLevel" to AccessLevel.STAFF.name,
                 "status" to MembershipStatus.PENDING.name,
                 "active" to true,
@@ -382,8 +462,8 @@ class AgencyRepository(context: Context) {
                 "departmentName" to "",
                 "jobRoleId" to "",
                 "jobRoleName" to "",
-                "requestedDepartment" to requestedDepartment.trim(),
-                "requestedJobRole" to requestedJobRole.trim(),
+                "requestedDepartment" to safeDept,
+                "requestedJobRole" to safeRole,
                 "scopeType" to ScopeType.TEAM.name,
                 "scopeDepartmentIds" to emptyList<String>(),
                 "permissions" to emptyMap<String, Any>(),
@@ -395,17 +475,17 @@ class AgencyRepository(context: Context) {
             )
         }
 
-        sub("members").document(uid).set(memberMap).await()
-        val resolvedPrivateEmail = emailLower.ifBlank {
-            phone.trim().takeIf { it.length >= 3 } ?: "${uid.take(12)}@phone.xmax"
-        }
-        saveMemberPrivateInfo(uid, age, resolvedPrivateEmail, phone.trim())
-
-        if (invite != null) {
-            sub("invitations").document(emailLower).update(
+        val batch = db.batch()
+        batch.set(memberDocRef, memberMap)
+        if (invite != null && emailLower.isNotBlank()) {
+            batch.update(
+                sub("invitations").document(emailLower),
                 mapOf("status" to "ACCEPTED", "updatedAt" to FieldValue.serverTimestamp())
-            ).await()
+            )
         }
+        batch.commit().await()
+
+        saveMemberPrivateInfo(uid, age, resolvedPrivateEmail, safePhone)
     }
 
     private suspend fun saveMemberPrivateInfo(uid: String, age: Int?, email: String, phone: String?) {
@@ -413,11 +493,21 @@ class AgencyRepository(context: Context) {
         val existing = ref.get().await()
         val existingAge = existing.getLong("age")?.toInt()
         val safeAge = (age ?: existingAge ?: 28).coerceIn(16, 100)
-        val resolvedPhone = phone ?: (existing.getString("phone") ?: "")
+        val existingEmail = existing.getString("email").orEmpty()
+        val existingPhone = existing.getString("phone").orEmpty()
+        val resolvedEmail = email.trim().ifBlank { existingEmail }.ifBlank { "${uid.take(12)}@member.xmax" }.take(160)
+        val resolvedPhone = (phone ?: existingPhone).trim().take(40)
+        if (existing.exists() &&
+            existingAge == safeAge &&
+            existingEmail == resolvedEmail &&
+            existingPhone == resolvedPhone
+        ) {
+            return
+        }
         val data = mutableMapOf<String, Any>(
             "uid" to uid,
             "age" to safeAge,
-            "email" to email,
+            "email" to resolvedEmail,
             "phone" to resolvedPhone,
             "updatedAt" to FieldValue.serverTimestamp()
         )
@@ -509,13 +599,20 @@ class AgencyRepository(context: Context) {
         actor: Member
     ) {
         val emailLower = email.trim().lowercase()
-        val permMap = permissions.filterValues { it.allowed }.mapValues { (_, g) ->
-            mapOf("allowed" to g.allowed, "canDelegate" to g.canDelegate)
+        val safeAccess = if (accessLevel == AccessLevel.SUPER_ADMIN && !CatalogueSeedData.isBootstrapEmail(emailLower)) {
+            AccessLevel.ADMIN
+        } else {
+            accessLevel
         }
+        val permMap = if (safeAccess == AccessLevel.ADMIN) {
+            permissions.filterValues { it.allowed }.mapValues { (_, g) ->
+                mapOf("allowed" to g.allowed, "canDelegate" to g.canDelegate)
+            }
+        } else emptyMap()
         sub("invitations").document(emailLower).set(
             mapOf(
                 "email" to emailLower,
-                "accessLevel" to accessLevel.name,
+                "accessLevel" to safeAccess.name,
                 "departmentId" to department.id,
                 "departmentName" to department.name,
                 "jobRoleId" to jobRole.id,
@@ -529,7 +626,7 @@ class AgencyRepository(context: Context) {
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
-        logActivity(ActivityCategory.MEMBERSHIP, "Invited $emailLower", "Role: ${jobRole.name} (${accessLevel.label})", actor.uid, actor.fullName, emailLower)
+        logActivity(ActivityCategory.MEMBERSHIP, "Invited $emailLower", "Role: ${jobRole.name} (${safeAccess.label})", actor.uid, actor.fullName, emailLower)
     }
 
     suspend fun approveAndConfigureMember(
@@ -546,8 +643,15 @@ class AgencyRepository(context: Context) {
         allStaff: List<Member>,
         actor: Member
     ) {
+        val isTargetSuperAdminAccount = targetMember.uid == actor.uid && actor.accessLevelEnum() == AccessLevel.SUPER_ADMIN
+        val safeStatus = if (isTargetSuperAdminAccount) MembershipStatus.APPROVED else status
+        val safeAccess = when {
+            isTargetSuperAdminAccount -> AccessLevel.SUPER_ADMIN
+            accessLevel == AccessLevel.SUPER_ADMIN -> AccessLevel.ADMIN
+            else -> accessLevel
+        }
         val batch = db.batch()
-        val sanitizedPerms = if (accessLevel == AccessLevel.ADMIN) {
+        val sanitizedPerms = if (safeAccess == AccessLevel.ADMIN) {
             permissions.filterValues { it.allowed }.mapValues { (key, g) ->
                 val enumPerm = runCatching { AppPermission.valueOf(key) }.getOrNull()
                 val allowDel = if (enumPerm?.staffEligible == true) g.canDelegate else false
@@ -558,9 +662,9 @@ class AgencyRepository(context: Context) {
         batch.update(
             sub("members").document(targetMember.uid),
             mapOf(
-                "status" to status.name,
-                "active" to (status == MembershipStatus.APPROVED),
-                "accessLevel" to accessLevel.name,
+                "status" to safeStatus.name,
+                "active" to (safeStatus == MembershipStatus.APPROVED),
+                "accessLevel" to safeAccess.name,
                 "departmentId" to departmentId,
                 "departmentName" to departmentName,
                 "jobRoleId" to jobRoleId,
@@ -576,7 +680,7 @@ class AgencyRepository(context: Context) {
         // Cascade revocation to Staff whose delegatedGrants depended on this Admin
         val revocations = PermissionEngine.computeDependentStaffRevocations(
             adminUid = targetMember.uid,
-            newPermissions = if (accessLevel == AccessLevel.ADMIN) permissions else emptyMap(),
+            newPermissions = if (safeAccess == AccessLevel.ADMIN) permissions else emptyMap(),
             staffMembers = allStaff
         )
         revocations.forEach { (staffUid, pruned) ->
@@ -592,7 +696,7 @@ class AgencyRepository(context: Context) {
         logActivity(
             ActivityCategory.PERMISSIONS,
             "Updated ${targetMember.fullName}",
-            "Status: ${status.label}, Access: ${accessLevel.label}, Dept: $departmentName / $jobRoleName",
+            "Status: ${safeStatus.label}, Access: ${safeAccess.label}, Dept: $departmentName / $jobRoleName",
             actor.uid,
             actor.fullName,
             targetMember.uid

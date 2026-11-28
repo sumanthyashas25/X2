@@ -172,6 +172,8 @@ fun AnalyticsVisualizer(
                 val lineColor = EmeraldApproved
                 val gridColor = palette.outline
                 val labelColor = palette.textSecondary
+                val gridDashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f) }
+                val forecastDashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f) }
 
                 Canvas(
                     modifier = Modifier
@@ -200,7 +202,7 @@ fun AnalyticsVisualizer(
                             start = Offset(0f, y),
                             end = Offset(size.width, y),
                             strokeWidth = 1.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                            pathEffect = gridDashEffect
                         )
                     }
 
@@ -281,7 +283,7 @@ fun AnalyticsVisualizer(
                                 style = Stroke(
                                     width = 2.dp.toPx(),
                                     cap = StrokeCap.Round,
-                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+                                    pathEffect = forecastDashEffect
                                 )
                             )
                         }

@@ -169,7 +169,9 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
         return
     }
     val chatViewModel: com.example.ui.ChatViewModel = viewModel()
-    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val uiPolicy = remember(state.verifiedEmail, state.verifiedUserRole, state.myMember, state.members) {
+        WorkspaceUiPolicy.fromState(state)
+    }
     val isStaffOnly = uiPolicy.isStandardMember
     val canSeeCommercial = uiPolicy.canSeeCommercialModule
     val canSeeProjects = uiPolicy.canSeeProjectsBoard
@@ -212,14 +214,9 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
     val isScanningCloudStorage by viewModel.isScanningCloudStorage.collectAsStateWithLifecycle()
     val isDeletingCloudStorage by viewModel.isDeletingCloudStorage.collectAsStateWithLifecycle()
 
-    LaunchedEffect(member.uid, state.isSuperAdmin) {
-        if (state.isSuperAdmin) {
-            viewModel.refreshCloudStorageSummary(context)
-        }
-    }
     LaunchedEffect(drawerState.isOpen, state.isSuperAdmin) {
         if (drawerState.isOpen && state.isSuperAdmin) {
-            viewModel.refreshCloudStorageSummary(context)
+            viewModel.refreshCloudStorageSummary(context, force = false)
         }
     }
 
@@ -306,11 +303,11 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                 },
                 onOpenStorageManager = {
                     scope.launch { drawerState.close() }
-                    viewModel.refreshCloudStorageSummary(context)
+                    viewModel.refreshCloudStorageSummary(context, force = true)
                     showCloudStorageSheet = true
                 },
                 onRefreshStorage = {
-                    viewModel.refreshCloudStorageSummary(context)
+                    viewModel.refreshCloudStorageSummary(context, force = true)
                 },
                 onSelectTab = { tab ->
                     secondaryDest = null
@@ -592,7 +589,10 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() },
                                             onOpenTeamGovernance = { secondaryDest = SecondaryDestination.TEAM },
                                             onOpenCompanySettings = { secondaryDest = SecondaryDestination.COMPANY_SETTINGS },
-                                            onBack = { secondaryDest = null }
+                                            onBack = { secondaryDest = null },
+                                            onConfigureMember = { m, st, lvl, dept, role, sc, scIds, perms ->
+                                                viewModel.configureMember(m, st, lvl, dept, role, sc, scIds, perms)
+                                            }
                                         )
                                         SecondaryDestination.TEAM -> TeamGovernanceScreen(
                                             state = state,
@@ -680,11 +680,20 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onStartVideoCall = { ch, callees, onStarted ->
                                                 viewModel.startVideoCall(ch, callees, onStarted)
                                             },
+                                            onStartVoiceCall = { ch, callees, onStarted ->
+                                                viewModel.startVoiceCall(ch, callees, onStarted)
+                                            },
                                             onAcceptVideoCall = { callId ->
                                                 viewModel.acceptVideoCall(callId)
                                             },
                                             onEndVideoCall = { callId, st ->
                                                 viewModel.endOrDeclineVideoCall(callId, st)
+                                            },
+                                            onToggleCallMute = { callId, isMuted ->
+                                                viewModel.toggleCallMute(callId, isMuted)
+                                            },
+                                            onToggleCallCamera = { callId, isOff ->
+                                                viewModel.toggleCallCamera(callId, isOff)
                                             },
                                             onCloseChat = {
                                                 chatInitialChannelId = null
@@ -694,6 +703,8 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                         )
                                         PrimaryTab.MY_WORK -> MyWorkScreen(
                                             state = state,
+                                            deliverableTimerStateFlow = viewModel.deliverableTimerState,
+                                            focusTimerStateFlow = viewModel.focusTimerState,
                                             onOpenDeliverable = { activeDeliverable = it },
                                             onStartDeliverable = { viewModel.startDeliverableWork(it) },
                                             onClaimDepartmentTask = { viewModel.claimDepartmentDeliverable(it) },
@@ -887,6 +898,8 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             callSession = callSession,
             onAcceptCall = { callSession?.let { viewModel.acceptVideoCall(it.id) } },
             onEndOrDeclineCall = { st -> callSession?.let { viewModel.endOrDeclineVideoCall(it.id, st) } },
+            onToggleMute = { isMuted -> callSession?.let { viewModel.toggleCallMute(it.id, isMuted) } },
+            onToggleCamera = { isOff -> callSession?.let { viewModel.toggleCallCamera(it.id, isOff) } },
             onDismiss = { activeCallOverlayId = null },
             onCallCompleted = { _ -> }
         )
@@ -897,7 +910,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             summary = cloudStorageSummary,
             isScanning = isScanningCloudStorage,
             isDeleting = isDeletingCloudStorage,
-            onRefresh = { viewModel.refreshCloudStorageSummary(context) },
+            onRefresh = { viewModel.refreshCloudStorageSummary(context, force = true) },
             onDeleteItems = { items, onDone ->
                 viewModel.deleteCloudStorageItems(context, items, onDone)
             },
@@ -913,6 +926,7 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
             state = state,
             deliverable = fresh,
             updatesFlow = viewModel.observeDeliverableUpdates(fresh.id),
+            deliverableTimerStateFlow = viewModel.deliverableTimerState,
             onSubmitProgress = { deliv, status, checklist, note, url, reason, help ->
                 viewModel.submitStaffProgress(deliv, status, checklist, note, url, reason, help)
             },

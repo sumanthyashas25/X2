@@ -58,7 +58,9 @@ fun AgencyMenuDrawerContent(
     val member = state.myMember ?: return
     val palette = XMaxTheme.colors
     val access = member.accessLevelEnum()
-    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val uiPolicy = remember(state.verifiedEmail, state.verifiedUserRole, state.myMember, state.members) {
+        WorkspaceUiPolicy.fromState(state)
+    }
     val pendingMembersCount = state.members.count { it.statusEnum() == MembershipStatus.PENDING }
     val activeProjectsCount = state.projects.count { !it.deleted }
     val pendingRequestsCount = state.requests.count { it.decisionStatusEnum() == DecisionStatus.PENDING }

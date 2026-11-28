@@ -11,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +52,8 @@ import com.example.ui.components.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -91,10 +95,17 @@ fun MyWorkScreen(
     onSetFocusPreset: (Int) -> Unit = {},
     onLogTimeEntry: (Project, Deliverable?, Int, Boolean, Long, String) -> Unit = { _, _, _, _, _, _ -> },
     onCommitTimerToTimeEntry: (Deliverable) -> Unit = {},
-    onDeleteTimeEntry: (String) -> Unit = {}
+    onDeleteTimeEntry: (String) -> Unit = {},
+    deliverableTimerStateFlow: StateFlow<Pair<String?, Map<String, Long>>> = remember(state.activeTimerDeliverableId, state.timerSecondsByDeliverable) {
+        MutableStateFlow(state.activeTimerDeliverableId to state.timerSecondsByDeliverable)
+    },
+    focusTimerStateFlow: StateFlow<Triple<Int, Long, Boolean>> = remember(state.focusPresetMinutes, state.focusSecondsRemaining, state.isFocusTimerRunning) {
+        MutableStateFlow(Triple(state.focusPresetMinutes, state.focusSecondsRemaining, state.isFocusTimerRunning))
+    }
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
+    val deliverableTimerState by deliverableTimerStateFlow.collectAsStateWithLifecycle()
     var showLogHoursDialog by remember { mutableStateOf(false) }
     val member = state.myMember
     val uid = member?.uid.orEmpty()
@@ -256,6 +267,7 @@ fun MyWorkScreen(
     if (showPlanMode) {
         StaffPlanCalendarSection(
             state = state,
+            focusTimerStateFlow = focusTimerStateFlow,
             onSavePlanItem = onSavePlanItem,
             onTogglePlanCompleted = onTogglePlanCompleted,
             onRescheduleTomorrow = onReschedulePlanTomorrow,
@@ -732,8 +744,8 @@ fun MyWorkScreen(
                     DeliverableStatus.IN_PROGRESS -> palette.skyBg
                     DeliverableStatus.NOT_STARTED -> palette.lavenderBg
                 }
-                val elapsedSecs = state.timerSecondsByDeliverable[d.id] ?: 0L
-                val isTimerRunning = state.activeTimerDeliverableId == d.id
+                val elapsedSecs = deliverableTimerState.second[d.id] ?: 0L
+                val isTimerRunning = deliverableTimerState.first == d.id
                 PastelDeliverableScheduleCard(
                     deliverable = d,
                     cardColor = tintBg,
@@ -1242,10 +1254,11 @@ private fun PastelDeliverableScheduleCard(
                     testTag = "slide_start_${deliverable.id}"
                 )
             } else if (st == DeliverableStatus.IN_PROGRESS || st == DeliverableStatus.CHANGES_REQUESTED) {
-                Row(
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Surface(
                         onClick = onToggleTimer,
@@ -1253,11 +1266,11 @@ private fun PastelDeliverableScheduleCard(
                         color = if (isTimerRunning) palette.buttonPrimaryBg else palette.surface,
                         border = if (isTimerRunning) null else BorderStroke(1.dp, palette.outline),
                         modifier = Modifier
-                            .height(38.dp)
+                            .defaultMinSize(minHeight = 48.dp)
                             .testTag("timer_toggle_${deliverable.id}")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
@@ -1270,7 +1283,9 @@ private fun PastelDeliverableScheduleCard(
                             Text(
                                 text = if (isTimerRunning || elapsedTimerSeconds > 0L) formatElapsedTimer(elapsedTimerSeconds) else "Start Timer",
                                 style = if (isTimerRunning || elapsedTimerSeconds > 0L) XMaxType.monoTimer else XMaxType.footnoteSemibold,
-                                color = if (isTimerRunning) palette.buttonPrimaryFg else palette.textPrimary
+                                color = if (isTimerRunning) palette.buttonPrimaryFg else palette.textPrimary,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -1280,8 +1295,8 @@ private fun PastelDeliverableScheduleCard(
                             onClick = onCommitTimerToTimeEntry,
                             shape = RoundedCornerShape(999.dp),
                             border = BorderStroke(1.dp, palette.outline),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(38.dp).testTag("save_timesheet_${deliverable.id}")
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("save_timesheet_${deliverable.id}")
                         ) {
                             Text("Save to Timesheet", style = XMaxType.caption1Semibold, color = palette.textPrimary, maxLines = 1, softWrap = false)
                         }
@@ -1292,12 +1307,12 @@ private fun PastelDeliverableScheduleCard(
                             onClick = onQuickSubmitReview,
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                             modifier = Modifier
-                                .height(38.dp)
+                                .defaultMinSize(minHeight = 48.dp)
                                 .testTag("quick_submit_review_${deliverable.id}")
                         ) {
-                            Text("Submit Review", style = XMaxType.buttonCompact)
+                            Text("Submit Review", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -1317,11 +1332,15 @@ fun DeliverableDetailDialog(
     onToggleTimer: (String) -> Unit = {},
     onResetTimer: (String) -> Unit = {},
     onCommitTimerToTimeEntry: (Deliverable) -> Unit = {},
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    deliverableTimerStateFlow: StateFlow<Pair<String?, Map<String, Long>>> = remember(state.activeTimerDeliverableId, state.timerSecondsByDeliverable) {
+        MutableStateFlow(state.activeTimerDeliverableId to state.timerSecondsByDeliverable)
+    }
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
     val updatesSynced by updatesFlow.collectAsStateWithLifecycle(initialValue = SyncedData(emptyList(), false))
+    val deliverableTimerState by deliverableTimerStateFlow.collectAsStateWithLifecycle()
     val uid = state.myMember?.uid.orEmpty()
     val isAssignee = deliverable.assignedToUid == uid
     val canApprove = state.hasPerm(AppPermission.APPROVE_DELIVERABLES)
@@ -1358,8 +1377,8 @@ fun DeliverableDetailDialog(
     val started = st != DeliverableStatus.NOT_STARTED
     val approved = st == DeliverableStatus.APPROVED
     val ownerPhoto = state.members.firstOrNull { it.uid == deliverable.assignedToUid }?.photoBase64.orEmpty()
-    val elapsedSecs = state.timerSecondsByDeliverable[deliverable.id] ?: 0L
-    val isTimerRunning = state.activeTimerDeliverableId == deliverable.id
+    val elapsedSecs = deliverableTimerState.second[deliverable.id] ?: 0L
+    val isTimerRunning = deliverableTimerState.first == deliverable.id
 
     val timeFmt = remember { SimpleDateFormat("h:mma", Locale.getDefault()) }
     val dateFmt = remember { SimpleDateFormat("d MMM yyyy", Locale.getDefault()) }
@@ -1621,10 +1640,11 @@ fun DeliverableDetailDialog(
                                         color = palette.lavenderBg,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(14.dp),
+                                        @OptIn(ExperimentalLayoutApi::class)
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth().padding(14.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
                                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                                 Text(
@@ -1638,7 +1658,11 @@ fun DeliverableDetailDialog(
                                                     color = palette.textPrimary
                                                 )
                                             }
-                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            @OptIn(ExperimentalLayoutApi::class)
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
                                                 Button(
                                                     onClick = {
                                                         AppHapticsAndNotifier.triggerTickHaptic(context)
@@ -1646,8 +1670,8 @@ fun DeliverableDetailDialog(
                                                     },
                                                     shape = RoundedCornerShape(999.dp),
                                                     colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                                    modifier = Modifier.height(40.dp).testTag("dialog_timer_toggle_button")
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("dialog_timer_toggle_button")
                                                 ) {
                                                     Icon(
                                                         if (isTimerRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -1665,10 +1689,10 @@ fun DeliverableDetailDialog(
                                                             onResetTimer(deliverable.id)
                                                         },
                                                         shape = RoundedCornerShape(999.dp),
-                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                        modifier = Modifier.height(40.dp)
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                                                     ) {
-                                                        Text("Log Time", style = XMaxType.caption1Semibold, color = palette.textPrimary)
+                                                        Text("Log Time", style = XMaxType.caption1Semibold, color = palette.textPrimary, maxLines = 1, softWrap = false)
                                                     }
                                                     Button(
                                                         onClick = {
@@ -1677,8 +1701,8 @@ fun DeliverableDetailDialog(
                                                         },
                                                         shape = RoundedCornerShape(999.dp),
                                                         colors = ButtonDefaults.buttonColors(containerColor = palette.mintBg, contentColor = palette.mintInk),
-                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                        modifier = Modifier.height(40.dp).testTag("dialog_save_timesheet_button")
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                        modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("dialog_save_timesheet_button")
                                                     ) {
                                                         Text("Save Timesheet", style = XMaxType.caption1Semibold, maxLines = 1, softWrap = false)
                                                     }

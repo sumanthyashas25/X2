@@ -28,6 +28,12 @@
               ".write": "auth != null && auth.uid == $uid"
             }
           }
+        },
+        "calls": {
+          "$callId": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          }
         }
       }
     }

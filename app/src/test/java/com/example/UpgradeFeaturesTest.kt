@@ -235,6 +235,34 @@ class UpgradeFeaturesTest {
         assertEquals(3, series.forecastPoints.size)
         assertEquals(40, series.collectionRatePercent)
         assertTrue(series.projectedNext3MonthsPaise > 0L)
+
+        // When PaymentRecord list is empty, Project.paidPaise still reconciles into collected history and rate,
+        // and IN_PROGRESS / READY_FOR_REVIEW deliverables contribute fractional completion smoothly.
+        val reconciledDelivs = listOf(
+            Deliverable(
+                id = "d_prog",
+                projectId = "p1",
+                status = DeliverableStatus.IN_PROGRESS.name,
+                checklist = listOf(ChecklistItem("c1", "Draft", true), ChecklistItem("c2", "Final", false))
+            ),
+            Deliverable(
+                id = "d_rev",
+                projectId = "p1",
+                status = DeliverableStatus.READY_FOR_REVIEW.name
+            )
+        )
+        val reconciledSeries = WorkDistributionEngine.computeAgencyAnalyticsSeries(
+            projects = projects,
+            deliverables = reconciledDelivs,
+            payments = emptyList(),
+            timeEntries = emptyList(),
+            nowMillis = now
+        )
+        assertEquals(40, reconciledSeries.collectionRatePercent)
+        assertEquals(4_000_000L, reconciledSeries.historyPoints.last().collectedPaise)
+        assertTrue(reconciledSeries.averageCompletionPercent in 50..90)
+        assertTrue(reconciledSeries.forecastPoints.all { it.forecastPaise >= 0L })
+        assertTrue(reconciledSeries.projectedNext3MonthsPaise <= 12_000_000L)
     }
 
     @Test

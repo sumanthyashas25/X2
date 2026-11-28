@@ -10,6 +10,11 @@ import com.example.model.AccessLevel
 import com.example.model.Member
 import com.example.model.MembershipStatus
 import com.example.ui.AgencyUiState
+import com.example.ui.ApprovedGateKey
+import com.example.ui.CommercialGateKey
+import com.example.ui.PaymentGateKey
+import com.example.ui.ProjectGateKey
+import com.example.ui.friendlyFirestoreMessage
 import com.example.ui.screens.AdminDashboardAccessEvaluator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -127,5 +132,39 @@ class RoleVerificationAndBackendTest {
                 optionsDatabaseUrl = null
             )
         )
+    }
+
+    @Test
+    fun `firestore gate keys stay immutable across presence heartbeats and quota errors map cleanly`() {
+        val m1 = Member(
+            id = "u1",
+            uid = "u1",
+            status = MembershipStatus.APPROVED.name,
+            accessLevel = AccessLevel.SUPER_ADMIN.name,
+            active = true,
+            departmentId = "dept_ops",
+            messagingSuspended = false,
+            lastActiveAtMillis = 1_000L,
+            availabilityStatus = "OFFLINE"
+        )
+        val m2 = m1.copy(
+            lastActiveAtMillis = 999_999L,
+            availabilityStatus = "ACTIVE",
+            e2eePublicKey = "pub_new"
+        )
+        val key1 = ApprovedGateKey(m1.uid, m1.status, m1.accessLevelEnum(), m1.active, m1.departmentId, m1.messagingSuspended)
+        val key2 = ApprovedGateKey(m2.uid, m2.status, m2.accessLevelEnum(), m2.active, m2.departmentId, m2.messagingSuspended)
+        assertEquals(key1, key2)
+        assertEquals(CommercialGateKey("u1", true), CommercialGateKey("u1", true))
+        assertEquals(ProjectGateKey("u1", true, "dept_ops"), ProjectGateKey("u1", true, "dept_ops"))
+        assertEquals(PaymentGateKey("u1", true), PaymentGateKey("u1", true))
+
+        val quotaEx = IllegalStateException("RESOURCE_EXHAUSTED: Quota exceeded.")
+        val friendlyQuota = friendlyFirestoreMessage(quotaEx, "Fallback")
+        assertTrue(friendlyQuota.contains("quota", ignoreCase = true))
+        assertTrue(friendlyQuota.contains("Retry Sync", ignoreCase = true))
+
+        val otherEx = IllegalStateException("Network reset")
+        assertEquals("Network reset", friendlyFirestoreMessage(otherEx, "Fallback"))
     }
 }

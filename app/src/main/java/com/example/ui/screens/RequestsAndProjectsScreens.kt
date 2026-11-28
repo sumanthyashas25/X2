@@ -8,6 +8,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -57,7 +59,9 @@ fun RequestsScreen(
     var showNewRequestDialog by remember { mutableStateOf(false) }
     var selectedRequest by remember { mutableStateOf<ProjectRequest?>(null) }
 
-    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val uiPolicy = remember(state.verifiedEmail, state.verifiedUserRole, state.myMember, state.members) {
+        WorkspaceUiPolicy.fromState(state)
+    }
     val canCreateReq = state.hasPerm(AppPermission.CREATE_REQUESTS) || uiPolicy.canManageCommercialQuotes
     val canAccept = state.hasPerm(AppPermission.ACCEPT_PROJECT)
     val canDecline = state.hasPerm(AppPermission.DECLINE_PROJECT)
@@ -80,21 +84,37 @@ fun RequestsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Client Requests", style = XMaxType.sectionHeading, color = palette.textPrimary)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Client Requests",
+                    style = XMaxType.sectionHeading,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                )
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     CommercialFeatureGate(policy = uiPolicy) {
                         if (onOpenRequirementsQuote != null) {
                             OutlinedButton(
                                 onClick = onOpenRequirementsQuote,
                                 shape = RoundedCornerShape(999.dp),
                                 border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(42.dp).testTag("open_requirements_quote_button")
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("open_requirements_quote_button")
                             ) {
                                 Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = palette.accentViolet, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Quote Brief", style = XMaxType.buttonCompact, color = palette.textPrimary)
+                                Text("Quote Brief", style = XMaxType.buttonCompact, color = palette.textPrimary, maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -103,11 +123,12 @@ fun RequestsScreen(
                             onClick = { showNewRequestDialog = true },
                             shape = RoundedCornerShape(999.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                            modifier = Modifier.height(42.dp).testTag("new_request_button")
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("new_request_button")
                         ) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("New Request", style = XMaxType.buttonCompact)
+                            Text("New Request", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -726,20 +747,36 @@ fun ProjectsScreen(
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Projects (${list.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Projects (${list.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                )
                 AdminOnlyContent(policy = uiPolicy, requireSuperAdmin = true) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         if (cleanableCount > 0) {
                             OutlinedButton(
                                 onClick = { showCleanupConfirm = true },
                                 shape = RoundedCornerShape(999.dp),
                                 border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.45f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonBlocked),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(38.dp).testTag("cleanup_old_projects_button")
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("cleanup_old_projects_button")
                             ) {
-                                Text("CLEAN DONE ($cleanableCount)", style = XMaxType.caption1Semibold.tabular())
+                                Text("CLEAN DONE ($cleanableCount)", style = XMaxType.caption1Semibold.tabular(), maxLines = 1, softWrap = false)
                             }
                         }
                         FilterChip(
@@ -753,7 +790,7 @@ fun ProjectsScreen(
                                 labelColor = palette.textPrimary
                             ),
                             border = FilterChipDefaults.filterChipBorder(enabled = true, selected = showDeleted, borderColor = palette.outline),
-                            label = { Text(if (showDeleted) "DELETED" else "ACTIVE ONLY", style = XMaxType.caption1Semibold) }
+                            label = { Text(if (showDeleted) "DELETED" else "ACTIVE ONLY", style = XMaxType.caption1Semibold, maxLines = 1, softWrap = false) }
                         )
                     }
                 }

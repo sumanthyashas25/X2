@@ -1918,3 +1918,169 @@ test("Scenario 15: Verified email bootstrap, member heartbeat/e2ee self-updates,
   );
 });
 
+test("Scenario 16: Hardened invite claim and chat_channels invite-code join rules block escalation and tampering", async () => {
+  await seedCompanyAndMembers();
+  const now = pastDate();
+
+  const declinedUid = "declined_user_1";
+  const declinedDb = testEnv.authenticatedContext(declinedUid, {
+    email: "declineduser@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  const rogueInviteUid = "rogue_super_invite_1";
+  const rogueInviteDb = testEnv.authenticatedContext(rogueInviteUid, {
+    email: "roguesuper@gmail.com",
+    email_verified: true,
+  }).firestore();
+
+  const staffDb = testEnv.authenticatedContext(STAFF_UID, {
+    email: "designer@xmax.agency",
+    email_verified: true,
+  }).firestore();
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("companies").doc(COMPANY_ID).collection("members").doc(declinedUid).set({
+      uid: declinedUid,
+      fullName: "Declined Member",
+      accessLevel: "STAFF",
+      status: "DECLINED",
+      active: false,
+      scopeType: "TEAM",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.collection("companies").doc(COMPANY_ID).collection("invitations").doc("declineduser@gmail.com").set({
+      email: "declineduser@gmail.com",
+      accessLevel: "STAFF",
+      departmentId: "dept_creative",
+      jobRoleId: "role_graphic_designer",
+      scopeType: "TEAM",
+      scopeDepartmentIds: [],
+      permissions: {},
+      invitedByUid: SUPER_ADMIN_UID,
+      status: "PENDING",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.collection("companies").doc(COMPANY_ID).collection("invitations").doc("roguesuper@gmail.com").set({
+      email: "roguesuper@gmail.com",
+      accessLevel: "SUPER_ADMIN",
+      departmentId: "dept_ops",
+      jobRoleId: "role_director",
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      invitedByUid: SUPER_ADMIN_UID,
+      status: "PENDING",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_open").set({
+      title: "Open Group",
+      topic: "Design",
+      channelType: "GROUP",
+      projectId: "",
+      projectTitle: "",
+      participantUids: [ADMIN_UID],
+      pendingMemberUids: [],
+      requireAdminApproval: false,
+      inviteCode: "JOIN2026",
+      createdByUid: ADMIN_UID,
+      createdByName: "Priya Manager",
+      lastMessagePreview: "",
+      lastSenderName: "",
+      lastMessageAtMillis: 0,
+      messageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_locked").set({
+      title: "Approval Group",
+      topic: "Leads",
+      channelType: "GROUP",
+      projectId: "",
+      projectTitle: "",
+      participantUids: [ADMIN_UID],
+      pendingMemberUids: [],
+      requireAdminApproval: true,
+      inviteCode: "LOCK2026",
+      createdByUid: ADMIN_UID,
+      createdByName: "Priya Manager",
+      lastMessagePreview: "",
+      lastSenderName: "",
+      lastMessageAtMillis: 0,
+      messageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  // 1. DECLINED member cannot self-reactivate via invite claim
+  await assertFails(
+    declinedDb.collection("companies").doc(COMPANY_ID).collection("members").doc(declinedUid).update({
+      status: "APPROVED",
+      active: true,
+      accessLevel: "STAFF",
+      departmentId: "dept_creative",
+      jobRoleId: "role_graphic_designer",
+      scopeType: "TEAM",
+      permissions: {},
+      delegatedGrants: {},
+      updatedAt: pastDate(100),
+    })
+  );
+
+  // 2. Non-bootstrap user cannot claim a SUPER_ADMIN invite
+  await assertFails(
+    rogueInviteDb.collection("companies").doc(COMPANY_ID).collection("members").doc(rogueInviteUid).set({
+      uid: rogueInviteUid,
+      fullName: "Rogue Super",
+      accessLevel: "SUPER_ADMIN",
+      status: "APPROVED",
+      active: true,
+      departmentId: "dept_ops",
+      jobRoleId: "role_director",
+      scopeType: "COMPANY",
+      scopeDepartmentIds: [],
+      permissions: {},
+      delegatedGrants: {},
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // 3. chat_channels invite-code join cannot tamper with existing participantUids or bypass approval
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_open").update({
+      participantUids: [STAFF_UID], // drops ADMIN_UID
+    })
+  );
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_open").update({
+      participantUids: [ADMIN_UID, STAFF_UID, OTHER_STAFF_UID], // adds someone else
+    })
+  );
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_locked").update({
+      participantUids: [ADMIN_UID, STAFF_UID], // bypasses requireAdminApproval
+    })
+  );
+
+  // 4. Valid self-append via invite code succeeds
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_open").update({
+      participantUids: [ADMIN_UID, STAFF_UID],
+    })
+  );
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_channels").doc("grp_locked").update({
+      pendingMemberUids: [STAFF_UID],
+    })
+  );
+});
+

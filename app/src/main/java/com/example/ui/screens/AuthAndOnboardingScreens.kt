@@ -179,6 +179,39 @@ fun SignInScreen(
                             }
                         }
                     }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Secondary Outlined Phone OTP Button
+                    OutlinedButton(
+                        onClick = { if (!authInProgress) showPhoneSheet = true },
+                        enabled = !authInProgress,
+                        shape = RoundedCornerShape(999.dp),
+                        border = BorderStroke(1.dp, palette.outline),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = palette.surface,
+                            contentColor = palette.textPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .testTag("continue_with_phone_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PhoneAndroid,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = palette.textPrimary
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "Continue with Phone",
+                            style = XMaxType.button,
+                            color = palette.textPrimary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
 
                 // Bottom green-accent legal footer matching Login_ui_referance_f765934b.jpg

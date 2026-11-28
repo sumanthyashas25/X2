@@ -74,7 +74,9 @@ fun HomeScreen(
 ) {
     val member = state.myMember ?: return
     val access = member.accessLevelEnum()
-    val uiPolicy = remember(state) { WorkspaceUiPolicy.fromState(state) }
+    val uiPolicy = remember(state.verifiedEmail, state.verifiedUserRole, state.myMember, state.members) {
+        WorkspaceUiPolicy.fromState(state)
+    }
 
     var selectedWindow by remember { mutableStateOf(OverviewWindow.THIS_WEEK) }
     var showWindowMenu by remember { mutableStateOf(false) }
@@ -329,76 +331,6 @@ fun HomeScreen(
             }
         }
 
-        item {
-            AdminOnlyContent(
-                policy = uiPolicy,
-                fallback = {
-                    if (uiPolicy.showStandardMemberFocusedHome) {
-                        StandardMemberCleanFocusCard(
-                            pendingTaskCount = myAssigned.size,
-                            departmentName = member.departmentName
-                        )
-                    }
-                }
-            ) {
-                val palette = XMaxTheme.colors
-                val isSuperEmail = uiPolicy.isSuperAdmin
-                Surface(
-                    onClick = onNavigateAdminDashboard,
-                    shape = RoundedCornerShape(20.dp),
-                    color = palette.surface,
-                    border = BorderStroke(1.dp, palette.outline),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("home_admin_dashboard_card")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(palette.kpiLavenderBg),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AdminPanelSettings,
-                                contentDescription = "Admin Dashboard",
-                                tint = palette.accentViolet,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Admin Dashboard",
-                                style = XMaxType.subheadlineSemibold,
-                                color = palette.textPrimary
-                            )
-                            Text(
-                                text = if (isSuperEmail) {
-                                    "Super Admin • Project lifecycle & cloud health"
-                                } else {
-                                    "Restricted to xdotmax@gmail.com"
-                                },
-                                style = XMaxType.caption1,
-                                color = palette.textSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        StatusPill(
-                            label = if (isSuperEmail) "super_admin" else "standard_member",
-                            containerColor = if (isSuperEmail) palette.mintBg else palette.surfaceMuted,
-                            contentColor = if (isSuperEmail) palette.mintInk else palette.textSecondary
-                        )
-                    }
-                }
-            }
-        }
-
         // 3. Projects Section + Dropdown ("All time v") + Segmented Pills ("Active (X)" / "Requests (Y)" / "Completed (Z)")
         item {
             val palette = XMaxTheme.colors
@@ -585,6 +517,84 @@ fun HomeScreen(
                             onDelete = {},
                             modifier = Modifier.animateItem()
                         )
+                    }
+                }
+            }
+        }
+
+        // Super Admin Control Center shortcut (or Staff clean focus card) positioned below Projects
+        if (uiPolicy.canAccessAdminDashboard || uiPolicy.showStandardMemberFocusedHome) {
+            item {
+                RoleGate(
+                    visible = uiPolicy.canAccessAdminDashboard,
+                    fallback = {
+                        if (uiPolicy.showStandardMemberFocusedHome) {
+                            StandardMemberCleanFocusCard(
+                                pendingTaskCount = myAssigned.size,
+                                departmentName = member.departmentName
+                            )
+                        }
+                    }
+                ) {
+                    val palette = XMaxTheme.colors
+                    val pendingApprovalsCount = remember(state.members) {
+                        state.members.count { it.statusEnum() == MembershipStatus.PENDING }
+                    }
+                    Surface(
+                        onClick = onNavigateAdminDashboard,
+                        shape = RoundedCornerShape(20.dp),
+                        color = palette.surface,
+                        border = BorderStroke(
+                            width = if (pendingApprovalsCount > 0) 1.5.dp else 1.dp,
+                            color = if (pendingApprovalsCount > 0) palette.butterInk.copy(alpha = 0.45f) else palette.outline
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("home_admin_dashboard_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(if (pendingApprovalsCount > 0) palette.butterBg else palette.kpiLavenderBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AdminPanelSettings,
+                                    contentDescription = "Admin Dashboard",
+                                    tint = if (pendingApprovalsCount > 0) palette.butterInk else palette.accentViolet,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Admin Dashboard",
+                                    style = XMaxType.subheadlineSemibold,
+                                    color = palette.textPrimary
+                                )
+                                Text(
+                                    text = if (pendingApprovalsCount > 0) {
+                                        "$pendingApprovalsCount membership request${if (pendingApprovalsCount == 1) "" else "s"} awaiting approval"
+                                    } else {
+                                        "Super Admin • Approvals, lifecycle & cloud health"
+                                    },
+                                    style = XMaxType.caption1,
+                                    color = if (pendingApprovalsCount > 0) palette.butterInk else palette.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            StatusPill(
+                                label = if (pendingApprovalsCount > 0) "$pendingApprovalsCount Pending" else "super_admin",
+                                containerColor = if (pendingApprovalsCount > 0) palette.butterBg else palette.mintBg,
+                                contentColor = if (pendingApprovalsCount > 0) palette.butterInk else palette.mintInk
+                            )
+                        }
                     }
                 }
             }

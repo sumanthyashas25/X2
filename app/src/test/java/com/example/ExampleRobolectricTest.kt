@@ -23,8 +23,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
 import com.example.chat.ChatFileManager
 import com.example.data.AuthSessionStatus
+import com.example.data.AuthenticationRepository
 import com.example.data.FirebaseStartup
 import com.example.data.SyncedData
+import com.example.data.UserRoleType
 import com.example.domain.CatalogueSeedData
 import com.example.domain.PermissionEngine
 import com.example.model.*
@@ -42,6 +44,7 @@ import com.example.ui.navigation.LoadingDestinationScreen
 import com.example.ui.navigation.XMaxRoute
 import com.example.ui.navigation.resolveAuthRoute
 import com.example.ui.screens.ActivityLogScreen
+import com.example.ui.screens.AdminDashboardScreen
 import com.example.ui.screens.ClientsScreen
 import com.example.ui.screens.DeliverableDetailDialog
 import com.example.ui.screens.HomeScreen
@@ -53,6 +56,7 @@ import com.example.ui.screens.PendingApprovalScreen
 import com.example.ui.screens.ProjectsScreen
 import com.example.ui.screens.RequestDecisionDialog
 import com.example.ui.screens.TeamChatScreen
+import com.example.ui.screens.TeamGovernanceScreen
 import com.example.ui.theme.XMaxTheme
 import com.google.firebase.FirebaseApp
 import java.io.File
@@ -1296,5 +1300,241 @@ class ExampleRobolectricTest {
       nowMillis = now
     )
     assertTrue(deadlineAlerts.any { it.kind == PaymentReminderKind.DEADLINE_FINAL && it.amountPaise == 50_000_00L })
+  }
+
+  @Test
+  fun `super admin dashboard renders progress and revenue forecast and blocks non-super admins`() {
+    val superMember = Member(
+      id = "uid_super_1",
+      uid = "uid_super_1",
+      fullName = "X.MAX Director",
+      accessLevel = AccessLevel.SUPER_ADMIN.name,
+      status = MembershipStatus.APPROVED.name,
+      active = true
+    )
+    val superVerified = AuthenticationRepository.verifyUserRole(
+      email = CatalogueSeedData.DEFAULT_SUPER_ADMIN_EMAIL,
+      uid = "uid_super_1",
+      isAuthenticated = true
+    )
+    val sampleProject = Project(
+      id = "proj_analytics_1",
+      title = "Brand Overhaul",
+      clientCompanyName = "Apex Labs",
+      agreedValuePaise = 20_000_000L,
+      paidPaise = 10_000_000L,
+      status = ProjectStatus.IN_PROGRESS.name
+    )
+    val sampleDeliverable = Deliverable(
+      id = "deliv_analytics_1",
+      projectId = "proj_analytics_1",
+      title = "Brand Book",
+      status = DeliverableStatus.IN_PROGRESS.name,
+      checklist = listOf(ChecklistItem("Draft", done = true), ChecklistItem("Approve", done = false))
+    )
+    val superState = AgencyUiState(
+      company = CatalogueSeedData.defaultCompanyProfile("uid_super_1"),
+      companyLoaded = true,
+      myMember = superMember,
+      memberLoaded = true,
+      verifiedUserRole = superVerified,
+      projects = listOf(sampleProject),
+      deliverables = listOf(sampleDeliverable)
+    )
+
+    composeTestRule.activityRule.scenario.onActivity { activity ->
+      activity.setContent {
+        XMaxTheme(darkTheme = false) {
+          AdminDashboardScreen(
+            state = superState,
+            onRunBackendDiagnostics = {},
+            onToggleDeleteProject = { _, _ -> },
+            onPermanentlyDeleteProject = {},
+            onCleanupOldDoneProjects = {},
+            onOpenTeamGovernance = {},
+            onOpenCompanySettings = {},
+            onBack = {}
+          )
+        }
+      }
+    }
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("admin_dashboard_unlocked").assertExists()
+    composeTestRule.onNodeWithTag("admin_identity_verified_card").assertExists()
+    composeTestRule.onNodeWithTag("admin_analytics_visualizer").assertExists()
+    composeTestRule.onNodeWithText("Progress & Revenue Forecast").assertExists()
+
+    val managerMember = superMember.copy(
+      id = "uid_mgr_1",
+      uid = "uid_mgr_1",
+      fullName = "Priya Manager",
+      accessLevel = AccessLevel.ADMIN.name
+    )
+    val managerVerified = AuthenticationRepository.verifyUserRole(
+      email = "priya@xmax.agency",
+      uid = "uid_mgr_1",
+      isAuthenticated = true
+    )
+    assertEquals(UserRoleType.STANDARD_MEMBER, managerVerified.role)
+    val nonSuperState = superState.copy(
+      myMember = managerMember,
+      verifiedUserRole = managerVerified
+    )
+
+    composeTestRule.activityRule.scenario.onActivity { activity ->
+      activity.setContent {
+        XMaxTheme(darkTheme = false) {
+          AdminDashboardScreen(
+            state = nonSuperState,
+            onRunBackendDiagnostics = {},
+            onToggleDeleteProject = { _, _ -> },
+            onPermanentlyDeleteProject = {},
+            onCleanupOldDoneProjects = {},
+            onOpenTeamGovernance = {},
+            onOpenCompanySettings = {},
+            onBack = {}
+          )
+        }
+      }
+    }
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("admin_dashboard_unlocked").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("admin_analytics_visualizer").assertDoesNotExist()
+  }
+
+  @Test
+  fun `super admin dashboard surfaces submitted pending members for approval and permission configuration`() {
+    val superMember = Member(
+      id = "uid_super_1",
+      uid = "uid_super_1",
+      fullName = "X.MAX Director",
+      accessLevel = AccessLevel.SUPER_ADMIN.name,
+      status = MembershipStatus.APPROVED.name,
+      active = true
+    )
+    val pendingApplicant = Member(
+      id = "uid_applicant_1",
+      uid = "uid_applicant_1",
+      fullName = "Rohan Kulkarni",
+      companyNameInput = "X.MAX Studios",
+      requestedDepartment = "Creative",
+      requestedJobRole = "Graphic Designer",
+      accessLevel = AccessLevel.STAFF.name,
+      status = MembershipStatus.PENDING.name,
+      active = true
+    )
+    val applicantPrivate = MemberPrivateInfo(
+      uid = "uid_applicant_1",
+      age = 26,
+      email = "rohan@xmax.agency",
+      phone = "+919988776655"
+    )
+    val superVerified = AuthenticationRepository.verifyUserRole(
+      email = CatalogueSeedData.DEFAULT_SUPER_ADMIN_EMAIL,
+      uid = "uid_super_1",
+      isAuthenticated = true
+    )
+    val state = AgencyUiState(
+      company = CatalogueSeedData.defaultCompanyProfile("uid_super_1"),
+      companyLoaded = true,
+      myMember = superMember,
+      memberLoaded = true,
+      verifiedUserRole = superVerified,
+      members = listOf(superMember, pendingApplicant),
+      allPrivateInfo = listOf(applicantPrivate),
+      departments = CatalogueSeedData.defaultDepartments(),
+      jobRoles = CatalogueSeedData.defaultJobRoles()
+    )
+
+    var configuredStatus: MembershipStatus? = null
+    var configuredDept: Department? = null
+    var configuredRole: JobRole? = null
+
+    composeTestRule.activityRule.scenario.onActivity { activity ->
+      activity.setContent {
+        XMaxTheme(darkTheme = false) {
+          AdminDashboardScreen(
+            state = state,
+            onRunBackendDiagnostics = {},
+            onToggleDeleteProject = { _, _ -> },
+            onPermanentlyDeleteProject = {},
+            onCleanupOldDoneProjects = {},
+            onOpenTeamGovernance = {},
+            onOpenCompanySettings = {},
+            onBack = {},
+            onConfigureMember = { _, st, _, dept, role, _, _, _ ->
+              configuredStatus = st
+              configuredDept = dept
+              configuredRole = role
+            }
+          )
+        }
+      }
+    }
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("admin_pending_approvals_card").assertExists()
+    composeTestRule.onNodeWithTag("admin_pending_member_row_uid_applicant_1").assertExists()
+    composeTestRule.onNodeWithTag("admin_approve_member_uid_applicant_1").performClick()
+    composeTestRule.waitForIdle()
+
+    composeTestRule.onNodeWithText("Applicant Submission Details").assertExists()
+    composeTestRule.onNodeWithTag("save_member_permissions_button").performClick()
+    composeTestRule.waitForIdle()
+
+    assertEquals(MembershipStatus.APPROVED, configuredStatus)
+    assertEquals("Creative", configuredDept?.name)
+    assertEquals("Graphic Designer", configuredRole?.name)
+  }
+
+  @Test
+  fun `team governance screen pins pending membership requests at top with banner`() {
+    val superMember = Member(
+      id = "uid_super_1",
+      uid = "uid_super_1",
+      fullName = "X.MAX Director",
+      accessLevel = AccessLevel.SUPER_ADMIN.name,
+      status = MembershipStatus.APPROVED.name,
+      active = true
+    )
+    val pendingApplicant = Member(
+      id = "uid_applicant_2",
+      uid = "uid_applicant_2",
+      fullName = "Ananya Verma",
+      requestedDepartment = "Operations",
+      requestedJobRole = "Project Manager",
+      accessLevel = AccessLevel.STAFF.name,
+      status = MembershipStatus.PENDING.name,
+      active = true
+    )
+    val superVerified = AuthenticationRepository.verifyUserRole(
+      email = CatalogueSeedData.DEFAULT_SUPER_ADMIN_EMAIL,
+      uid = "uid_super_1",
+      isAuthenticated = true
+    )
+    val state = AgencyUiState(
+      myMember = superMember,
+      memberLoaded = true,
+      verifiedUserRole = superVerified,
+      members = listOf(superMember, pendingApplicant),
+      departments = CatalogueSeedData.defaultDepartments(),
+      jobRoles = CatalogueSeedData.defaultJobRoles()
+    )
+
+    composeTestRule.activityRule.scenario.onActivity { activity ->
+      activity.setContent {
+        XMaxTheme(darkTheme = false) {
+          TeamGovernanceScreen(
+            state = state,
+            onInviteMember = { _, _, _, _, _, _, _ -> },
+            onConfigureMember = { _, _, _, _, _, _, _, _ -> },
+            onUpdateStaffDelegation = { _, _ -> }
+          )
+        }
+      }
+    }
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("team_pending_approvals_banner").assertExists()
+    composeTestRule.onNodeWithTag("team_member_card_uid_applicant_2").assertExists()
+    composeTestRule.onNodeWithText("Approve & Configure").assertExists()
   }
 }

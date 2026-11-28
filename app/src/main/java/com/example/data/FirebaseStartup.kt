@@ -30,11 +30,11 @@ data class FirebaseConfigStatus(
  */
 object FirebaseStartup {
     private const val TAG = "XMaxFirebaseDiagnostics"
-    const val EXPECTED_PROJECT_ID = "gen-lang-client-0137668580"
-    const val EXPECTED_DATABASE_ID = "ai-studio-android-x2-2e94d6cb-2e92-47e1-acbe-98bc9d3528ed"
+    const val EXPECTED_PROJECT_ID = "gen-lang-client-0411475132"
+    const val EXPECTED_DATABASE_ID = "ai-studio-android-x2-f008d1bb-6c44-4fa2-9fd3-87ddefd4d583"
     const val EXPECTED_PACKAGE_NAME = "com.aistudio.xmax.krmxpq"
-    const val EXPECTED_SHA1 = "3F:DE:14:FD:31:D8:5B:B2:4D:1C:CB:B9:85:7F:2E:34:CB:40:8C:73"
-    const val EXPECTED_SHA256 = "4D:C6:95:6D:AD:8E:C1:F6:85:74:20:20:B1:D9:A8:8F:D3:6F:0D:27:56:F3:6D:20:7D:A0:87:90:74:A6:59:B8"
+    const val EXPECTED_SHA1 = "7A:E3:E1:F4:7F:B7:70:A6:12:0E:B1:98:2C:AA:CF:90:B9:C8:15:10"
+    const val EXPECTED_SHA256 = "B4:70:64:7B:D2:11:45:B0:CD:5A:1E:87:A4:EC:EB:00:60:6F:45:D7:6F:3D:54:C3:BA:4C:DF:9B:9E:75:EA:C0"
 
     @Volatile
     private var initialized = false

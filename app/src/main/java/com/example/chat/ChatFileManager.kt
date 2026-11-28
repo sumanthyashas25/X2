@@ -343,7 +343,24 @@ object ChatFileManager {
         }.getOrNull()
     }
 
-    private val base64BitmapCache = android.util.LruCache<Int, Bitmap>(48)
+    private val base64BitmapCache: LruCache<String, Bitmap> by lazy {
+        val maxMemBytes = Runtime.getRuntime().maxMemory().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val cacheBudgetBytes = minOf(maxMemBytes / 16, 4 * 1024 * 1024).coerceAtLeast(1024 * 1024)
+        object : LruCache<String, Bitmap>(cacheBudgetBytes) {
+            override fun sizeOf(key: String, value: Bitmap): Int {
+                return value.allocationByteCount.coerceAtLeast(1)
+            }
+        }
+    }
+
+    private fun base64CacheKey(base64: String, maxEdgePx: Int): String =
+        "${base64.length}:${base64.take(24)}:${base64.hashCode()}:$maxEdgePx"
+
+    fun peekCachedBase64Bitmap(base64: String, maxEdgePx: Int = 256): Bitmap? {
+        if (base64.isBlank()) return null
+        val cached = base64BitmapCache.get(base64CacheKey(base64, maxEdgePx)) ?: return null
+        return cached.takeUnless { it.isRecycled }
+    }
 
     suspend fun loadProfilePhotoPreview(context: Context, uri: Uri): Result<ProfilePhotoPreview> =
         withContext(Dispatchers.IO) {
@@ -529,7 +546,7 @@ object ChatFileManager {
 
     fun decodeBase64Bitmap(base64: String, maxEdgePx: Int = 256): Bitmap? {
         if (base64.isBlank()) return null
-        val key = base64.hashCode() * 31 + maxEdgePx
+        val key = base64CacheKey(base64, maxEdgePx)
         base64BitmapCache.get(key)?.let { cached ->
             if (!cached.isRecycled) return cached
         }
@@ -543,7 +560,10 @@ object ChatFileManager {
             while (largest / sample > maxEdgePx) {
                 sample *= 2
             }
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample.coerceAtLeast(1)
+                inPreferredConfig = if (maxEdgePx <= 512) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+            }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.also { bmp ->
                 base64BitmapCache.put(key, bmp)
             }
@@ -551,22 +571,46 @@ object ChatFileManager {
     }
 
     fun decodeMessageBitmap(message: ChatMessage, maxEdgePx: Int = 900): Bitmap? {
+        val msgKey = "msg:${message.id}:${message.attachmentLocalPath}:${message.attachmentDataBase64.length}:$maxEdgePx"
+        base64BitmapCache.get(msgKey)?.let { cached ->
+            if (!cached.isRecycled) return cached
+        }
         return runCatching {
             val file = message.attachmentLocalPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.exists() }
-            val bytes = when {
-                file != null -> file.readBytes()
-                message.attachmentDataBase64.isNotBlank() -> Base64.decode(message.attachmentDataBase64, Base64.DEFAULT)
-                else -> return null
+            if (file != null) {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, bounds)
+                val largest = max(bounds.outWidth, bounds.outHeight)
+                var sample = 1
+                while (largest / sample > maxEdgePx) {
+                    sample *= 2
+                }
+                val opts = BitmapFactory.Options().apply {
+                    inSampleSize = sample.coerceAtLeast(1)
+                    inPreferredConfig = if (maxEdgePx <= 512) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeFile(file.absolutePath, opts)?.also { bmp ->
+                    base64BitmapCache.put(msgKey, bmp)
+                }
+            } else if (message.attachmentDataBase64.isNotBlank()) {
+                val bytes = Base64.decode(message.attachmentDataBase64, Base64.DEFAULT)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val largest = max(bounds.outWidth, bounds.outHeight)
+                var sample = 1
+                while (largest / sample > maxEdgePx) {
+                    sample *= 2
+                }
+                val opts = BitmapFactory.Options().apply {
+                    inSampleSize = sample.coerceAtLeast(1)
+                    inPreferredConfig = if (maxEdgePx <= 512) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.also { bmp ->
+                    base64BitmapCache.put(msgKey, bmp)
+                }
+            } else {
+                null
             }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            val largest = max(bounds.outWidth, bounds.outHeight)
-            var sample = 1
-            while (largest / sample > maxEdgePx) {
-                sample *= 2
-            }
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
         }.getOrNull()
     }
 

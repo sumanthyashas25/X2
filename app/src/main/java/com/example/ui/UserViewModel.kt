@@ -75,7 +75,7 @@ class UserViewModel(application: Application) : AndroidViewModel(application) {
                                 if (initError is CancellationException) throw initError
                                 emit(
                                     UserProfileState.Error(
-                                        initError.localizedMessage ?: "Failed to initialize Firestore after sign-in."
+                                        friendlyFirestoreMessage(initError, "Failed to initialize Firestore after sign-in.")
                                     )
                                 )
                                 return@flow
@@ -107,7 +107,7 @@ class UserViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                     emit(
                                         UserProfileState.Error(
-                                            err.localizedMessage ?: "Failed to retrieve user profile from Firestore."
+                                            friendlyFirestoreMessage(err, "Failed to retrieve user profile from Firestore.")
                                         )
                                     )
                                 }

@@ -104,7 +104,7 @@ data class WorkspaceUiPolicy(
 
             val canManageProjectsLifecycle = isSuper
 
-            val canAccessAdminDashboard = isSuper || isAdminMember
+            val canAccessAdminDashboard = isSuper
 
             val visibleTabs = buildList {
                 if (isStandardMember) {

@@ -16,6 +16,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -314,7 +316,12 @@ fun QuoteBuilderScreen(
                     }
 
                     if (!isEditable && canIssue) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             if (workingQuote.statusEnum() == QuotationStatus.ISSUED) {
                                 OutlinedButton(
                                     onClick = {
@@ -332,16 +339,18 @@ fun QuoteBuilderScreen(
                                     shape = RoundedCornerShape(999.dp),
                                     border = BorderStroke(1.dp, palette.outline),
                                     colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.surface, contentColor = palette.textPrimary),
-                                    modifier = Modifier.weight(1f).testTag("mark_quote_sent_button")
-                                ) { Text("Mark Sent", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("mark_quote_sent_button")
+                                ) { Text("Mark Sent", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
                             }
                             if (workingQuote.statusEnum() != QuotationStatus.CLIENT_APPROVED && workingQuote.statusEnum() != QuotationStatus.SUPERSEDED) {
                                 Button(
                                     onClick = { showClientApproveDialog = true },
                                     shape = RoundedCornerShape(999.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = palette.skyBg, contentColor = palette.skyInk),
-                                    modifier = Modifier.weight(1f).testTag("mark_client_approved_button")
-                                ) { Text("Mark Client Approved", style = XMaxType.buttonCompact, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("mark_client_approved_button")
+                                ) { Text("Mark Client Approved", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
                             }
                         }
                     }

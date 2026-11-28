@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +51,8 @@ import com.example.ui.components.StatusPill
 import com.example.ui.components.formatTitleCase
 import com.example.ui.components.pastelAmbientBackdrop
 import com.example.ui.theme.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -131,10 +135,17 @@ fun StaffPlanCalendarSection(
     onToggleFocusTimer: () -> Unit,
     onResetFocusTimer: () -> Unit,
     onSetFocusPreset: (Int) -> Unit,
-    topModeSwitcher: (@Composable () -> Unit)? = null
+    topModeSwitcher: (@Composable () -> Unit)? = null,
+    focusTimerStateFlow: StateFlow<Triple<Int, Long, Boolean>> = remember(state.focusPresetMinutes, state.focusSecondsRemaining, state.isFocusTimerRunning) {
+        MutableStateFlow(Triple(state.focusPresetMinutes, state.focusSecondsRemaining, state.isFocusTimerRunning))
+    }
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
+    val focusTimerState by focusTimerStateFlow.collectAsStateWithLifecycle()
+    val focusPresetMinutes = focusTimerState.first
+    val focusSecondsRemaining = focusTimerState.second
+    val isFocusTimerRunning = focusTimerState.third
     val uid = state.myMember?.uid.orEmpty()
     val companyId = state.company?.id?.ifBlank { CatalogueSeedData.DEFAULT_COMPANY_ID }
         ?: CatalogueSeedData.DEFAULT_COMPANY_ID
@@ -338,7 +349,7 @@ fun StaffPlanCalendarSection(
         if (activeTeamMembers.isNotEmpty()) {
             item {
                 val myPresence = companyPresence[uid]
-                val myStatus = if (state.isFocusTimerRunning) {
+                val myStatus = if (isFocusTimerRunning) {
                     MemberAvailability.BUSY
                 } else {
                     RtdbPresenceManager.resolveAvailability(state.myMember, myPresence)
@@ -358,17 +369,22 @@ fun StaffPlanCalendarSection(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
                                 text = "Team Availability",
                                 style = XMaxType.headline,
                                 color = palette.textPrimary
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 MemberAvailability.entries.forEach { avail ->
                                     val selected = myStatus == avail
                                     val accent = when (avail) {
@@ -389,7 +405,7 @@ fun StaffPlanCalendarSection(
                                         modifier = Modifier.testTag("calendar_set_status_${avail.name.lowercase()}")
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
@@ -397,7 +413,9 @@ fun StaffPlanCalendarSection(
                                             Text(
                                                 text = avail.label,
                                                 style = if (selected) XMaxType.caption1Semibold else XMaxType.caption1Medium,
-                                                color = if (selected) palette.textPrimary else palette.textSecondary
+                                                color = if (selected) palette.textPrimary else palette.textSecondary,
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }
@@ -413,7 +431,7 @@ fun StaffPlanCalendarSection(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             activeTeamMembers.forEach { person ->
-                                val avail = if (person.uid == uid && state.isFocusTimerRunning) {
+                                val avail = if (person.uid == uid && isFocusTimerRunning) {
                                     MemberAvailability.BUSY
                                 } else {
                                     RtdbPresenceManager.resolveAvailability(person, companyPresence[person.uid])
@@ -918,31 +936,31 @@ fun StaffPlanCalendarSection(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (state.isFocusTimerRunning) PlanVioletAccent else palette.surface,
+                                color = if (isFocusTimerRunning) PlanVioletAccent else palette.surface,
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Outlined.Timer,
                                         contentDescription = null,
-                                        tint = if (state.isFocusTimerRunning) PureWhite else palette.lavenderInk,
+                                        tint = if (isFocusTimerRunning) PureWhite else palette.lavenderInk,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Column {
                                 Text(
                                     text = "Deep Work Focus Sprint",
                                     style = XMaxType.footnoteSemibold,
@@ -951,7 +969,7 @@ fun StaffPlanCalendarSection(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = formatCountdownMmSs(state.focusSecondsRemaining),
+                                    text = formatCountdownMmSs(focusSecondsRemaining),
                                     style = XMaxType.numericHeadline.copy(fontFamily = MonoFontFamily),
                                     color = palette.lavenderInk
                                 )
@@ -959,13 +977,13 @@ fun StaffPlanCalendarSection(
                         }
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(
                                 onClick = onResetFocusTimer,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                             ) {
                                 Text("Reset", color = palette.textPrimary, maxLines = 1, softWrap = false, style = XMaxType.footnoteSemibold)
                             }
@@ -973,23 +991,22 @@ fun StaffPlanCalendarSection(
                                 onClick = onToggleFocusTimer,
                                 shape = RoundedCornerShape(999.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (state.isFocusTimerRunning) CrimsonBlocked else palette.buttonPrimaryBg,
-                                    contentColor = if (state.isFocusTimerRunning) PureWhite else palette.buttonPrimaryFg
+                                    containerColor = if (isFocusTimerRunning) CrimsonBlocked else palette.buttonPrimaryBg,
+                                    contentColor = if (isFocusTimerRunning) PureWhite else palette.buttonPrimaryFg
                                 ),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                                 modifier = Modifier
-                                    .height(38.dp)
-                                    .defaultMinSize(minWidth = 90.dp)
+                                    .defaultMinSize(minWidth = 96.dp, minHeight = 48.dp)
                                     .testTag("focus_timer_toggle_button")
                             ) {
                                 Icon(
-                                    imageVector = if (state.isFocusTimerRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    imageVector = if (isFocusTimerRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
-                                    text = if (state.isFocusTimerRunning) "Pause" else "Start",
+                                    text = if (isFocusTimerRunning) "Pause" else "Start",
                                     maxLines = 1,
                                     softWrap = false,
                                     style = XMaxType.buttonCompact
@@ -1004,7 +1021,7 @@ fun StaffPlanCalendarSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(15, 25, 45).forEach { mins ->
-                            val active = state.focusPresetMinutes == mins
+                            val active = focusPresetMinutes == mins
                             FilterChip(
                                 selected = active,
                                 onClick = { onSetFocusPreset(mins) },

@@ -1119,7 +1119,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val call = _activeCall.value ?: return
         val isMuted = myUid in call.mutedUids
         viewModelScope.launch {
-            chatRepo.toggleCallMute(call.id, myUid, !isMuted).collectLatest {}
+            runCatching { chatRepo.toggleCallMute(call.id, myUid, !isMuted) }
         }
     }
 
@@ -1127,7 +1127,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val call = _activeCall.value ?: return
         val isOff = myUid in call.cameraOffUids
         viewModelScope.launch {
-            chatRepo.toggleCallCamera(call.id, myUid, !isOff).collectLatest {}
+            runCatching { chatRepo.toggleCallCamera(call.id, myUid, !isOff) }
         }
     }
 

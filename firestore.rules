@@ -599,7 +599,7 @@ service cloud.firestore {
                            ) ||
                            (
                              request.auth.uid == uid &&
-                             existing().status in ['PENDING', 'DECLINED'] &&
+                             existing().status == 'PENDING' &&
                              hasVerifiedEmail() &&
                              exists(/databases/$(database)/documents/companies/$(companyId)/invitations/$(request.auth.token.email.lower())) &&
                              invMatchesMember(companyId)
@@ -826,11 +826,11 @@ service cloud.firestore {
         allow update: if isValidId(companyId) && isValidId(channelId) &&
                          meExists(companyId) &&
                          isApproved(fetchMe(companyId)) &&
+                         isValidChatChannel(incoming()) &&
                          incoming().createdByUid == existing().createdByUid &&
                          incoming().createdAt == existing().createdAt && (
                            (
                              canReadChatChannel(companyId, existing()) &&
-                             isValidChatChannel(incoming()) &&
                              incoming().diff(existing()).affectedKeys().hasOnly([
                                'title', 'topic', 'description', 'photoBase64', 'lastMessagePreview',
                                'lastSenderName', 'lastSenderUid', 'lastMessageStatus', 'lastMessageAtMillis',
@@ -843,7 +843,23 @@ service cloud.firestore {
                            ) || (
                              existing().channelType in ['GROUP', 'ANNOUNCEMENT'] &&
                              'inviteCode' in existing() && existing().inviteCode.size() >= 4 &&
-                             incoming().diff(existing()).affectedKeys().hasOnly(['participantUids', 'pendingMemberUids'])
+                             (
+                               (
+                                 !existing().get('requireAdminApproval', false) &&
+                                 incoming().diff(existing()).affectedKeys().hasOnly(['participantUids']) &&
+                                 request.auth.uid in incoming().participantUids &&
+                                 !(request.auth.uid in existing().get('participantUids', [])) &&
+                                 incoming().participantUids.hasAll(existing().get('participantUids', [])) &&
+                                 incoming().participantUids.size() == existing().get('participantUids', []).size() + 1
+                               ) || (
+                                 existing().get('requireAdminApproval', false) == true &&
+                                 incoming().diff(existing()).affectedKeys().hasOnly(['pendingMemberUids']) &&
+                                 request.auth.uid in incoming().pendingMemberUids &&
+                                 !(request.auth.uid in existing().get('pendingMemberUids', [])) &&
+                                 incoming().pendingMemberUids.hasAll(existing().get('pendingMemberUids', [])) &&
+                                 incoming().pendingMemberUids.size() == existing().get('pendingMemberUids', []).size() + 1
+                               )
+                             )
                            )
                          );
         allow delete: if isValidId(companyId) && isValidId(channelId) && meExists(companyId) && (
@@ -1233,6 +1249,7 @@ service cloud.firestore {
     function invMatchesMember(companyId) {
       let inv = get(/databases/$(database)/documents/companies/$(companyId)/invitations/$(request.auth.token.email.lower())).data;
       return inv.status == 'PENDING' &&
+             (inv.accessLevel != 'SUPER_ADMIN' || isBootstrappedSuperAdmin()) &&
              incoming().status == 'APPROVED' &&
              incoming().active == true &&
              incoming().accessLevel == inv.accessLevel &&

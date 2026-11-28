@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -53,13 +56,38 @@ fun TeamGovernanceScreen(
     onUpdateStaffDelegation: (Member, Map<String, DelegatedGrant>) -> Unit
 ) {
     val palette = XMaxTheme.colors
-    var editingMember by remember { mutableStateOf<Member?>(null) }
+    var editingTarget by remember { mutableStateOf<Pair<Member, MembershipStatus?>?>(null) }
     var delegatingStaff by remember { mutableStateOf<Member?>(null) }
     var showInviteDialog by remember { mutableStateOf(false) }
 
     val actor = state.myMember ?: return
     val isSuper = state.isSuperAdmin
     val privateByUid = remember(state.allPrivateInfo) { state.allPrivateInfo.associateBy { it.uid } }
+    val sortedMembers = remember(state.members) {
+        state.members.sortedWith(
+            compareBy<Member>(
+                {
+                    when (it.statusEnum()) {
+                        MembershipStatus.PENDING -> 0
+                        MembershipStatus.APPROVED -> 1
+                        MembershipStatus.SUSPENDED -> 2
+                        MembershipStatus.DECLINED -> 3
+                    }
+                },
+                {
+                    when (it.accessLevelEnum()) {
+                        AccessLevel.SUPER_ADMIN -> 0
+                        AccessLevel.ADMIN -> 1
+                        AccessLevel.STAFF -> 2
+                    }
+                },
+                { it.fullName.lowercase() }
+            )
+        )
+    }
+    val pendingMembers = remember(sortedMembers) {
+        sortedMembers.filter { it.statusEnum() == MembershipStatus.PENDING }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(palette.canvas),
@@ -67,25 +95,76 @@ fun TeamGovernanceScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Team & Permissions (${state.members.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Team & Permissions (${state.members.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
                 if (isSuper) {
                     Button(
                         onClick = { showInviteDialog = true },
                         shape = RoundedCornerShape(999.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                        modifier = Modifier.height(42.dp).testTag("invite_member_button")
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("invite_member_button")
                     ) {
                         Icon(Icons.Filled.MailOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("INVITE", style = XMaxType.buttonCompact)
+                        Text("INVITE", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
                     }
                 }
             }
         }
 
-        items(state.members, key = { it.uid }) { m ->
+        if (isSuper && pendingMembers.isNotEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = palette.butterBg,
+                    border = BorderStroke(1.dp, palette.butterInk.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("team_pending_approvals_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PendingActions,
+                            contentDescription = "Pending Approvals",
+                            tint = palette.butterInk,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${pendingMembers.size} Membership Request${if (pendingMembers.size == 1) "" else "s"} Waiting",
+                                style = XMaxType.subheadlineSemibold,
+                                color = palette.butterInk
+                            )
+                            Text(
+                                text = "Tap Approve & Configure below to assign department, job role, and permissions.",
+                                style = XMaxType.caption1,
+                                color = palette.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        items(sortedMembers, key = { it.uid }) { m ->
             val pInfo = privateByUid[m.uid]
+            val isPending = m.statusEnum() == MembershipStatus.PENDING
             val activeCount = state.deliverables.count { it.assignedToUid == m.uid && it.statusEnum() != DeliverableStatus.APPROVED }
             val blockedCount = state.deliverables.count { it.assignedToUid == m.uid && it.statusEnum() == DeliverableStatus.BLOCKED }
             val (stBg, stFg) = when (m.statusEnum()) {
@@ -96,9 +175,12 @@ fun TeamGovernanceScreen(
             Surface(
                 shape = RoundedCornerShape(22.dp),
                 color = palette.surface,
-                border = BorderStroke(1.dp, palette.outline),
+                border = BorderStroke(
+                    width = if (isPending) 1.5.dp else 1.dp,
+                    color = if (isPending) palette.butterInk.copy(alpha = 0.45f) else palette.outline
+                ),
                 shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("team_member_card_${m.uid}")
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -109,17 +191,35 @@ fun TeamGovernanceScreen(
                             borderColor = palette.lavenderBg
                         )
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(m.fullName.ifBlank { m.requestedJobRole }.uppercase(), style = XMaxType.headline, color = palette.textPrimary)
                             Text(
-                                "${m.accessLevelEnum().label} • ${m.jobRoleName.ifBlank { m.requestedJobRole }} (${m.departmentName.ifBlank { m.requestedDepartment }})",
-                                style = XMaxType.footnote,
-                                color = palette.textSecondary
+                                m.fullName.ifBlank { m.requestedJobRole.ifBlank { "New Applicant" } }.uppercase(),
+                                style = XMaxType.headline,
+                                color = palette.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            val deptLabel = m.departmentName.ifBlank { m.requestedDepartment.ifBlank { "Unassigned Dept" } }
+                            val roleLabel = m.jobRoleName.ifBlank { m.requestedJobRole.ifBlank { "Unassigned Role" } }
+                            Text(
+                                "${m.accessLevelEnum().label} • $roleLabel ($deptLabel)",
+                                style = XMaxType.footnote,
+                                color = palette.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (isPending && m.companyNameInput.isNotBlank()) {
+                                Text(
+                                    "Submitted company: ${m.companyNameInput}",
+                                    style = XMaxType.caption1,
+                                    color = palette.textSecondary
+                                )
+                            }
                         }
                         StatusPill(m.statusEnum().label, stBg, stFg)
                     }
                     if (isSuper && pInfo != null) {
-                        Text("Private PII: Age ${pInfo.age} • ${pInfo.email}", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
+                        val phonePart = if (pInfo.phone.isNotBlank()) " • ${pInfo.phone}" else ""
+                        Text("Private PII: Age ${pInfo.age} • ${pInfo.email}$phonePart", style = XMaxType.caption1.tabular(), color = palette.textSecondary)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -127,31 +227,80 @@ fun TeamGovernanceScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Workload: $activeCount active • $blockedCount blocked",
+                            text = if (isPending) "Requested access — awaiting review" else "Workload: $activeCount active • $blockedCount blocked",
                             style = XMaxType.footnoteMedium.tabular(),
                             color = palette.textSecondary
                         )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         if (isSuper) {
-                            OutlinedButton(
-                                onClick = { editingMember = m },
-                                shape = RoundedCornerShape(999.dp),
-                                border = BorderStroke(1.dp, palette.outline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk),
-                                modifier = Modifier.testTag("configure_member_${m.uid}")
-                            ) {
-                                Text("Configure & Permissions", style = XMaxType.buttonCompact)
+                            if (isPending) {
+                                Button(
+                                    onClick = { editingTarget = m to MembershipStatus.APPROVED },
+                                    shape = RoundedCornerShape(999.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = palette.buttonPrimaryBg,
+                                        contentColor = palette.buttonPrimaryFg
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("configure_member_${m.uid}")
+                                ) {
+                                    Icon(Icons.Filled.CheckCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Approve & Configure", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val fallbackDept = state.departments.firstOrNull { it.active }
+                                            ?: Department("dept_ops", "Operations")
+                                        val fallbackRole = state.jobRoles.firstOrNull { it.active && it.departmentId == fallbackDept.id }
+                                            ?: state.jobRoles.firstOrNull { it.active }
+                                            ?: JobRole("role_pm", "Project Manager", fallbackDept.id)
+                                        onConfigureMember(
+                                            m,
+                                            MembershipStatus.DECLINED,
+                                            AccessLevel.STAFF,
+                                            fallbackDept,
+                                            fallbackRole,
+                                            ScopeType.TEAM,
+                                            emptyList(),
+                                            emptyMap()
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.4f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonBlocked),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("decline_member_${m.uid}")
+                                ) {
+                                    Text("Decline", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { editingTarget = m to null },
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.dp, palette.outline),
+                                    colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("configure_member_${m.uid}")
+                                ) {
+                                    Text("Configure & Permissions", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                                }
                             }
                         } else if (actor.accessLevelEnum() == AccessLevel.ADMIN && m.accessLevelEnum() == AccessLevel.STAFF && PermissionEngine.canAccessDepartment(actor, m.departmentId)) {
                             OutlinedButton(
                                 onClick = { delegatingStaff = m },
                                 shape = RoundedCornerShape(999.dp),
                                 border = BorderStroke(1.dp, palette.outline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk)
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = palette.lavenderBg, contentColor = palette.lavenderInk),
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                             ) {
-                                Text("Delegate Staff Capabilities", style = XMaxType.buttonCompact)
+                                Text("Delegate Staff Capabilities", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -160,15 +309,16 @@ fun TeamGovernanceScreen(
         }
     }
 
-    editingMember?.let { target ->
+    editingTarget?.let { (target, preferredStatus) ->
         MemberPermissionEditorDialog(
             state = state,
             target = target,
+            initialStatus = preferredStatus,
             onSave = { st, lvl, dept, role, scopeType, scopeIds, perms ->
                 onConfigureMember(target, st, lvl, dept, role, scopeType, scopeIds, perms)
-                editingMember = null
+                editingTarget = null
             },
-            onDismiss = { editingMember = null }
+            onDismiss = { editingTarget = null }
         )
     }
 
@@ -186,8 +336,8 @@ fun TeamGovernanceScreen(
 
     if (showInviteDialog) {
         InviteMemberDialog(
-            departments = state.departments.filter { it.active },
-            jobRoles = state.jobRoles.filter { it.active },
+            departments = state.departments.filter { it.active }.ifEmpty { com.example.domain.CatalogueSeedData.defaultDepartments() },
+            jobRoles = state.jobRoles.filter { it.active }.ifEmpty { com.example.domain.CatalogueSeedData.defaultJobRoles() },
             onInvite = { email, lvl, dept, role ->
                 onInviteMember(email, lvl, dept, role, ScopeType.TEAM, listOf(dept.id), emptyMap())
                 showInviteDialog = false
@@ -198,23 +348,84 @@ fun TeamGovernanceScreen(
 }
 
 @Composable
-private fun MemberPermissionEditorDialog(
+internal fun MemberPermissionEditorDialog(
     state: AgencyUiState,
     target: Member,
+    initialStatus: MembershipStatus? = null,
     onSave: (MembershipStatus, AccessLevel, Department, JobRole, ScopeType, List<String>, Map<String, PermissionGrant>) -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = XMaxTheme.colors
-    val activeDepts = state.departments.filter { it.active }
-    val activeRoles = state.jobRoles.filter { it.active }
+    val activeDepts = remember(state.departments) {
+        state.departments.filter { it.active }.ifEmpty { com.example.domain.CatalogueSeedData.defaultDepartments() }
+    }
+    val activeRoles = remember(state.jobRoles) {
+        state.jobRoles.filter { it.active }.ifEmpty { com.example.domain.CatalogueSeedData.defaultJobRoles() }
+    }
+    val pInfo = remember(state.allPrivateInfo, target.uid) {
+        state.allPrivateInfo.firstOrNull { it.uid == target.uid }
+    }
+    val isEditingSelfSuperAdmin = target.uid == state.myMember?.uid && state.isSuperAdmin
+    val selectableLevels = remember(isEditingSelfSuperAdmin) {
+        if (isEditingSelfSuperAdmin) listOf(AccessLevel.SUPER_ADMIN)
+        else listOf(AccessLevel.STAFF, AccessLevel.ADMIN)
+    }
+    val defaultAdminManagerPerms = remember {
+        mapOf(
+            AppPermission.MANAGE_CLIENTS.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.CREATE_REQUESTS.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.CREATE_QUOTATIONS.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.ISSUE_QUOTATIONS.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.VIEW_ALL_CLIENTS_AND_QUOTES.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.VIEW_PAYMENTS.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.ASSIGN_WORK.name to PermissionGrant(allowed = true, canDelegate = false),
+            AppPermission.APPROVE_DELIVERABLES.name to PermissionGrant(allowed = true, canDelegate = false)
+        )
+    }
 
-    var status by remember { mutableStateOf(target.statusEnum()) }
-    var accessLevel by remember { mutableStateOf(target.accessLevelEnum()) }
-    var selectedDept by remember { mutableStateOf(activeDepts.firstOrNull { it.id == target.departmentId } ?: activeDepts.firstOrNull() ?: Department("dept_ops", "Operations")) }
-    var selectedRole by remember { mutableStateOf(activeRoles.firstOrNull { it.id == target.jobRoleId } ?: activeRoles.firstOrNull() ?: JobRole("role_pm", "Project Manager", selectedDept.id)) }
-    var scopeType by remember { mutableStateOf(target.scopeTypeEnum()) }
-    var scopeDeptIds by remember { mutableStateOf(target.scopeDepartmentIds.toSet().ifEmpty { setOf(selectedDept.id) }) }
-    var perms by remember { mutableStateOf(target.permissions) }
+    var status by remember(target.uid, initialStatus) {
+        mutableStateOf(
+            when {
+                isEditingSelfSuperAdmin -> MembershipStatus.APPROVED
+                initialStatus != null -> initialStatus
+                else -> target.statusEnum()
+            }
+        )
+    }
+    var accessLevel by remember(target.uid) {
+        mutableStateOf(
+            if (isEditingSelfSuperAdmin) AccessLevel.SUPER_ADMIN
+            else if (target.accessLevelEnum() == AccessLevel.SUPER_ADMIN) AccessLevel.ADMIN
+            else target.accessLevelEnum()
+        )
+    }
+    var selectedDept by remember(target.uid, activeDepts) {
+        val reqDept = target.requestedDepartment.trim()
+        val matched = activeDepts.firstOrNull { it.id == target.departmentId }
+            ?: activeDepts.firstOrNull { reqDept.isNotBlank() && it.name.equals(reqDept, ignoreCase = true) }
+            ?: activeDepts.firstOrNull { reqDept.isNotBlank() && it.name.contains(reqDept, ignoreCase = true) }
+            ?: activeDepts.firstOrNull()
+            ?: Department("dept_ops", "Operations")
+        mutableStateOf(matched)
+    }
+    val deptFilteredRoles = remember(activeRoles, selectedDept.id) {
+        activeRoles.filter { it.departmentId == selectedDept.id }.ifEmpty { activeRoles }
+    }
+    var selectedRole by remember(target.uid, deptFilteredRoles) {
+        val reqRole = target.requestedJobRole.trim()
+        val matched = deptFilteredRoles.firstOrNull { it.id == target.jobRoleId }
+            ?: deptFilteredRoles.firstOrNull { reqRole.isNotBlank() && it.name.equals(reqRole, ignoreCase = true) }
+            ?: deptFilteredRoles.firstOrNull { reqRole.isNotBlank() && it.name.contains(reqRole, ignoreCase = true) }
+            ?: deptFilteredRoles.firstOrNull()
+            ?: activeRoles.firstOrNull()
+            ?: JobRole("role_pm", "Project Manager", selectedDept.id)
+        mutableStateOf(matched)
+    }
+    var scopeType by remember(target.uid) { mutableStateOf(target.scopeTypeEnum()) }
+    var scopeDeptIds by remember(target.uid, selectedDept.id) {
+        mutableStateOf(target.scopeDepartmentIds.toSet().ifEmpty { setOf(selectedDept.id) })
+    }
+    var perms by remember(target.uid) { mutableStateOf(target.permissions) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -230,25 +441,72 @@ private fun MemberPermissionEditorDialog(
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close", tint = palette.textPrimary)
                     }
-                    Text("CONFIGURE ${target.fullName.uppercase()}", style = XMaxType.headline, color = palette.textPrimary)
+                    Text(
+                        "CONFIGURE ${target.fullName.ifBlank { "MEMBER" }.uppercase()}",
+                        style = XMaxType.headline,
+                        color = palette.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                    )
                     Spacer(Modifier.size(48.dp))
                 }
                 HorizontalDivider(color = palette.outline)
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (target.requestedDepartment.isNotBlank() || target.requestedJobRole.isNotBlank() || pInfo != null) {
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = palette.surfaceMuted,
+                                border = BorderStroke(1.dp, palette.outline),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Applicant Submission Details", style = XMaxType.subheadlineSemibold, color = palette.textPrimary)
+                                    if (target.requestedDepartment.isNotBlank() || target.requestedJobRole.isNotBlank()) {
+                                        Text(
+                                            "Requested: ${target.requestedDepartment.ifBlank { "-" }} • ${target.requestedJobRole.ifBlank { "-" }}",
+                                            style = XMaxType.footnote,
+                                            color = palette.textSecondary
+                                        )
+                                    }
+                                    if (target.companyNameInput.isNotBlank()) {
+                                        Text(
+                                            "Company: ${target.companyNameInput}",
+                                            style = XMaxType.footnote,
+                                            color = palette.textSecondary
+                                        )
+                                    }
+                                    if (pInfo != null) {
+                                        val phoneSuffix = if (pInfo.phone.isNotBlank()) " • ${pInfo.phone}" else ""
+                                        Text(
+                                            "Contact: ${pInfo.email}$phoneSuffix • Age ${pInfo.age}",
+                                            style = XMaxType.footnote,
+                                            color = palette.textSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     item {
                         Text("Membership Status", style = XMaxType.headline, color = palette.textPrimary)
                         Spacer(Modifier.height(6.dp))
-                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MembershipStatus.entries.forEach { st ->
-                                FilterChip(
-                                    selected = status == st,
-                                    onClick = { status = st },
-                                    shape = RoundedCornerShape(999.dp),
-                                    colors = monochromeChipColors(),
-                                    border = null,
-                                    label = { Text(st.label, style = XMaxType.footnoteMedium) }
-                                )
+                        if (isEditingSelfSuperAdmin) {
+                            StatusPill("Approved (Super Admin Locked)", palette.mintBg, palette.mintInk)
+                        } else {
+                            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MembershipStatus.entries.forEach { st ->
+                                    FilterChip(
+                                        selected = status == st,
+                                        onClick = { status = st },
+                                        shape = RoundedCornerShape(999.dp),
+                                        colors = monochromeChipColors(),
+                                        border = null,
+                                        label = { Text(st.label, style = XMaxType.footnoteMedium) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -256,16 +514,29 @@ private fun MemberPermissionEditorDialog(
                         Text("Access Level (Separate from Job Role)", style = XMaxType.headline, color = palette.textPrimary)
                         Spacer(Modifier.height(6.dp))
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AccessLevel.entries.forEach { lvl ->
+                            selectableLevels.forEach { lvl ->
                                 FilterChip(
                                     selected = accessLevel == lvl,
-                                    onClick = { accessLevel = lvl },
+                                    onClick = {
+                                        accessLevel = lvl
+                                        if (lvl == AccessLevel.ADMIN && perms.values.none { it.allowed }) {
+                                            perms = defaultAdminManagerPerms
+                                        }
+                                    },
                                     shape = RoundedCornerShape(999.dp),
                                     colors = monochromeChipColors(),
                                     border = null,
                                     label = { Text(lvl.label, style = XMaxType.footnoteMedium) }
                                 )
                             }
+                        }
+                        if (!isEditingSelfSuperAdmin) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Super Admin access is reserved exclusively for xdotmax@gmail.com.",
+                                style = XMaxType.caption1,
+                                color = palette.textSecondary
+                            )
                         }
                     }
                     item {
@@ -275,7 +546,13 @@ private fun MemberPermissionEditorDialog(
                             activeDepts.forEach { d ->
                                 FilterChip(
                                     selected = selectedDept.id == d.id,
-                                    onClick = { selectedDept = d },
+                                    onClick = {
+                                        selectedDept = d
+                                        val rolesForDept = activeRoles.filter { it.departmentId == d.id }
+                                        if (rolesForDept.isNotEmpty() && selectedRole.departmentId != d.id) {
+                                            selectedRole = rolesForDept.first()
+                                        }
+                                    },
                                     shape = RoundedCornerShape(999.dp),
                                     colors = monochromeChipColors(),
                                     border = null,
@@ -285,7 +562,7 @@ private fun MemberPermissionEditorDialog(
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            activeRoles.forEach { r ->
+                            deptFilteredRoles.forEach { r ->
                                 FilterChip(
                                     selected = selectedRole.id == r.id,
                                     onClick = { selectedRole = r },
@@ -333,7 +610,23 @@ private fun MemberPermissionEditorDialog(
                         }
 
                         item {
-                            Text("Admin Permission Matrix (Allowed / May Delegate to Staff)", style = XMaxType.headline, color = palette.textPrimary)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Admin Permission Matrix (Allowed / May Delegate to Staff)", style = XMaxType.headline, color = palette.textPrimary)
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    AssistChip(
+                                        onClick = { perms = defaultAdminManagerPerms },
+                                        label = { Text("Manager Preset", style = XMaxType.caption1Semibold) }
+                                    )
+                                    AssistChip(
+                                        onClick = { perms = emptyMap() },
+                                        label = { Text("Clear All", style = XMaxType.caption1Semibold) }
+                                    )
+                                }
+                            }
                         }
                         items(AppPermission.entries, key = { it.name }) { p ->
                             val current = perms[p.name] ?: PermissionGrant()
@@ -392,7 +685,7 @@ private fun MemberPermissionEditorDialog(
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
                     modifier = Modifier.fillMaxWidth().height(50.dp).testTag("save_member_permissions_button")
-                ) { Text("Save Member & Permissions", style = XMaxType.button) }
+                ) { Text("Save Member & Permissions", style = XMaxType.button, maxLines = 1, softWrap = false) }
             }
         }
     }
@@ -460,7 +753,16 @@ private fun InviteMemberDialog(
     var email by remember { mutableStateOf("") }
     var level by remember { mutableStateOf(AccessLevel.STAFF) }
     var dept by remember { mutableStateOf(departments.firstOrNull() ?: Department("dept_creative", "Creative")) }
-    var role by remember { mutableStateOf(jobRoles.firstOrNull() ?: JobRole("role_graphic_designer", "Graphic Designer", dept.id)) }
+    val deptRoles = remember(jobRoles, dept.id) {
+        jobRoles.filter { it.departmentId == dept.id }.ifEmpty { jobRoles }
+    }
+    var role by remember {
+        mutableStateOf(
+            deptRoles.firstOrNull()
+                ?: jobRoles.firstOrNull()
+                ?: JobRole("role_graphic_designer", "Graphic Designer", dept.id)
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -471,17 +773,30 @@ private fun InviteMemberDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = email, onValueChange = { email = it }, textStyle = XMaxType.body, label = { Text("Google Email *", style = XMaxType.inputLabel) }, singleLine = true, shape = RoundedCornerShape(14.dp))
                 Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AccessLevel.entries.forEach { l ->
+                    listOf(AccessLevel.STAFF, AccessLevel.ADMIN).forEach { l ->
                         FilterChip(selected = level == l, onClick = { level = l }, shape = RoundedCornerShape(999.dp), colors = monochromeChipColors(), border = null, label = { Text(l.label, style = XMaxType.footnoteMedium) })
                     }
                 }
                 Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     departments.forEach { d ->
-                        FilterChip(selected = dept.id == d.id, onClick = { dept = d }, shape = RoundedCornerShape(999.dp), colors = monochromeChipColors(), border = null, label = { Text(d.name, style = XMaxType.footnoteMedium) })
+                        FilterChip(
+                            selected = dept.id == d.id,
+                            onClick = {
+                                dept = d
+                                val rolesForDept = jobRoles.filter { it.departmentId == d.id }
+                                if (rolesForDept.isNotEmpty() && role.departmentId != d.id) {
+                                    role = rolesForDept.first()
+                                }
+                            },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = monochromeChipColors(),
+                            border = null,
+                            label = { Text(d.name, style = XMaxType.footnoteMedium) }
+                        )
                     }
                 }
                 Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    jobRoles.forEach { r ->
+                    deptRoles.forEach { r ->
                         FilterChip(selected = role.id == r.id, onClick = { role = r }, shape = RoundedCornerShape(999.dp), colors = monochromeChipColors(), border = null, label = { Text(r.name, style = XMaxType.footnoteMedium) })
                     }
                 }
@@ -493,7 +808,7 @@ private fun InviteMemberDialog(
                 enabled = email.contains("@"),
                 shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg)
-            ) { Text("Send Invite", style = XMaxType.buttonCompact) }
+            ) { Text("Send Invite", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
     )
@@ -524,13 +839,20 @@ fun OrgAndRoutingScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Departments (${activeDepts.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+                Text(
+                    "Departments (${activeDepts.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
                 Button(
                     onClick = { showAddDept = true },
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                    modifier = Modifier.height(40.dp)
-                ) { Text("+ DEPT", style = XMaxType.buttonCompact) }
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                ) { Text("+ DEPT", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false) }
             }
         }
         items(activeDepts, key = { it.id }) { d ->
@@ -557,13 +879,20 @@ fun OrgAndRoutingScreen(
 
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Job Roles (${activeRoles.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+                Text(
+                    "Job Roles (${activeRoles.size})",
+                    style = XMaxType.sectionHeading.tabular(),
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
                 Button(
                     onClick = { showAddRole = true },
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                    modifier = Modifier.height(40.dp)
-                ) { Text("+ ROLE", style = XMaxType.buttonCompact) }
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                ) { Text("+ ROLE", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false) }
             }
         }
         items(activeRoles, key = { it.id }) { r ->

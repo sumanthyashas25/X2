@@ -56,6 +56,66 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
 
+internal data class ApprovedGateKey(
+    val uid: String,
+    val status: String,
+    val accessLevel: AccessLevel,
+    val active: Boolean,
+    val departmentId: String,
+    val messagingSuspended: Boolean
+)
+
+internal data class CommercialGateKey(
+    val uid: String,
+    val canReadCommercial: Boolean
+)
+
+internal data class ProjectGateKey(
+    val uid: String,
+    val canReadProjects: Boolean,
+    val departmentId: String
+)
+
+internal data class PaymentGateKey(
+    val uid: String,
+    val canReadPayments: Boolean
+)
+
+internal fun friendlyFirestoreMessage(err: Throwable, fallback: String): String {
+    val msg = err.localizedMessage.orEmpty()
+    val isQuota = msg.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+        msg.contains("Quota exceeded", ignoreCase = true) ||
+        try {
+            (err as? FirebaseFirestoreException)?.code?.name == "RESOURCE_EXHAUSTED"
+        } catch (_: Throwable) {
+            false
+        }
+    return if (isQuota) {
+        "Firestore quota temporarily exceeded. Cached workspace data stays available—please tap Retry Sync shortly."
+    } else {
+        msg.ifBlank { fallback }
+    }
+}
+
+private fun <T> Flow<T>.retainLastOnError(
+    path: String,
+    fallback: T,
+    onError: ((Throwable) -> Unit)? = null
+): Flow<T> = flow {
+    var last: T = fallback
+    try {
+        collect { value ->
+            last = value
+            emit(value)
+        }
+    } catch (err: Throwable) {
+        if (err is CancellationException) throw err
+        handleFirestoreError(err, OperationType.LIST, path)
+        onError?.invoke(err)
+        emit(last)
+    }
+}
+
 data class AgencyUiState(
     val authSessionStatus: AuthSessionStatus = AuthSessionStatus.Initializing,
     val authInitialized: Boolean = false,
@@ -142,10 +202,7 @@ data class AgencyUiState(
         get() = PermissionEngine.isActiveApproved(myMember) && myMember?.accessLevelEnum() == AccessLevel.ADMIN
 
     val isApprovedMember: Boolean
-        get() {
-            if (CatalogueSeedData.isBootstrapEmail(verifiedEmail)) return true
-            return PermissionEngine.isActiveApproved(myMember)
-        }
+        get() = PermissionEngine.isActiveApproved(myMember)
 
     val isBootstrappedEmail: Boolean
         get() = CatalogueSeedData.isBootstrapEmail(verifiedEmail)
@@ -199,6 +256,20 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     private val seenNotificationIds = mutableSetOf<String>()
     private var syncedCatalogueOnceForUid: String? = null
     private var paymentWorkerScheduledForUid: String? = null
+    private var lastCloudScanMillis: Long = 0L
+
+    val deliverableTimerState: StateFlow<Pair<String?, Map<String, Long>>> = combine(
+        _activeTimerDeliverableId,
+        _timerSeconds
+    ) { activeId, secondsMap -> activeId to secondsMap }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null to _timerSeconds.value)
+
+    val focusTimerState: StateFlow<Triple<Int, Long, Boolean>> = combine(
+        _focusPresetMinutes,
+        _focusSecondsRemaining,
+        _isFocusTimerRunning
+    ) { preset, remaining, running -> Triple(preset, remaining, running) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(25, 25 * 60L, false))
 
     val sessionStatus: StateFlow<AuthSessionStatus> = authRepository.sessionStatusFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthSessionStatus.Initializing)
@@ -231,8 +302,10 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                         emit(status.user)
                     }.onFailure { err ->
                         if (err is CancellationException) throw err
-                        _errorMessage.value = err.localizedMessage
-                            ?: "Unable to initialize Firestore for your account. Retry or check connectivity."
+                        _errorMessage.value = friendlyFirestoreMessage(
+                            err,
+                            "Unable to initialize Firestore for your account. Retry or check connectivity."
+                        )
                         emit(null)
                     }
                 }
@@ -240,44 +313,34 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _myMemberFlow = _authenticatedReadyUser
+    private val _myMemberFlow: StateFlow<Pair<Member?, Boolean>> = _authenticatedReadyUser
         .flatMapLatest { user ->
             if (user == null) {
                 val signedInNow = sessionStatus.value is AuthSessionStatus.SignedIn
-                flowOf(null to !signedInNow)
+                flowOf<Pair<Member?, Boolean>>(null to !signedInNow)
             } else {
-                val isBootstrap = CatalogueSeedData.isBootstrapEmail(user.email)
-                val defaultSuperAdmin = if (isBootstrap) {
-                    Member(
-                        id = user.uid,
-                        uid = user.uid,
-                        fullName = user.displayName?.takeIf { it.isNotBlank() } ?: "Super Admin",
-                        accessLevel = AccessLevel.SUPER_ADMIN.name,
-                        status = MembershipStatus.APPROVED.name,
-                        active = true,
-                        departmentId = "dept_ops",
-                        departmentName = "Operations",
-                        jobRoleId = "role_director",
-                        jobRoleName = "Super Admin",
-                        scopeType = ScopeType.COMPANY.name
-                    )
-                } else null
-
                 coreRepo.observeMyMember(user.uid)
-                    .map { fetched ->
-                        (fetched ?: defaultSuperAdmin) to true
-                    }
-                    .catch { err ->
-                        if (err is CancellationException) throw err
-                        android.util.Log.w("AgencyViewModel", "observeMyMember error: ${err.message}")
-                        if (defaultSuperAdmin != null) {
-                            emit(defaultSuperAdmin to true)
-                        } else {
-                            if (_errorMessage.value.isNullOrBlank()) {
-                                _errorMessage.value = err.localizedMessage
-                                    ?: "Unable to sync your workspace profile. Check connection and retry."
+                    .map<Member?, Pair<Member?, Boolean>> { fetched -> fetched to true }
+                    .let { upstream ->
+                        flow<Pair<Member?, Boolean>> {
+                            var lastGood: Pair<Member?, Boolean>? = null
+                            try {
+                                upstream.collect { pair ->
+                                    if (pair.first != null) lastGood = pair
+                                    emit(pair)
+                                }
+                            } catch (err: Throwable) {
+                                if (err is CancellationException) throw err
+                                android.util.Log.w("AgencyViewModel", "observeMyMember error: ${err.message}")
+                                handleFirestoreError(err, OperationType.GET, "companies/${coreRepo.companyId}/members/${user.uid}")
+                                if (_errorMessage.value.isNullOrBlank()) {
+                                    _errorMessage.value = friendlyFirestoreMessage(
+                                        err,
+                                        "Unable to sync your workspace profile. Check connection and retry."
+                                    )
+                                }
+                                emit(lastGood ?: (null to false))
                             }
-                            emit(null to false)
                         }
                     }
             }
@@ -285,68 +348,125 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _companyFlow = combine(_authenticatedReadyUser, _myMemberFlow) { user, (member, memberLoaded) ->
         if (user == null || !memberLoaded) {
-            Triple(false, user, false)
+            Triple(false, user?.uid.orEmpty(), false)
         } else {
-            val isBootstrap = CatalogueSeedData.isBootstrapEmail(user.email)
-            val canReadCompany = isBootstrap || PermissionEngine.isActiveApproved(member)
-            Triple(true, user, canReadCompany)
+            val canReadCompany = PermissionEngine.isActiveApproved(member)
+            Triple(true, user.uid, canReadCompany)
         }
     }.distinctUntilChanged().flatMapLatest { (ready, _, canReadCompany) ->
         when {
             !ready -> flowOf(null to false)
             !canReadCompany -> flowOf(null to true)
-            else -> coreRepo.observeCompany().map { it to true }.catch { emit(null to true) }
+            else -> coreRepo.observeCompany()
+                .map<CompanyProfile?, Pair<CompanyProfile?, Boolean>> { it to true }
+                .retainLastOnError("companies/${coreRepo.companyId}", null to true)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null to false)
 
-    private val _myPrivateFlow = _authenticatedReadyUser.flatMapLatest { user ->
-        if (user == null) flowOf(null)
-        else coreRepo.observeMyPrivateInfo(user.uid).catch { emit(null) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _myPrivateFlow = _authenticatedReadyUser
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid.isNullOrBlank()) flowOf(null)
+            else coreRepo.observeMyPrivateInfo(uid).retainLastOnError("companies/${coreRepo.companyId}/member_private/$uid", null)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _approvedGate = combine(_authenticatedReadyUser, _myMemberFlow) { user, (member, _) ->
-        if (user != null && PermissionEngine.isActiveApproved(member)) member else null
+    private val _approvedGateKey: StateFlow<ApprovedGateKey?> = combine(_authenticatedReadyUser, _myMemberFlow) { user, (member, _) ->
+        if (user != null && member != null && PermissionEngine.isActiveApproved(member)) {
+            ApprovedGateKey(
+                uid = member.uid,
+                status = member.status,
+                accessLevel = member.accessLevelEnum(),
+                active = member.active,
+                departmentId = member.departmentId,
+                messagingSuspended = member.messagingSuspended
+            )
+        } else {
+            null
+        }
     }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _membersFlow = _approvedGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else coreRepo.observeMembers().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _approvedMember: Flow<Member?> = combine(_approvedGateKey, _myMemberFlow) { key, (member, _) ->
+        if (key != null && member != null && member.uid == key.uid) member else null
+    }
 
-    private val _departmentsFlow = _approvedGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else coreRepo.observeDepartments().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _membersFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeMembers().retainLastOnError("companies/${coreRepo.companyId}/members", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _jobRolesFlow = _approvedGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else coreRepo.observeJobRoles().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _departmentsFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeDepartments().retainLastOnError("companies/${coreRepo.companyId}/departments", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _catalogueFlow = _approvedGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else coreRepo.observeCatalogue().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _jobRolesFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeJobRoles().retainLastOnError("companies/${coreRepo.companyId}/job_roles", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _routingRulesFlow = _approvedGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else coreRepo.observeRoutingRules().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _catalogueFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeCatalogue()
+                .map { list -> list.sortedBy { it.sortOrder } }
+                .flowOn(Dispatchers.Default)
+                .retainLastOnError("companies/${coreRepo.companyId}/catalogue", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _allPrivateFlow = _approvedGate.flatMapLatest { m ->
-        if (m?.accessLevelEnum() == AccessLevel.SUPER_ADMIN) {
-            coreRepo.observeAllPrivateInfo().catch { emit(emptyList()) }
-        } else flowOf(emptyList())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _routingRulesFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeRoutingRules()
+                .map { list -> list.sortedByDescending { it.priority } }
+                .flowOn(Dispatchers.Default)
+                .retainLastOnError("companies/${coreRepo.companyId}/routing_rules", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _invitationsFlow = _approvedGate.flatMapLatest { m ->
-        if (m?.accessLevelEnum() == AccessLevel.SUPER_ADMIN) {
-            coreRepo.observeInvitations().catch { emit(emptyList()) }
-        } else flowOf(emptyList())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _allPrivateFlow = _approvedGateKey
+        .map { key -> if (key?.accessLevel == AccessLevel.SUPER_ADMIN) key.uid else null }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid != null) {
+                coreRepo.observeAllPrivateInfo().retainLastOnError("companies/${coreRepo.companyId}/member_private", emptyList())
+            } else flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _activityFlow = _approvedGate.flatMapLatest { m ->
-        if (m?.accessLevelEnum() == AccessLevel.SUPER_ADMIN || m?.accessLevelEnum() == AccessLevel.ADMIN) {
-            coreRepo.observeActivityLog().catch { emit(emptyList()) }
-        } else flowOf(emptyList())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _invitationsFlow = _approvedGateKey
+        .map { key -> if (key?.accessLevel == AccessLevel.SUPER_ADMIN) key.uid else null }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid != null) {
+                coreRepo.observeInvitations().retainLastOnError("companies/${coreRepo.companyId}/invitations", emptyList())
+            } else flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _commercialGate = combine(_approvedGate, _membersFlow) { m, all ->
+    private val _activityFlow = _approvedGateKey
+        .map { key ->
+            if (key?.accessLevel == AccessLevel.SUPER_ADMIN || key?.accessLevel == AccessLevel.ADMIN) key.uid else null
+        }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid != null) {
+                coreRepo.observeActivityLog().retainLastOnError("companies/${coreRepo.companyId}/activity", emptyList())
+            } else flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _commercialGateKey = combine(_approvedMember, _membersFlow) { m, all ->
         if (m == null) null
         else {
             val map = all.associateBy { it.uid }
@@ -361,23 +481,35 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                     AppPermission.VIEW_PAYMENTS,
                     AppPermission.RECORD_PAYMENTS
                 ).any { PermissionEngine.hasPermission(m, it, map) }
-            if (ok) m else null
+            if (ok) CommercialGateKey(uid = m.uid, canReadCommercial = true) else null
         }
     }.distinctUntilChanged()
 
-    private val _clientsFlow = _commercialGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else clientRepo.observeClients().catch { emit(emptyList()) }
+    private val _clientsFlow = _commercialGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else clientRepo.observeClients()
+            .map { list -> list.sortedBy { it.companyName } }
+            .flowOn(Dispatchers.Default)
+            .retainLastOnError("companies/${coreRepo.companyId}/clients", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _requestsFlow = _commercialGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else projectRepo.observeRequests().catch { emit(emptyList()) }
+    private val _requestsFlow = _commercialGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else projectRepo.observeRequests()
+            .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+            .flowOn(Dispatchers.Default)
+            .retainLastOnError("companies/${coreRepo.companyId}/requests", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _quotationsFlow = _commercialGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else quotationRepo.observeQuotations().catch { emit(emptyList()) }
+    private val _quotationsFlow = _commercialGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else quotationRepo.observeQuotations()
+            .map { list -> list.sortedByDescending { it.issuedDateMillis } }
+            .flowOn(Dispatchers.Default)
+            .retainLastOnError("companies/${coreRepo.companyId}/quotations", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _projectGate = combine(_approvedGate, _membersFlow) { m, all ->
+    private val _projectGateKey = combine(_approvedMember, _membersFlow) { m, all ->
         if (m == null) null
         else {
             val map = all.associateBy { it.uid }
@@ -389,85 +521,119 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                     AppPermission.VIEW_PAYMENTS,
                     AppPermission.RECORD_PAYMENTS
                 ).any { PermissionEngine.hasPermission(m, it, map) }
-            if (ok) m else null
+            if (ok) ProjectGateKey(uid = m.uid, canReadProjects = true, departmentId = m.departmentId) else null
         }
     }.distinctUntilChanged()
 
-    private val _projectsFlow = _projectGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else projectRepo.observeProjects().catch { emit(emptyList()) }
+    private val _projectsFlow = _projectGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else projectRepo.observeProjects()
+            .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+            .flowOn(Dispatchers.Default)
+            .retainLastOnError("companies/${coreRepo.companyId}/projects", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _paymentGate = combine(_approvedGate, _membersFlow) { m, all ->
+    private val _paymentGateKey = combine(_approvedMember, _membersFlow) { m, all ->
         if (m == null) null
         else {
             val map = all.associateBy { it.uid }
             if (PermissionEngine.hasPermission(m, AppPermission.VIEW_PAYMENTS, map) ||
                 PermissionEngine.hasPermission(m, AppPermission.RECORD_PAYMENTS, map)
-            ) m else null
+            ) PaymentGateKey(uid = m.uid, canReadPayments = true) else null
         }
     }.distinctUntilChanged()
 
-    private val _paymentsFlow = _paymentGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else workRepo.observePayments().catch { emit(emptyList()) }
+    private val _paymentsFlow = _paymentGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else workRepo.observePayments()
+            .map { list -> list.sortedByDescending { it.paymentDateMillis } }
+            .flowOn(Dispatchers.Default)
+            .retainLastOnError("companies/${coreRepo.companyId}/payments", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _deliverablesFlow = combine(_approvedGate, _projectGate) { approved, manager ->
-        approved to (manager != null)
-    }.distinctUntilChanged().flatMapLatest { (approved, isManager) ->
-        when {
-            approved == null -> flowOf(SyncedData(emptyList(), false))
-            isManager -> workRepo.observeManagerDeliverables().catch { emit(SyncedData(emptyList(), false)) }
-            else -> combine(
-                workRepo.observeStaffDeliverables(approved.uid).catch { emit(SyncedData(emptyList(), false)) },
-                workRepo.observeDeptQueueDeliverables(approved.departmentId).catch { emit(emptyList()) }
-            ) { assigned, queue ->
-                SyncedData((assigned.data + queue).distinctBy { it.id }, assigned.hasPendingWrites)
+    private val _deliverablesFlow = combine(_approvedGateKey, _projectGateKey) { approved, manager ->
+        if (approved == null) null else Triple(approved.uid, approved.departmentId, manager != null)
+    }.distinctUntilChanged().flatMapLatest { tuple ->
+        if (tuple == null) {
+            flowOf(SyncedData(emptyList(), false))
+        } else {
+            val (uid, deptId, isManager) = tuple
+            if (isManager) {
+                workRepo.observeManagerDeliverables()
+                    .retainLastOnError("companies/${coreRepo.companyId}/deliverables", SyncedData(emptyList(), false))
+            } else {
+                combine(
+                    workRepo.observeStaffDeliverables(uid)
+                        .retainLastOnError("companies/${coreRepo.companyId}/deliverables", SyncedData(emptyList(), false)),
+                    workRepo.observeDeptQueueDeliverables(deptId)
+                        .retainLastOnError("companies/${coreRepo.companyId}/deliverables", emptyList())
+                ) { assigned, queue ->
+                    SyncedData((assigned.data + queue).distinctBy { it.id }, assigned.hasPendingWrites)
+                }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncedData(emptyList(), false))
 
-    private val _chatChannelsFlow = _approvedGate.flatMapLatest { approved ->
-        if (approved == null) flowOf(emptyList())
-        else chatRepo.observeChannels(
-            myUid = approved.uid,
-            isSuperAdmin = approved.accessLevelEnum() == AccessLevel.SUPER_ADMIN
-        ).catch { emit(emptyList()) }
+    private val _chatChannelsFlow = _approvedGateKey
+        .map { key -> key?.let { it.uid to (it.accessLevel == AccessLevel.SUPER_ADMIN) } }
+        .distinctUntilChanged()
+        .flatMapLatest { pair ->
+            if (pair == null) flowOf(emptyList())
+            else chatRepo.observeChannels(
+                myUid = pair.first,
+                isSuperAdmin = pair.second
+            ).retainLastOnError("companies/${coreRepo.companyId}/chat_channels", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _chatStatusesFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else chatRepo.observeStatuses().retainLastOnError("companies/${coreRepo.companyId}/chat_statuses", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _notificationsFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeNotifications().retainLastOnError("companies/${coreRepo.companyId}/notifications", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _staffPlanItemsFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else coreRepo.observeMyPlanItems(uid).retainLastOnError("companies/${coreRepo.companyId}/staff_plans", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _timeEntriesFlow = combine(_approvedGateKey, _projectGateKey) { approved, manager ->
+        approved?.uid?.let { it to (manager != null) }
+    }.distinctUntilChanged().flatMapLatest { pair ->
+        if (pair == null) flowOf(emptyList())
+        else workRepo.observeTimeEntries(pair.first, pair.second)
+            .retainLastOnError("companies/${coreRepo.companyId}/time_entries", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _chatStatusesFlow = _approvedGate.flatMapLatest { approved ->
-        if (approved == null) flowOf(emptyList())
-        else chatRepo.observeStatuses().catch { emit(emptyList()) }
+    private val _portalLinksFlow = _commercialGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else workRepo.observePortalLinks().retainLastOnError("companies/${coreRepo.companyId}/client_portal_links", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _notificationsFlow = _approvedGate.flatMapLatest { approved ->
-        if (approved == null) flowOf(emptyList())
-        else coreRepo.observeNotifications().catch { emit(emptyList()) }
+    private val _nudgeLogsFlow = _commercialGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(emptyList())
+        else workRepo.observeNudgeLogs().retainLastOnError("companies/${coreRepo.companyId}/nudge_logs", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _staffPlanItemsFlow = _approvedGate.flatMapLatest { approved ->
-        if (approved == null) flowOf(emptyList())
-        else coreRepo.observeMyPlanItems(approved.uid).catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _timeEntriesFlow = combine(_approvedGate, _projectGate) { approved, manager ->
-        approved to (manager != null)
-    }.distinctUntilChanged().flatMapLatest { (approved, isManager) ->
-        if (approved == null) flowOf(emptyList())
-        else workRepo.observeTimeEntries(approved.uid, isManager).catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _portalLinksFlow = _commercialGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else workRepo.observePortalLinks().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _nudgeLogsFlow = _commercialGate.flatMapLatest { m ->
-        if (m == null) flowOf(emptyList()) else workRepo.observeNudgeLogs().catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _activeCallSessionsFlow = _approvedGate.flatMapLatest { approved ->
-        if (approved == null) flowOf(emptyList())
-        else chatRepo.observeActiveCallSessions(approved.uid).catch { emit(emptyList()) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _activeCallSessionsFlow = _approvedGateKey
+        .map { it?.uid }
+        .distinctUntilChanged()
+        .flatMapLatest { uid ->
+            if (uid == null) flowOf(emptyList())
+            else chatRepo.observeActiveCallSessions(uid).retainLastOnError("companies/${coreRepo.companyId}/call_sessions", emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<AgencyUiState> = combine(
@@ -495,11 +661,6 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _notificationsFlow,
         _staffPlanItemsFlow,
         _soundEnabled,
-        _activeTimerDeliverableId,
-        _timerSeconds,
-        _focusPresetMinutes,
-        _focusSecondsRemaining,
-        _isFocusTimerRunning,
         _syncFeedback,
         _statusMessage,
         _errorMessage,
@@ -531,61 +692,66 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             invitations = values[8] as List<Invitation>,
             departments = values[9] as List<Department>,
             jobRoles = values[10] as List<JobRole>,
-            catalogue = (values[11] as List<CatalogueItem>).sortedBy { it.sortOrder },
-            routingRules = (values[12] as List<RoutingRule>).sortedByDescending { it.priority },
-            clients = (values[13] as List<Client>).sortedBy { it.companyName },
-            requests = (values[14] as List<ProjectRequest>).sortedByDescending { it.createdAt?.seconds ?: 0L },
-            quotations = (values[15] as List<Quotation>).sortedByDescending { it.issuedDateMillis },
-            projects = (values[16] as List<Project>).sortedByDescending { it.createdAt?.seconds ?: 0L },
+            catalogue = values[11] as List<CatalogueItem>,
+            routingRules = values[12] as List<RoutingRule>,
+            clients = values[13] as List<Client>,
+            requests = values[14] as List<ProjectRequest>,
+            quotations = values[15] as List<Quotation>,
+            projects = values[16] as List<Project>,
             deliverables = delivSynced.data,
             deliverablesPendingSync = delivSynced.hasPendingWrites,
-            payments = (values[18] as List<PaymentRecord>).sortedByDescending { it.paymentDateMillis },
+            payments = values[18] as List<PaymentRecord>,
             activityLog = values[19] as List<ActivityLog>,
             chatChannels = values[20] as List<ChatChannel>,
-            chatStatuses = values[33] as List<ChatStatus>,
+            chatStatuses = values[28] as List<ChatStatus>,
             notifications = values[21] as List<WorkspaceNotification>,
             staffPlanItems = values[22] as List<StaffPlanItem>,
-            timeEntries = values[34] as List<TimeEntry>,
-            portalLinks = values[35] as List<ClientPortalLink>,
-            nudgeLogs = values[36] as List<PaymentNudgeLog>,
-            activeCallSessions = values[37] as List<ChatCallSession>,
+            timeEntries = values[29] as List<TimeEntry>,
+            portalLinks = values[30] as List<ClientPortalLink>,
+            nudgeLogs = values[31] as List<PaymentNudgeLog>,
+            activeCallSessions = values[32] as List<ChatCallSession>,
             soundEnabled = values[23] as Boolean,
-            activeTimerDeliverableId = values[24] as String?,
-            timerSecondsByDeliverable = values[25] as Map<String, Long>,
-            focusPresetMinutes = values[26] as Int,
-            focusSecondsRemaining = values[27] as Long,
-            isFocusTimerRunning = values[28] as Boolean,
-            syncFeedback = values[29] as SyncFeedback,
-            statusMessage = values[30] as String?,
-            errorMessage = values[31] as String?,
-            autoBootstrapInProgress = values[32] as Boolean,
-            verifiedUserRole = values[38] as VerifiedUserRole,
-            backendDiagnostics = values[39] as BackendDiagnosticReport
+            syncFeedback = values[24] as SyncFeedback,
+            statusMessage = values[25] as String?,
+            errorMessage = values[26] as String?,
+            autoBootstrapInProgress = values[27] as Boolean,
+            verifiedUserRole = values[33] as VerifiedUserRole,
+            backendDiagnostics = values[34] as BackendDiagnosticReport
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AgencyUiState())
 
     init {
         AppHapticsAndNotifier.ensureNotificationChannel(application)
         viewModelScope.launch {
-            _approvedGate.collectLatest { me ->
-                if (me != null) {
-                    RtdbPresenceManager.bindUserSession(getApplication(), coreRepo.companyId, me.uid)
-                    val pubKey = ChatE2eeCrypto.getOrCreatePublicKeyBase64(getApplication(), me.uid)
-                    if (pubKey.isNotBlank() && pubKey != me.e2eePublicKey) {
-                        runCatching { coreRepo.updateMyE2eePublicKey(me.uid, pubKey) }
+            _approvedGateKey
+                .map { it?.uid }
+                .distinctUntilChanged()
+                .collectLatest { uid ->
+                    if (uid != null) {
+                        RtdbPresenceManager.bindUserSession(getApplication(), coreRepo.companyId, uid)
+                        val currentMember = _myMemberFlow.value.first
+                        val pubKey = ChatE2eeCrypto.getOrCreatePublicKeyBase64(getApplication(), uid)
+                        if (pubKey.isNotBlank() && pubKey != currentMember?.e2eePublicKey) {
+                            runCatching { coreRepo.updateMyE2eePublicKey(uid, pubKey) }
+                        }
+                        // Wait before periodic heartbeat so session bind doesn't immediately double-write;
+                        // update member heartbeat gently every 5 minutes instead of creating a feedback loop.
+                        while (true) {
+                            delay(300_000L)
+                            val latest = _myMemberFlow.value.first
+                            val avail = if (_isFocusTimerRunning.value) "BUSY" else "ACTIVE"
+                            val elapsed = System.currentTimeMillis() - (latest?.lastActiveAtMillis ?: 0L)
+                            if (elapsed >= 240_000L || latest?.availabilityStatus != avail) {
+                                runCatching { coreRepo.updateMyPresenceHeartbeat(uid, avail, online = true) }
+                            }
+                        }
+                    } else {
+                        RtdbPresenceManager.unbindUserSession(getApplication(), coreRepo.companyId)
                     }
-                    while (true) {
-                        val avail = if (_isFocusTimerRunning.value) "BUSY" else "ACTIVE"
-                        runCatching { coreRepo.updateMyPresenceHeartbeat(me.uid, avail, online = true) }
-                        delay(45_000L)
-                    }
-                } else {
-                    RtdbPresenceManager.unbindUserSession(getApplication(), coreRepo.companyId)
                 }
-            }
         }
         viewModelScope.launch {
-            combine(_approvedGate, _notificationsFlow, _soundEnabled) { me, list, sound ->
+            combine(_approvedMember, _notificationsFlow, _soundEnabled) { me, list, sound ->
                 Triple(me, list, sound)
             }.collect { (me, list, sound) ->
                 if (me == null) {
@@ -649,10 +815,10 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                         throw e
                     } catch (e: FirebaseFirestoreException) {
                         handleFirestoreError(e, OperationType.WRITE, "bootstrap")
-                        _errorMessage.value = e.localizedMessage ?: "Failed to activate Super Admin access."
+                        _errorMessage.value = friendlyFirestoreMessage(e, "Failed to activate Super Admin access.")
                     } catch (e: Exception) {
                         handleFirestoreError(e, OperationType.WRITE, "bootstrap")
-                        _errorMessage.value = e.localizedMessage ?: "Failed to activate Super Admin access."
+                        _errorMessage.value = friendlyFirestoreMessage(e, "Failed to activate Super Admin access.")
                     } finally {
                         _autoBootstrapInProgress.value = false
                     }
@@ -660,7 +826,7 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         viewModelScope.launch {
-            combine(_approvedGate, _membersFlow, _catalogueFlow, _routingRulesFlow) { me, members, catList, ruleList ->
+            combine(_approvedMember, _membersFlow, _catalogueFlow, _routingRulesFlow) { me, members, catList, ruleList ->
                 listOf(me, members, catList, ruleList)
             }.collect { tuple ->
                 @Suppress("UNCHECKED_CAST")
@@ -710,7 +876,7 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             combine(
-                _approvedGate,
+                _approvedMember,
                 _quotationsFlow,
                 _projectsFlow,
                 _deliverablesFlow,
@@ -757,8 +923,8 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _autoBootstrapInProgress.value = false
         viewModelScope.launch {
             firestoreInitService.retryInitialization(_userFlow.value)
+            _profileRetryTrigger.value += 1
         }
-        _profileRetryTrigger.value += 1
     }
 
     fun clearMessages() {
@@ -1527,13 +1693,21 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun refreshCloudStorageSummary(context: Context = getApplication()) {
+    fun refreshCloudStorageSummary(
+        context: Context = getApplication(),
+        force: Boolean = false
+    ) {
         if (!uiState.value.isSuperAdmin) return
         if (_isScanningCloudStorage.value) return
+        val now = System.currentTimeMillis()
+        if (!force && lastCloudScanMillis > 0L && (now - lastCloudScanMillis) < 5 * 60_000L) {
+            return
+        }
         viewModelScope.launch {
             _isScanningCloudStorage.value = true
             try {
                 _cloudStorageSummary.value = storageTracker.scanCloudStorage(context, uiState.value)
+                lastCloudScanMillis = System.currentTimeMillis()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1756,15 +1930,35 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         channel: ChatChannel,
         calleeUids: List<String>,
         onStarted: (ChatCallSession) -> Unit = {}
-    ) = runWrite("call_sessions") {
+    ) = runWrite("call_sessions/video") {
         val actor = uiState.value.myMember ?: error("No active member")
         val session = chatRepo.startCallSession(channel, actor, calleeUids, videoEnabled = true)
+        onStarted(session)
+    }
+
+    fun startVoiceCall(
+        channel: ChatChannel,
+        calleeUids: List<String>,
+        onStarted: (ChatCallSession) -> Unit = {}
+    ) = runWrite("call_sessions/voice") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        val session = chatRepo.startCallSession(channel, actor, calleeUids, videoEnabled = false)
         onStarted(session)
     }
 
     fun acceptVideoCall(callId: String) = runWrite("call_sessions/$callId/accept") {
         val uid = uiState.value.myMember?.uid ?: error("No active member")
         chatRepo.acceptCallSession(callId, uid)
+    }
+
+    fun toggleCallMute(callId: String, isMuted: Boolean) = runWrite("call_sessions/$callId/mute") {
+        val uid = uiState.value.myMember?.uid ?: error("No active member")
+        chatRepo.toggleCallMute(callId, uid, isMuted)
+    }
+
+    fun toggleCallCamera(callId: String, isCameraOff: Boolean) = runWrite("call_sessions/$callId/camera") {
+        val uid = uiState.value.myMember?.uid ?: error("No active member")
+        chatRepo.toggleCallCamera(callId, uid, isCameraOff)
     }
 
     fun endOrDeclineVideoCall(callId: String, status: String) = runWrite("call_sessions/$callId/end") {
@@ -1791,13 +1985,13 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: FirebaseFirestoreException) {
                 handleFirestoreError(e, OperationType.WRITE, path)
                 _syncFeedback.value = SyncFeedback.ERROR
-                val msg = e.localizedMessage ?: "Permission or sync error while saving."
+                val msg = friendlyFirestoreMessage(e, "Permission or sync error while saving.")
                 _errorMessage.value = msg
                 onError(msg)
             } catch (e: Exception) {
                 handleFirestoreError(e, OperationType.WRITE, path)
                 _syncFeedback.value = SyncFeedback.ERROR
-                val msg = e.localizedMessage ?: "Operation failed."
+                val msg = friendlyFirestoreMessage(e, "Operation failed.")
                 _errorMessage.value = msg
                 onError(msg)
             }

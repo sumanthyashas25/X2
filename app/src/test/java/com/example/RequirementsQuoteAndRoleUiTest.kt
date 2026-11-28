@@ -220,6 +220,8 @@ class RequirementsQuoteAndRoleUiTest {
         assertEquals(WorkspaceRoleTier.ADMIN, policy.roleTier)
         assertFalse(policy.isSuperAdmin)
         assertTrue(policy.isAdminOrAbove)
+        assertFalse(policy.canAccessAdminDashboard)
+        assertFalse(SecondaryDestination.ADMIN_DASHBOARD in policy.permittedSecondaryDestinations)
         assertFalse(policy.canManageProjectsLifecycle)
         assertTrue(policy.canManageCommercialQuotes)
         assertFalse(SecondaryDestination.COMPANY_SETTINGS in policy.permittedSecondaryDestinations)

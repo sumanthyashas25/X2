@@ -119,8 +119,11 @@ fun TeamChatScreen(
     onDeleteMessage: (String, String) -> Unit = { _, _ -> },
     onSetCompanyDefaultWallpaper: (presetId: String, customUrl: String) -> Unit = { _, _ -> },
     onStartVideoCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit = { _, _, _ -> },
+    onStartVoiceCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit = { _, _, _ -> },
     onAcceptVideoCall: (String) -> Unit = {},
     onEndVideoCall: (String, String) -> Unit = { _, _ -> },
+    onToggleCallMute: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleCallCamera: (String, Boolean) -> Unit = { _, _ -> },
     onCloseChat: () -> Unit,
     chatViewModel: ChatViewModel = viewModel()
 ) {
@@ -442,8 +445,11 @@ fun TeamChatScreen(
                 hdMediaMode = hdMediaMode,
                 isProcessingFile = isProcessingFile,
                 onStartVideoCall = onStartVideoCall,
+                onStartVoiceCall = onStartVoiceCall,
                 onAcceptVideoCall = onAcceptVideoCall,
                 onEndVideoCall = onEndVideoCall,
+                onToggleCallMute = onToggleCallMute,
+                onToggleCallCamera = onToggleCallCamera,
                 onToggleHdMedia = { hdMediaMode = it },
                 onCamera = ::launchCamera,
                 onPickSinglePhoto = { singleImagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -774,8 +780,11 @@ private fun EnhancedChatThreadView(
     hdMediaMode: Boolean,
     isProcessingFile: Boolean,
     onStartVideoCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit,
+    onStartVoiceCall: (ChatChannel, List<String>, (ChatCallSession) -> Unit) -> Unit = { _, _, _ -> },
     onAcceptVideoCall: (String) -> Unit,
     onEndVideoCall: (String, String) -> Unit,
+    onToggleCallMute: (String, Boolean) -> Unit = { _, _ -> },
+    onToggleCallCamera: (String, Boolean) -> Unit = { _, _ -> },
     onToggleHdMedia: (Boolean) -> Unit,
     onCamera: () -> Unit,
     onPickSinglePhoto: () -> Unit,
@@ -1149,10 +1158,10 @@ private fun EnhancedChatThreadView(
                                         .ifEmpty {
                                             state.members.filter { it.uid != member.uid && it.active && it.statusEnum() == MembershipStatus.APPROVED }
                                                 .map { it.uid }
-                                                .take(12)
+                                                .take(1)
                                         }
                                     showVideoCallDialog = true
-                                    onStartVideoCall(channel, callees) { session ->
+                                    onStartVoiceCall(channel, callees) { session ->
                                         activeCallSessionId = session.id
                                     }
                                 },
@@ -1168,7 +1177,7 @@ private fun EnhancedChatThreadView(
                                         .ifEmpty {
                                             state.members.filter { it.uid != member.uid && it.active && it.statusEnum() == MembershipStatus.APPROVED }
                                                 .map { it.uid }
-                                                .take(12)
+                                                .take(1)
                                         }
                                     showVideoCallDialog = true
                                     onStartVideoCall(channel, callees) { session ->
@@ -1972,6 +1981,8 @@ private fun EnhancedChatThreadView(
             callSession = liveSession,
             onAcceptCall = { liveSession?.let { onAcceptVideoCall(it.id) } },
             onEndOrDeclineCall = { st -> liveSession?.let { onEndVideoCall(it.id, st) } },
+            onToggleMute = { isMuted -> liveSession?.let { onToggleCallMute(it.id, isMuted) } },
+            onToggleCamera = { isOff -> liveSession?.let { onToggleCallCamera(it.id, isOff) } },
             onDismiss = {
                 showVideoCallDialog = false
                 activeCallSessionId = null
@@ -1982,9 +1993,10 @@ private fun EnhancedChatThreadView(
                     val s = durationSec % 60
                     if (m > 0) "${m}m ${s}s" else "${s}s"
                 } else "Missed"
+                val callTypeLabel = if (liveSession?.callType == "AUDIO") "Voice call" else "Video call"
                 chatViewModel.sendRichOptions(
                     channel.id,
-                    "Video call ended • $durationLabel",
+                    "$callTypeLabel ended • $durationLabel",
                     member,
                     SendMessageOptions(
                         kind = ChatMessageKind.SYSTEM

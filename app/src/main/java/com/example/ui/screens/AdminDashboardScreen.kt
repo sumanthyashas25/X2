@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -27,10 +29,13 @@ import com.example.data.ServiceHealthState
 import com.example.data.UserRoleType
 import com.example.domain.CatalogueSeedData
 import com.example.domain.MoneyFormatter
+import com.example.domain.WorkDistributionEngine
 import com.example.model.*
 import com.example.ui.AgencyUiState
+import com.example.ui.components.AnalyticsVisualizer
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.StatusPill
+import com.example.ui.components.StudioAvatar
 import com.example.ui.components.formatTitleCase
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
@@ -83,7 +88,8 @@ fun AdminDashboardScreen(
     onCleanupOldDoneProjects: () -> Unit,
     onOpenTeamGovernance: () -> Unit,
     onOpenCompanySettings: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onConfigureMember: (Member, MembershipStatus, AccessLevel, Department, JobRole, ScopeType, List<String>, Map<String, PermissionGrant>) -> Unit = { _, _, _, _, _, _, _, _ -> }
 ) {
     val palette = XMaxTheme.colors
     val accessCheck = remember(state.firebaseUser?.email, state.verifiedUserRole, state.myMember?.uid) {
@@ -125,8 +131,35 @@ fun AdminDashboardScreen(
     val pendingMembers = remember(state.members) {
         state.members.filter { it.statusEnum() == MembershipStatus.PENDING }
     }
+    val sortedAuditMembers = remember(state.members) {
+        state.members.sortedWith(
+            compareBy<Member>(
+                {
+                    when (it.statusEnum()) {
+                        MembershipStatus.PENDING -> 0
+                        MembershipStatus.APPROVED -> 1
+                        MembershipStatus.SUSPENDED -> 2
+                        MembershipStatus.DECLINED -> 3
+                    }
+                },
+                { it.fullName.lowercase() }
+            )
+        )
+    }
+    val privateByUid = remember(state.allPrivateInfo) {
+        state.allPrivateInfo.associateBy { it.uid }
+    }
+    val analyticsSeries = remember(state.projects, state.deliverables, state.payments, state.timeEntries) {
+        WorkDistributionEngine.computeAgencyAnalyticsSeries(
+            projects = state.projects,
+            deliverables = state.deliverables,
+            payments = state.payments,
+            timeEntries = state.timeEntries
+        )
+    }
 
     var projectPendingPermanentDelete by remember { mutableStateOf<Project?>(null) }
+    var editingMemberTarget by remember { mutableStateOf<Pair<Member, MembershipStatus?>?>(null) }
     var showCleanupConfirm by remember { mutableStateOf(false) }
     var showArchivedOnly by remember { mutableStateOf(false) }
 
@@ -226,11 +259,204 @@ fun AdminDashboardScreen(
                             label = "Approvals",
                             value = "${pendingMembers.size}",
                             bg = if (pendingMembers.isNotEmpty()) palette.amberBg else palette.kpiPeachBg,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = onOpenTeamGovernance
                         )
                     }
                 }
             }
+        }
+
+        // 1a. Pending Membership Approvals & Permission Configuration (Super Admin Action Center)
+        item {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = palette.surface,
+                border = BorderStroke(
+                    width = if (pendingMembers.isNotEmpty()) 1.5.dp else 1.dp,
+                    color = if (pendingMembers.isNotEmpty()) palette.butterInk.copy(alpha = 0.45f) else palette.outline
+                ),
+                shadowElevation = if (XMaxTheme.isDark) 0.dp else 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("admin_pending_approvals_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = "Membership Approvals (${pendingMembers.size})",
+                                style = XMaxType.headline,
+                                color = palette.textPrimary
+                            )
+                            Text(
+                                text = if (pendingMembers.isNotEmpty()) {
+                                    "Review submitted requests and assign department, job role & permissions."
+                                } else {
+                                    "No pending requests right now. Open Team & Permissions to edit any member."
+                                },
+                                style = XMaxType.footnote,
+                                color = palette.textSecondary
+                            )
+                        }
+                        StatusPill(
+                            label = if (pendingMembers.isNotEmpty()) "${pendingMembers.size} Waiting" else "Up to date",
+                            containerColor = if (pendingMembers.isNotEmpty()) palette.butterBg else palette.mintBg,
+                            contentColor = if (pendingMembers.isNotEmpty()) palette.butterInk else palette.mintInk
+                        )
+                    }
+
+                    if (pendingMembers.isEmpty()) {
+                        OutlinedButton(
+                            onClick = onOpenTeamGovernance,
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("admin_manage_team_permissions_button")
+                        ) {
+                            Icon(Icons.Outlined.Group, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Manage Team & Permissions", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                        }
+                    } else {
+                        pendingMembers.forEach { m ->
+                            val pInfo = privateByUid[m.uid]
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = palette.surfaceSoft,
+                                border = BorderStroke(1.dp, palette.outline),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("admin_pending_member_row_${m.uid}")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        StudioAvatar(
+                                            name = m.fullName.ifBlank { m.requestedJobRole },
+                                            photoBase64 = m.photoBase64,
+                                            size = 42.dp,
+                                            borderColor = palette.butterBg
+                                        )
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = formatTitleCase(m.fullName.ifBlank { "New Applicant" }),
+                                                style = XMaxType.subheadlineSemibold,
+                                                color = palette.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val reqDept = m.requestedDepartment.ifBlank { "Department not specified" }
+                                            val reqRole = m.requestedJobRole.ifBlank { "Role not specified" }
+                                            Text(
+                                                text = "Requested: $reqDept • $reqRole",
+                                                style = XMaxType.footnote,
+                                                color = palette.textSecondary,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val contactText = listOfNotNull(
+                                                pInfo?.email?.takeIf { it.isNotBlank() },
+                                                pInfo?.phone?.takeIf { it.isNotBlank() },
+                                                m.companyNameInput.takeIf { it.isNotBlank() }?.let { "Org: $it" }
+                                            ).joinToString(" • ")
+                                            if (contactText.isNotBlank()) {
+                                                Text(
+                                                    text = contactText,
+                                                    style = XMaxType.caption1,
+                                                    color = palette.textSecondary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        StatusPill(
+                                            label = "Pending",
+                                            containerColor = palette.butterBg,
+                                            contentColor = palette.butterInk
+                                        )
+                                    }
+
+                                    @OptIn(ExperimentalLayoutApi::class)
+                                    FlowRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = { editingMemberTarget = m to MembershipStatus.APPROVED },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = palette.buttonPrimaryBg,
+                                                contentColor = palette.buttonPrimaryFg
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                            modifier = Modifier
+                                                .defaultMinSize(minHeight = 48.dp)
+                                                .testTag("admin_approve_member_${m.uid}")
+                                        ) {
+                                            Icon(Icons.Filled.CheckCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Approve & Set Permissions", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val fallbackDept = state.departments.firstOrNull { it.active }
+                                                    ?: Department("dept_ops", "Operations")
+                                                val fallbackRole = state.jobRoles.firstOrNull { it.active && it.departmentId == fallbackDept.id }
+                                                    ?: state.jobRoles.firstOrNull { it.active }
+                                                    ?: JobRole("role_pm", "Project Manager", fallbackDept.id)
+                                                onConfigureMember(
+                                                    m,
+                                                    MembershipStatus.DECLINED,
+                                                    AccessLevel.STAFF,
+                                                    fallbackDept,
+                                                    fallbackRole,
+                                                    ScopeType.TEAM,
+                                                    emptyList(),
+                                                    emptyMap()
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, CrimsonBlocked.copy(alpha = 0.45f)),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonBlocked),
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                            modifier = Modifier
+                                                .defaultMinSize(minHeight = 48.dp)
+                                                .testTag("admin_decline_member_${m.uid}")
+                                        ) {
+                                            Text("Decline", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1b. Super Admin Progress & Revenue Forecast
+        item {
+            AnalyticsVisualizer(
+                series = analyticsSeries,
+                title = "Progress & Revenue Forecast",
+                modifier = Modifier.testTag("admin_analytics_visualizer")
+            )
         }
 
         // 2. Cloud Infrastructure Health (Firebase / Cloudflare / Supabase)
@@ -288,33 +514,35 @@ fun AdminDashboardScreen(
                         )
                     }
 
-                    Row(
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
                             onClick = onOpenTeamGovernance,
                             shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                             modifier = Modifier
-                                .weight(1f)
                                 .defaultMinSize(minHeight = 48.dp)
                                 .testTag("admin_open_team_button")
                         ) {
                             Icon(Icons.Outlined.Group, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Team Roles", style = XMaxType.buttonCompact)
+                            Text("Team Roles", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
                         OutlinedButton(
                             onClick = onOpenCompanySettings,
                             shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                             modifier = Modifier
-                                .weight(1f)
                                 .defaultMinSize(minHeight = 48.dp)
                                 .testTag("admin_open_settings_button")
                         ) {
                             Icon(Icons.Outlined.Business, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Agency Setup", style = XMaxType.buttonCompact)
+                            Text("Agency Setup", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
@@ -398,15 +626,17 @@ fun AdminDashboardScreen(
                             )
                         }
 
-                        Row(
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             OutlinedButton(
                                 onClick = { onToggleDeleteProject(proj, !proj.deleted) },
                                 shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                                 modifier = Modifier
-                                    .weight(1f)
                                     .defaultMinSize(minHeight = 48.dp)
                                     .testTag("admin_toggle_archive_${proj.id}")
                             ) {
@@ -418,7 +648,10 @@ fun AdminDashboardScreen(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     text = if (proj.deleted) "Restore" else "Archive",
-                                    style = XMaxType.buttonCompact
+                                    style = XMaxType.buttonCompact,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Button(
@@ -429,14 +662,14 @@ fun AdminDashboardScreen(
                                     contentColor = CrimsonBlocked
                                 ),
                                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                                 modifier = Modifier
-                                    .weight(1f)
                                     .defaultMinSize(minHeight = 48.dp)
                                     .testTag("admin_perm_delete_${proj.id}")
                             ) {
                                 Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Delete Forever", style = XMaxType.buttonCompact)
+                                Text("Delete Forever", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -456,24 +689,35 @@ fun AdminDashboardScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Authentication Role Audit",
-                        style = XMaxType.headline,
-                        color = palette.textPrimary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Workspace Members & Role Audit (${sortedAuditMembers.size})",
+                            style = XMaxType.headline,
+                            color = palette.textPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onOpenTeamGovernance) {
+                            Text("View All", style = XMaxType.buttonCompact, color = palette.accentViolet)
+                        }
+                    }
                     Text(
                         text = "Only xdotmax@gmail.com holds auth role super_admin. All other workspace members resolve to standard_member.",
                         style = XMaxType.footnote,
                         color = palette.textSecondary
                     )
-                    state.members.take(8).forEach { m ->
-                        val privateEmail = state.allPrivateInfo.firstOrNull { it.uid == m.uid }?.email
+                    sortedAuditMembers.take(25).forEach { m ->
+                        val privateEmail = privateByUid[m.uid]?.email
                             ?: if (m.uid == state.firebaseUser?.uid) state.verifiedEmail else ""
                         val authRole = AuthenticationRepository.verifyUserRole(
                             email = privateEmail,
                             uid = m.uid,
                             isAuthenticated = true
                         )
+                        val memberStatus = m.statusEnum()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -481,32 +725,78 @@ fun AdminDashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Text(
-                                    text = formatTitleCase(m.fullName.ifBlank { "Member" }),
+                                    text = formatTitleCase(m.fullName.ifBlank { m.requestedJobRole.ifBlank { "Member" } }),
                                     style = XMaxType.subheadlineSemibold,
                                     color = palette.textPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                val subtitle = privateEmail.ifBlank {
+                                    m.jobRoleName.ifBlank { m.requestedJobRole.ifBlank { m.uid } }
+                                }
                                 Text(
-                                    text = privateEmail.ifBlank { m.jobRoleName.ifBlank { m.uid } },
+                                    text = "$subtitle • ${memberStatus.label}",
                                     style = XMaxType.caption1,
                                     color = palette.textSecondary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            StatusPill(
-                                label = authRole.role.roleKey,
-                                containerColor = if (authRole.isSuperAdmin) palette.mintBg else palette.surfaceMuted,
-                                contentColor = if (authRole.isSuperAdmin) palette.mintInk else palette.textSecondary
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                StatusPill(
+                                    label = if (memberStatus == MembershipStatus.PENDING) "Pending" else authRole.role.roleKey,
+                                    containerColor = when {
+                                        memberStatus == MembershipStatus.PENDING -> palette.butterBg
+                                        authRole.isSuperAdmin -> palette.mintBg
+                                        else -> palette.surfaceMuted
+                                    },
+                                    contentColor = when {
+                                        memberStatus == MembershipStatus.PENDING -> palette.butterInk
+                                        authRole.isSuperAdmin -> palette.mintInk
+                                        else -> palette.textSecondary
+                                    }
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        editingMemberTarget = m to (if (memberStatus == MembershipStatus.PENDING) MembershipStatus.APPROVED else null)
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier
+                                        .defaultMinSize(minHeight = 40.dp)
+                                        .testTag("admin_audit_configure_${m.uid}")
+                                ) {
+                                    Text(
+                                        text = if (memberStatus == MembershipStatus.PENDING) "Approve" else "Edit",
+                                        style = XMaxType.caption1Semibold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    editingMemberTarget?.let { (target, preferredStatus) ->
+        MemberPermissionEditorDialog(
+            state = state,
+            target = target,
+            initialStatus = preferredStatus,
+            onSave = { st, lvl, dept, role, scopeType, scopeIds, perms ->
+                onConfigureMember(target, st, lvl, dept, role, scopeType, scopeIds, perms)
+                editingMemberTarget = null
+            },
+            onDismiss = { editingMemberTarget = null }
+        )
     }
 
     projectPendingPermanentDelete?.let { proj ->
@@ -674,12 +964,13 @@ private fun BackendHealthDiagnosticsCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.widthIn(min = 160.dp)) {
                     Text(
                         text = "Cloud & Backend Health",
                         style = XMaxType.headline,
@@ -704,6 +995,7 @@ private fun BackendHealthDiagnosticsCard(
                         containerColor = palette.buttonPrimaryBg,
                         contentColor = palette.buttonPrimaryFg
                     ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                     modifier = Modifier
                         .defaultMinSize(minHeight = 48.dp)
                         .testTag("run_backend_diagnostics_button")
@@ -718,7 +1010,7 @@ private fun BackendHealthDiagnosticsCard(
                         Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text(if (report.isRunning) "Checking…" else "Run Live Check", style = XMaxType.buttonCompact)
+                    Text(if (report.isRunning) "Checking…" else "Run Live Check", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
                 }
             }
 
@@ -787,30 +1079,58 @@ private fun AdminStatTile(
     label: String,
     value: String,
     bg: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     val palette = XMaxTheme.colors
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = bg,
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(14.dp),
+            color = bg,
+            modifier = modifier
         ) {
-            Text(
-                text = value,
-                style = XMaxType.numericHeadline,
-                color = palette.textPrimary
-            )
-            Text(
-                text = label,
-                style = XMaxType.caption2Medium,
-                color = palette.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = value,
+                    style = XMaxType.numericHeadline,
+                    color = palette.textPrimary
+                )
+                Text(
+                    text = label,
+                    style = XMaxType.caption2Medium,
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    } else {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = bg,
+            modifier = modifier
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = value,
+                    style = XMaxType.numericHeadline,
+                    color = palette.textPrimary
+                )
+                Text(
+                    text = label,
+                    style = XMaxType.caption2Medium,
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

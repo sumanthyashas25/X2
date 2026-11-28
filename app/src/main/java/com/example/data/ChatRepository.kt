@@ -1868,12 +1868,46 @@ class ChatRepository(private val core: AgencyRepository) {
     }
 
     suspend fun acceptCallSession(callId: String, uid: String) {
-        sub("calls").document(callId).update(
+        val docRef = sub("calls").document(callId)
+        val snap = runCatching { docRef.get().await() }.getOrNull()
+        val curAccepted = (snap?.get("acceptedUids") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+        docRef.update(
             mapOf(
                 "status" to CallStatus.CONNECTED.name,
+                "acceptedUids" to (curAccepted + uid).distinct(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
+    }
+
+    suspend fun toggleCallMute(callId: String, uid: String, isMuted: Boolean) {
+        val update = if (isMuted) {
+            mapOf(
+                "mutedUids" to FieldValue.arrayUnion(uid),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        } else {
+            mapOf(
+                "mutedUids" to FieldValue.arrayRemove(uid),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        }
+        sub("calls").document(callId).update(update).await()
+    }
+
+    suspend fun toggleCallCamera(callId: String, uid: String, isCameraOff: Boolean) {
+        val update = if (isCameraOff) {
+            mapOf(
+                "cameraOffUids" to FieldValue.arrayUnion(uid),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        } else {
+            mapOf(
+                "cameraOffUids" to FieldValue.arrayRemove(uid),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        }
+        sub("calls").document(callId).update(update).await()
     }
 
     suspend fun endOrDeclineCallSession(callId: String, status: String) {
@@ -1881,6 +1915,7 @@ class ChatRepository(private val core: AgencyRepository) {
         sub("calls").document(callId).update(
             mapOf(
                 "status" to finalStatus,
+                "endedAtMillis" to System.currentTimeMillis(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -1945,46 +1980,6 @@ class ChatRepository(private val core: AgencyRepository) {
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
-            emit(Result.success(Unit))
-        } catch (e: Exception) {
-            emit(Result.failure(e))
-        }
-    }
-
-    fun toggleCallMute(callId: String, myUid: String, isMuted: Boolean): Flow<Result<Unit>> = flow {
-        try {
-            val update = if (isMuted) {
-                mapOf(
-                    "mutedUids" to FieldValue.arrayUnion(myUid),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            } else {
-                mapOf(
-                    "mutedUids" to FieldValue.arrayRemove(myUid),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            }
-            sub("calls").document(callId).update(update).await()
-            emit(Result.success(Unit))
-        } catch (e: Exception) {
-            emit(Result.failure(e))
-        }
-    }
-
-    fun toggleCallCamera(callId: String, myUid: String, isCameraOff: Boolean): Flow<Result<Unit>> = flow {
-        try {
-            val update = if (isCameraOff) {
-                mapOf(
-                    "cameraOffUids" to FieldValue.arrayUnion(myUid),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            } else {
-                mapOf(
-                    "cameraOffUids" to FieldValue.arrayRemove(myUid),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            }
-            sub("calls").document(callId).update(update).await()
             emit(Result.success(Unit))
         } catch (e: Exception) {
             emit(Result.failure(e))

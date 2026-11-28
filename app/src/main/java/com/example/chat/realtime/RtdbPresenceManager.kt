@@ -66,6 +66,8 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
     private var currentDeviceId: String = "android"
     private var typingClearJob: Job? = null
     private var activeTypingChatId: String = ""
+    private var lastFirestorePresenceKey: String = ""
+    private var lastFirestorePresenceAtMs: Long = 0L
 
     internal fun resolveRtdbUrl(
         configuredUrl: String = BuildConfig.FIREBASE_RTDB_URL,
@@ -205,18 +207,27 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         if (uid.isBlank()) return
         val firestore = resolveFirestore(context)
         if (firestore != null) {
-            scope.launch {
-                runCatching {
-                    val safeCompany = companyId.trim().ifBlank { "xmax" }
-                    val payload = mapOf(
-                        "uid" to uid,
-                        "isOnline" to online,
-                        "statusMessage" to currentAvailability.label,
-                        "lastSeenAtMillis" to System.currentTimeMillis(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                    firestore.collection("companies").document(safeCompany)
-                        .collection("presence").document(uid).set(payload)
+            val now = System.currentTimeMillis()
+            val safeCompany = companyId.trim().ifBlank { "xmax" }
+            val writeKey = "$safeCompany|$uid|$online|${currentAvailability.name}"
+            val shouldWrite = !online ||
+                writeKey != lastFirestorePresenceKey ||
+                (now - lastFirestorePresenceAtMs) > 20_000L
+            if (shouldWrite) {
+                lastFirestorePresenceKey = writeKey
+                lastFirestorePresenceAtMs = now
+                scope.launch {
+                    runCatching {
+                        val payload = mapOf(
+                            "uid" to uid,
+                            "isOnline" to online,
+                            "statusMessage" to currentAvailability.label,
+                            "lastSeenAtMillis" to System.currentTimeMillis(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        firestore.collection("companies").document(safeCompany)
+                            .collection("presence").document(uid).set(payload)
+                    }
                 }
             }
         }
@@ -359,7 +370,8 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
     }
 
     fun resolveAvailability(member: com.example.model.Member?, presence: MemberPresenceState?): MemberAvailability {
-        if (presence != null && (presence.online || presence.lastSeenMillis > 0L)) {
+        if (presence != null) {
+            if (!presence.online) return MemberAvailability.AWAY
             return presence.availability
         }
         val lastActive = member?.lastActiveAtMillis ?: 0L
@@ -375,15 +387,18 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         presence: MemberPresenceState?,
         nowMillis: Long = System.currentTimeMillis()
     ): Boolean {
-        if (presence?.online == true) return true
-        if (member?.availabilityStatus?.uppercase() == "ONLINE") {
-            val lastActive = member.lastActiveAtMillis
-            if (lastActive > 0L && (nowMillis - lastActive) < 5 * 60_000L) {
-                return true
-            }
+        if (presence != null) {
+            if (presence.online) return true
+            val memberActiveAt = member?.lastActiveAtMillis ?: 0L
+            val memberStatus = member?.availabilityStatus?.uppercase().orEmpty()
+            return memberActiveAt > presence.lastSeenMillis &&
+                (nowMillis - memberActiveAt) < 5 * 60_000L &&
+                memberStatus != "AWAY"
         }
-        val lastSeen = effectiveLastSeenMillis(member, presence)
-        return lastSeen > 0L && (nowMillis - lastSeen) < 5 * 60_000L
+        val lastActive = member?.lastActiveAtMillis ?: 0L
+        return lastActive > 0L &&
+            (nowMillis - lastActive) < 5 * 60_000L &&
+            member?.availabilityStatus?.uppercase() != "AWAY"
     }
 
     fun effectiveLastSeenMillis(member: com.example.model.Member?, presence: MemberPresenceState?): Long {
@@ -400,7 +415,7 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
             return callbackFlow {
                 val reg = firestore.collection("companies").document(safeCompany)
                     .collection("presence").document(targetUid)
-                    .addSnapshotListener(MetadataChanges.INCLUDE) { doc, err ->
+                    .addSnapshotListener { doc, err ->
                         if (err != null) {
                             trySend(MemberPresenceState(uid = targetUid))
                             return@addSnapshotListener
@@ -444,7 +459,7 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
             return callbackFlow {
                 val reg = firestore.collection("companies").document(safeCompany)
                     .collection("presence")
-                    .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
+                    .addSnapshotListener { snap, err ->
                         if (err != null) {
                             trySend(emptyMap())
                             return@addSnapshotListener
