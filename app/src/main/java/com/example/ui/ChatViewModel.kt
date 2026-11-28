@@ -961,7 +961,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         privacyMode: StatusPrivacyMode,
         allowedUids: List<String>,
         excludedUids: List<String>,
-        blockedUids: List<String>
+        blockedUids: List<String>,
+        privacyLabel: String = "",
+        privacyEmoji: String = ""
     ) {
         viewModelScope.launch {
             runCatching {
@@ -970,8 +972,43 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     privacyMode = privacyMode,
                     allowedUids = allowedUids,
                     excludedUids = excludedUids,
-                    blockedUids = blockedUids
+                    blockedUids = blockedUids,
+                    privacyLabel = privacyLabel,
+                    privacyEmoji = privacyEmoji
                 )
+            }
+        }
+    }
+
+    fun updateCompanyStatusCircleTheme(
+        preset: com.example.chat.StatusCircleColorPreset,
+        actor: Member,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (actor.accessLevelEnum() != AccessLevel.SUPER_ADMIN) {
+            val msg = "Only Super Admin can change status circle colors."
+            _statusBanner.value = msg
+            onComplete(false, msg)
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                chatRepo.setCompanyStatusCircleTheme(
+                    colorId = preset.id,
+                    unviewedHex = preset.unviewedHex,
+                    accentHex = preset.accentHex,
+                    ownHex = preset.ownHex,
+                    gradientEnabled = preset.gradientEnabled,
+                    actor = actor
+                )
+            }.onSuccess {
+                val msg = "Status circle color updated to ${preset.name}"
+                _statusBanner.value = msg
+                onComplete(true, msg)
+            }.onFailure { err ->
+                val msg = err.message ?: "Unable to update status circle color"
+                _statusBanner.value = msg
+                onComplete(false, msg)
             }
         }
     }

@@ -18,6 +18,7 @@ class CommercialWorkflowRepository(private val core: AgencyRepository) {
     val clients = ClientRepository(core)
     val projects = ProjectRepository(core)
     val quotations = QuotationRepository(core)
+    val invoices = InvoiceRepository(core)
 
     private val db get() = core.db
     private fun sub(name: String) = core.sub(name)
@@ -32,6 +33,8 @@ class CommercialWorkflowRepository(private val core: AgencyRepository) {
     fun observeQuotations(): Flow<List<Quotation>> = quotations.observeQuotations()
 
     fun observeProjects(): Flow<List<Project>> = projects.observeProjects()
+
+    fun observeInvoicesSynced(): Flow<SyncedData<List<InvoiceRecord>>> = invoices.observeInvoicesSynced()
 
     fun observePayments(): Flow<List<PaymentRecord>> =
         core.observeCollection("payments") { it.toObject(PaymentRecord::class.java) }

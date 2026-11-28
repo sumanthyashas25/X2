@@ -144,6 +144,23 @@ fun ChatHubScreen(
     LaunchedEffect(Unit) {
         ChatSettingsStore.ensureLoaded(context)
     }
+    LaunchedEffect(
+        state?.company?.statusCircleColorId,
+        state?.company?.statusCircleUnviewedHex,
+        state?.company?.statusCircleAccentHex,
+        state?.company?.statusCircleOwnHex,
+        state?.company?.statusCircleGradientEnabled
+    ) {
+        val comp = state?.company ?: return@LaunchedEffect
+        ChatSettingsStore.syncCompanyStatusCircleTheme(
+            context = context,
+            colorId = comp.statusCircleColorId,
+            unviewedHex = comp.statusCircleUnviewedHex,
+            accentHex = comp.statusCircleAccentHex,
+            ownHex = comp.statusCircleOwnHex,
+            gradientEnabled = comp.statusCircleGradientEnabled
+        )
+    }
     val prefs by ChatSettingsStore.prefsFlow.collectAsStateWithLifecycle()
     val companyId = state?.company?.id?.ifBlank { CatalogueSeedData.DEFAULT_COMPANY_ID }
         ?: CatalogueSeedData.DEFAULT_COMPANY_ID

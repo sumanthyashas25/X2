@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,6 +66,24 @@ fun StatusTabScreen(
         ChatSettingsStore.ensureLoaded(context)
     }
 
+    LaunchedEffect(
+        state.company?.statusCircleColorId,
+        state.company?.statusCircleUnviewedHex,
+        state.company?.statusCircleAccentHex,
+        state.company?.statusCircleOwnHex,
+        state.company?.statusCircleGradientEnabled
+    ) {
+        val comp = state.company ?: return@LaunchedEffect
+        ChatSettingsStore.syncCompanyStatusCircleTheme(
+            context = context,
+            colorId = comp.statusCircleColorId,
+            unviewedHex = comp.statusCircleUnviewedHex,
+            accentHex = comp.statusCircleAccentHex,
+            ownHex = comp.statusCircleOwnHex,
+            gradientEnabled = comp.statusCircleGradientEnabled
+        )
+    }
+
     val prefs by ChatSettingsStore.prefsFlow.collectAsStateWithLifecycle()
     val uploadJobs by chatViewModel.statusUploadJobs.collectAsStateWithLifecycle()
 
@@ -96,8 +115,10 @@ fun StatusTabScreen(
     }
 
     var creatorInitialMode by remember { mutableStateOf<StatusKind?>(null) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
+    var showCircleColorDialog by remember { mutableStateOf(false) }
     var showManageMySheet by remember { mutableStateOf(false) }
     var showMutedSection by remember { mutableStateOf(false) }
 
@@ -151,35 +172,9 @@ fun StatusTabScreen(
                         )
                     }
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            onClick = { showPrivacyDialog = true },
-                            shape = CircleShape,
-                            color = palette.surface,
-                            border = BorderStroke(1.dp, palette.outline),
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("status_privacy_btn")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Lock, contentDescription = "Status Privacy", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Surface(
-                            onClick = { showBlockedDialog = true },
-                            shape = CircleShape,
-                            color = palette.surface,
-                            border = BorderStroke(1.dp, palette.outline),
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("status_blocked_users_btn")
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Block, contentDescription = "Blocked Contacts", tint = palette.textPrimary, modifier = Modifier.size(18.dp))
-                            }
-                        }
                         FilledTonalButton(
                             onClick = { creatorInitialMode = StatusKind.TEXT },
                             shape = RoundedCornerShape(999.dp),
@@ -194,6 +189,24 @@ fun StatusTabScreen(
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Add", style = XMaxType.buttonCompact)
+                        }
+                        Surface(
+                            onClick = { showSettingsDialog = true },
+                            shape = CircleShape,
+                            color = palette.surface,
+                            border = BorderStroke(1.dp, palette.outline),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("status_settings_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Settings,
+                                    contentDescription = "Status Settings",
+                                    tint = palette.textPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -670,7 +683,9 @@ fun StatusTabScreen(
                     privacyMode = pMode,
                     allowedUids = prefs.statusAllowedUids.toList(),
                     excludedUids = prefs.statusExcludedUids.toList(),
-                    blockedUids = nextBlocked
+                    blockedUids = nextBlocked,
+                    privacyLabel = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceLabel else "",
+                    privacyEmoji = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceEmoji else ""
                 )
             },
             onReportStatus = { st, reason ->
@@ -712,27 +727,66 @@ fun StatusTabScreen(
         )
     }
 
-    // Status Privacy Selector Dialog (syncs live to active statuses + saved default)
+    // Unified Status Settings Sheet (Privacy, Blocked Contacts, and Super Admin Future Circle Colors)
+    if (showSettingsDialog) {
+        StatusSettingsDialog(
+            member = member,
+            prefs = prefs,
+            onOpenPrivacy = { showPrivacyDialog = true },
+            onOpenBlockedUsers = { showBlockedDialog = true },
+            onOpenStatusCircleColors = { showCircleColorDialog = true },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    // Redesigned Status Privacy Panel (syncs live to active statuses + saved default)
     if (showPrivacyDialog) {
         val currentMode = runCatching { StatusPrivacyMode.valueOf(prefs.statusPrivacyMode) }
             .getOrDefault(StatusPrivacyMode.ALL_APPROVED)
-        StatusPrivacySelectorDialog(
+        StatusPrivacyPanelDialog(
+            myMember = member,
             allMembers = approvedPeers,
             initialMode = currentMode,
             initialAllowedUids = prefs.statusAllowedUids,
             initialExcludedUids = prefs.statusExcludedUids,
-            onSave = { mode, allow, excl ->
-                ChatSettingsStore.updateStatusPrivacy(context, mode.name, allow, excl)
+            initialAudienceLabel = prefs.statusAudienceLabel,
+            initialAudienceEmoji = prefs.statusAudienceEmoji,
+            prefs = prefs,
+            onSave = { mode, allow, excl, label, emoji ->
+                ChatSettingsStore.updateStatusPrivacy(context, mode.name, allow, excl, label, emoji)
                 chatViewModel.syncBlockedAndPrivacyToMyStatuses(
                     activeMyStatuses = categorized.myStatuses,
                     privacyMode = mode,
                     allowedUids = allow.toList(),
                     excludedUids = excl.toList(),
-                    blockedUids = prefs.blockedUserUids.toList()
+                    blockedUids = prefs.blockedUserUids.toList(),
+                    privacyLabel = if (mode == StatusPrivacyMode.SELECTED_ONLY) label else "",
+                    privacyEmoji = if (mode == StatusPrivacyMode.SELECTED_ONLY) emoji else ""
                 )
                 showPrivacyDialog = false
             },
             onDismiss = { showPrivacyDialog = false }
+        )
+    }
+
+    // Super Admin Exclusive Future Status Circle Colors Dialog
+    if (showCircleColorDialog && member.accessLevelEnum() == AccessLevel.SUPER_ADMIN) {
+        SuperAdminStatusCircleColorDialog(
+            member = member,
+            activeColorId = prefs.workspaceStatusCircleColorId,
+            onSelectPreset = { preset ->
+                ChatSettingsStore.syncCompanyStatusCircleTheme(
+                    context = context,
+                    colorId = preset.id,
+                    unviewedHex = preset.unviewedHex,
+                    accentHex = preset.accentHex,
+                    ownHex = preset.ownHex,
+                    gradientEnabled = preset.gradientEnabled
+                )
+                chatViewModel.updateCompanyStatusCircleTheme(preset, member)
+                showCircleColorDialog = false
+            },
+            onDismiss = { showCircleColorDialog = false }
         )
     }
 
@@ -779,7 +833,9 @@ fun StatusTabScreen(
                                             privacyMode = pMode,
                                             allowedUids = prefs.statusAllowedUids.toList(),
                                             excludedUids = prefs.statusExcludedUids.toList(),
-                                            blockedUids = nextBlocked
+                                            blockedUids = nextBlocked,
+                                            privacyLabel = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceLabel else "",
+                                            privacyEmoji = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceEmoji else ""
                                         )
                                     }
                                     .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -796,7 +852,9 @@ fun StatusTabScreen(
                                             privacyMode = pMode,
                                             allowedUids = prefs.statusAllowedUids.toList(),
                                             excludedUids = prefs.statusExcludedUids.toList(),
-                                            blockedUids = nextBlocked
+                                            blockedUids = nextBlocked,
+                                            privacyLabel = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceLabel else "",
+                                            privacyEmoji = if (pMode == StatusPrivacyMode.SELECTED_ONLY) prefs.statusAudienceEmoji else ""
                                         )
                                     }
                                 )

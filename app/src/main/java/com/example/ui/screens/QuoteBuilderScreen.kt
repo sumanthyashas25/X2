@@ -48,6 +48,7 @@ import com.example.pdf.QuotationPdfGenerator
 import com.example.system.AppHapticsAndNotifier
 import com.example.ui.AgencyUiState
 import com.example.ui.components.CatalogueServiceTicketCard
+import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FullScreenAgencyDialog
 import com.example.ui.components.MonochromeSearchBar
 import com.example.ui.components.StatusPill
@@ -486,6 +487,14 @@ fun QuoteBuilderScreen(
                                         label = { Text(cli.companyName, style = XMaxType.footnoteMedium) }
                                     )
                                 }
+                            }
+                            if (isEditable && selectedClient == null) {
+                                Text(
+                                    "Select or Quick Add a Client above to enable Save Draft / Issue Quote.",
+                                    style = XMaxType.footnoteSemibold,
+                                    color = palette.butterInk,
+                                    modifier = Modifier.testTag("quote_select_client_hint")
+                                )
                             }
                         }
                         OutlinedTextField(
@@ -998,37 +1007,51 @@ private fun CataloguePickerDialog(
                 }
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    itemsIndexed(filtered, key = { _, it -> it.id }) { index, item ->
-                        val isSurcharge = item.pricingModeEnum() == PricingMode.PERCENTAGE_SURCHARGE
-                        val count = if (isSurcharge) (if (urgentSelected) 1 else 0) else (selectedCounts[item.id] ?: 0).coerceAtMost(1)
-                        val isSelected = count > 0
-
-                        val handleToggle = {
-                            val wasAdded = onToggleItem(item)
-                            if (wasAdded) {
-                                AppHapticsAndNotifier.triggerCompletionVibration(context)
-                                lastActionRemoved = false
-                                lastActionMessage = "Added \"${item.name}\" to quotation"
-                            } else {
-                                AppHapticsAndNotifier.triggerTickHaptic(context)
-                                lastActionRemoved = true
-                                lastActionMessage = "Removed \"${item.name}\" from quotation"
-                            }
-                            lastActionSeq += 1
+                    if (filtered.isEmpty()) {
+                        item {
+                            EmptyStateCard(
+                                icon = Icons.Filled.Inventory2,
+                                title = if (items.isEmpty()) "Catalogue syncing" else "No services matched",
+                                subtitle = if (items.isEmpty()) {
+                                    "Catalogue is syncing from X.MAX workspace…"
+                                } else {
+                                    "Try clearing your filter or search query."
+                                }
+                            )
                         }
+                    } else {
+                        itemsIndexed(filtered, key = { _, it -> it.id }) { index, item ->
+                            val isSurcharge = item.pricingModeEnum() == PricingMode.PERCENTAGE_SURCHARGE
+                            val count = if (isSurcharge) (if (urgentSelected) 1 else 0) else (selectedCounts[item.id] ?: 0).coerceAtMost(1)
+                            val isSelected = count > 0
 
-                        CatalogueServiceTicketCard(
-                            item = item,
-                            index = index,
-                            isSelected = isSelected,
-                            selectedCount = count,
-                            buttonLabel = "Select",
-                            expandable = true,
-                            onButtonClick = handleToggle,
-                            modifier = Modifier
-                                .animateItem()
-                                .testTag("catalogue_item_${item.id}")
-                        )
+                            val handleToggle = {
+                                val wasAdded = onToggleItem(item)
+                                if (wasAdded) {
+                                    AppHapticsAndNotifier.triggerCompletionVibration(context)
+                                    lastActionRemoved = false
+                                    lastActionMessage = "Added \"${item.name}\" to quotation"
+                                } else {
+                                    AppHapticsAndNotifier.triggerTickHaptic(context)
+                                    lastActionRemoved = true
+                                    lastActionMessage = "Removed \"${item.name}\" from quotation"
+                                }
+                                lastActionSeq += 1
+                            }
+
+                            CatalogueServiceTicketCard(
+                                item = item,
+                                index = index,
+                                isSelected = isSelected,
+                                selectedCount = count,
+                                buttonLabel = "Select",
+                                expandable = true,
+                                onButtonClick = handleToggle,
+                                modifier = Modifier
+                                    .animateItem()
+                                    .testTag("catalogue_item_${item.id}")
+                            )
+                        }
                     }
                 }
             }

@@ -110,6 +110,20 @@ object FirebaseStartup {
                 if (options.projectId != EXPECTED_PROJECT_ID) {
                     Log.w(TAG, "WARNING: Firebase Project ID [${options.projectId}] does not match expected [$EXPECTED_PROJECT_ID]!")
                 }
+
+                runCatching {
+                    val appCheck = com.google.firebase.appcheck.FirebaseAppCheck.getInstance()
+                    appCheck.installAppCheckProviderFactory(
+                        if (com.example.BuildConfig.DEBUG) {
+                            com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
+                        } else {
+                            com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory.getInstance()
+                        }
+                    )
+                    Log.d(TAG, "Firebase App Check initialized with Play Integrity / Debug provider.")
+                }.onFailure { appCheckErr ->
+                    Log.w(TAG, "Firebase App Check initialization note: ${appCheckErr.message}")
+                }
             }.onFailure { err ->
                 Log.e(TAG, "CRITICAL: FirebaseApp initialization failed: ${err.message}", err)
             }

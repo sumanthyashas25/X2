@@ -69,6 +69,25 @@ class ProjectRepository(private val core: AgencyRepository) {
         awaitClose { reg.remove() }
     }
 
+    fun observeProjectsSynced(): Flow<SyncedData<List<Project>>> = callbackFlow {
+        val path = "companies/${core.companyId}/projects"
+        val reg = projectsCollection().addSnapshotListener { snap, err ->
+            if (err != null) {
+                handleFirestoreError(err, OperationType.LIST, path)
+                close(err)
+                return@addSnapshotListener
+            }
+            val list = snap?.documents?.mapNotNull { doc ->
+                doc.get("createdAt", estimate)
+                doc.get("updatedAt", estimate)
+                doc.toObject(Project::class.java)
+            }.orEmpty()
+            val pending = snap?.metadata?.hasPendingWrites() == true
+            trySend(SyncedData(list, pending))
+        }
+        awaitClose { reg.remove() }
+    }
+
     fun observeProject(projectId: String): Flow<Project?> = callbackFlow {
         if (projectId.isBlank()) {
             trySend(null)
@@ -398,6 +417,45 @@ class ProjectRepository(private val core: AgencyRepository) {
                 ActivityCategory.PROJECT,
                 if (deleted) "Project Soft-Deleted" else "Project Restored",
                 project.title,
+                actorUid,
+                actor.fullName,
+                project.id
+            )
+            Result.success(Unit)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: FirebaseFirestoreException) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProjectStatus(
+        project: Project,
+        newStatus: ProjectStatus,
+        actor: Member
+    ): Result<Unit> {
+        if (project.id.isBlank()) {
+            return Result.failure(IllegalArgumentException("Project ID cannot be blank."))
+        }
+        val path = "companies/${core.companyId}/projects/${project.id}"
+        return try {
+            val uid = core.requireAuthenticatedUserId()
+            val actorUid = actor.uid.ifBlank { uid }
+            val writeTask = projectsCollection().document(project.id).update(
+                mapOf(
+                    "status" to newStatus.name,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            if (NetworkConnectivityMonitor.isOnline.value) writeTask.await()
+            core.logActivity(
+                ActivityCategory.PROJECT,
+                "Project Status Updated",
+                "${project.title} -> ${newStatus.label}",
                 actorUid,
                 actor.fullName,
                 project.id

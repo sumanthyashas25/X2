@@ -638,4 +638,57 @@ object WorkDistributionEngine {
             averageCompletionPercent = currentCompletionPct.toInt()
         )
     }
+
+    data class RevenueAndInvoiceSummary(
+        val completedProjectsCount: Int = 0,
+        val completedProjectsRevenuePaise: Long = 0L,
+        val completedProjectsCollectedPaise: Long = 0L,
+        val totalInvoicesCount: Int = 0,
+        val paidInvoicesCount: Int = 0,
+        val paidInvoicesTotalPaise: Long = 0L,
+        val pendingInvoicesCount: Int = 0,
+        val pendingInvoicesTotalPaise: Long = 0L
+    )
+
+    fun computeRevenueAndInvoiceSummary(
+        projects: List<com.example.model.Project>,
+        invoices: List<com.example.model.InvoiceRecord>
+    ): RevenueAndInvoiceSummary {
+        val activeProjects = projects.filter { !it.deleted }
+        val completedProjects = activeProjects.filter { it.statusEnum() == ProjectStatus.COMPLETED }
+        val completedRevenue = completedProjects.sumOf { p ->
+            maxOf(p.agreedValuePaise, p.paidPaise).coerceAtLeast(0L)
+        }
+        val completedCollected = completedProjects.sumOf { it.paidPaise.coerceAtLeast(0L) }
+
+        val nonCancelledInvoices = invoices.filter {
+            it.statusEnum() != com.example.model.InvoiceStatus.CANCELLED
+        }
+        val paidInvoices = nonCancelledInvoices.filter {
+            it.statusEnum() == com.example.model.InvoiceStatus.PAID
+        }
+        val pendingInvoices = nonCancelledInvoices.filter { inv ->
+            val st = inv.statusEnum()
+            st == com.example.model.InvoiceStatus.ISSUED ||
+                st == com.example.model.InvoiceStatus.PARTIALLY_PAID ||
+                st == com.example.model.InvoiceStatus.OVERDUE ||
+                st == com.example.model.InvoiceStatus.DRAFT
+        }
+        val paidTotal = paidInvoices.sumOf { it.totalPaise.coerceAtLeast(0L) }
+        val pendingTotal = pendingInvoices.sumOf { inv ->
+            val due = if (inv.balanceDuePaise > 0L) inv.balanceDuePaise else inv.totalPaise
+            due.coerceAtLeast(0L)
+        }
+
+        return RevenueAndInvoiceSummary(
+            completedProjectsCount = completedProjects.size,
+            completedProjectsRevenuePaise = completedRevenue,
+            completedProjectsCollectedPaise = completedCollected,
+            totalInvoicesCount = nonCancelledInvoices.size,
+            paidInvoicesCount = paidInvoices.size,
+            paidInvoicesTotalPaise = paidTotal,
+            pendingInvoicesCount = pendingInvoices.size,
+            pendingInvoicesTotalPaise = pendingTotal
+        )
+    }
 }

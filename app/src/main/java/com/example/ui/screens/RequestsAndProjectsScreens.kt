@@ -568,6 +568,14 @@ fun RequestDecisionDialog(
                                 )
                         ) {
                             if (canAccept) {
+                                if (targetQuote == null) {
+                                    Text(
+                                        text = "Build and link a quotation above before accepting this request.",
+                                        style = XMaxType.footnoteSemibold,
+                                        color = palette.butterInk,
+                                        modifier = Modifier.testTag("accept_missing_quote_hint")
+                                    )
+                                }
                                 SlideToActionButton(
                                     label = "SLIDE TO ACCEPT",
                                     enabled = targetQuote != null && drafts.isNotEmpty(),
@@ -684,7 +692,8 @@ fun ProjectsScreen(
     onOpenPayments: () -> Unit = {},
     onGenerateTaxInvoice: (Project, Quotation?) -> Unit = { _, _ -> },
     onCreatePortalLink: (Project, Quotation?, (ClientPortalLink) -> Unit) -> Unit = { _, _, _ -> },
-    onRevokePortalLink: (String) -> Unit = {}
+    onRevokePortalLink: (String) -> Unit = {},
+    onUpdateProjectStatus: (Project, ProjectStatus) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val isOnline by NetworkConnectivityMonitor.isOnline.collectAsState()
@@ -718,7 +727,7 @@ fun ProjectsScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (!isOnline || state.deliverablesPendingSync) {
+        if (!isOnline || state.deliverablesPendingSync || state.projectsPendingSync) {
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -738,7 +747,7 @@ fun ProjectsScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = if (!isOnline) "Offline cache active — changes sync automatically when online" else "Syncing queued project updates…",
+                            text = if (!isOnline) "Offline cache active — cached projects stay readable & auto-sync when online" else "Syncing queued project updates…",
                             style = XMaxType.caption1Medium,
                             color = palette.textPrimary
                         )
@@ -978,6 +987,7 @@ fun ProjectsScreen(
             onGenerateTaxInvoice = { onGenerateTaxInvoice(fresh, linkedQuote) },
             onCreatePortalLink = { onDone -> onCreatePortalLink(fresh, linkedQuote, onDone) },
             onRevokePortalLink = onRevokePortalLink,
+            onUpdateStatus = { newStatus -> onUpdateProjectStatus(fresh, newStatus) },
             onDismiss = { selectedProject = null }
         )
     }
@@ -1001,6 +1011,7 @@ private fun ProjectDetailDialog(
     onGenerateTaxInvoice: () -> Unit = {},
     onCreatePortalLink: ((ClientPortalLink) -> Unit) -> Unit = {},
     onRevokePortalLink: (String) -> Unit = {},
+    onUpdateStatus: (ProjectStatus) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1414,6 +1425,25 @@ private fun ProjectDetailDialog(
                                             color = palette.textSecondary
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        if (canAssign || state.isSuperAdmin || state.isAdmin) {
+                            item {
+                                val isCompleted = project.statusEnum() == ProjectStatus.COMPLETED
+                                Button(
+                                    onClick = {
+                                        onUpdateStatus(if (isCompleted) ProjectStatus.IN_PROGRESS else ProjectStatus.COMPLETED)
+                                    },
+                                    shape = RoundedCornerShape(999.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isCompleted) palette.surfaceMuted else EmeraldApproved,
+                                        contentColor = if (isCompleted) palette.textPrimary else PureWhite
+                                    ),
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("toggle_project_completed_button")
+                                ) {
+                                    Text(if (isCompleted) "Reopen Project (Active)" else "Mark Project Completed", style = XMaxType.button)
                                 }
                             }
                         }

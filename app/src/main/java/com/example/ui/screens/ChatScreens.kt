@@ -838,8 +838,10 @@ private fun EnhancedChatThreadView(
     var showPinSetupDialog by remember { mutableStateOf(false) }
     var showDeleteThreadConfirm by remember { mutableStateOf(false) }
     var showVideoCallDialog by remember { mutableStateOf(false) }
+    var pendingCallType by remember { mutableStateOf(CallType.VIDEO) }
     var activeCallSessionId by remember { mutableStateOf<String?>(null) }
     var showSafetyNumberDialog by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf<Int?>(null) } // null=none, 0=current, 15/60=live
 
     val audioPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1145,14 +1147,6 @@ private fun EnhancedChatThreadView(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = { showSafetyNumberDialog = true },
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .testTag("chat_thread_e2ee_button")
-                            ) {
-                                Icon(Icons.Default.Lock, contentDescription = "E2EE Security & Safety Number", tint = EmeraldApproved, modifier = Modifier.size(18.dp))
-                            }
-                            IconButton(
                                 onClick = {
                                     val callees = channel.participantUids.filter { it != member.uid }
                                         .ifEmpty {
@@ -1160,6 +1154,8 @@ private fun EnhancedChatThreadView(
                                                 .map { it.uid }
                                                 .take(1)
                                         }
+                                    pendingCallType = CallType.AUDIO
+                                    activeCallSessionId = null
                                     showVideoCallDialog = true
                                     onStartVoiceCall(channel, callees) { session ->
                                         activeCallSessionId = session.id
@@ -1179,6 +1175,8 @@ private fun EnhancedChatThreadView(
                                                 .map { it.uid }
                                                 .take(1)
                                         }
+                                    pendingCallType = CallType.VIDEO
+                                    activeCallSessionId = null
                                     showVideoCallDialog = true
                                     onStartVideoCall(channel, callees) { session ->
                                         activeCallSessionId = session.id
@@ -1190,14 +1188,47 @@ private fun EnhancedChatThreadView(
                             ) {
                                 Icon(Icons.Default.Videocam, contentDescription = "Start Video Call", tint = palette.accentViolet, modifier = Modifier.size(22.dp))
                             }
-                            IconButton(onClick = { showInThreadSearch = !showInThreadSearch }, modifier = Modifier.size(42.dp)) {
-                                Icon(Icons.Default.Search, contentDescription = "Search thread", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
-                            }
-                            IconButton(onClick = { showStarredSheet = true }, modifier = Modifier.size(42.dp)) {
-                                Icon(Icons.Default.StarBorder, contentDescription = "Starred messages", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
-                            }
-                            IconButton(onClick = { showInfoSheet = true }, modifier = Modifier.size(42.dp)) {
-                                Icon(Icons.Default.Info, contentDescription = "Chat info", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
+                            Box {
+                                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(42.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = palette.textPrimary, modifier = Modifier.size(20.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("E2EE Security & Safety", style = XMaxType.subheadline) },
+                                        leadingIcon = { Icon(Icons.Default.Lock, null, tint = EmeraldApproved) },
+                                        onClick = {
+                                            showMenu = false
+                                            showSafetyNumberDialog = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Search Conversation", style = XMaxType.subheadline) },
+                                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                                        onClick = {
+                                            showMenu = false
+                                            showInThreadSearch = !showInThreadSearch
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Starred Messages", style = XMaxType.subheadline) },
+                                        leadingIcon = { Icon(Icons.Default.StarBorder, null) },
+                                        onClick = {
+                                            showMenu = false
+                                            showStarredSheet = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Conversation Info", style = XMaxType.subheadline) },
+                                        leadingIcon = { Icon(Icons.Default.Info, null) },
+                                        onClick = {
+                                            showMenu = false
+                                            showInfoSheet = true
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1969,20 +2000,38 @@ private fun EnhancedChatThreadView(
             state.members.filter { it.uid != member.uid && it.uid in channel.participantUids }
         }
         val liveSession = remember(state.activeCallSessions, activeCallSessionId, channel.id) {
-            state.activeCallSessions.firstOrNull { it.id == activeCallSessionId }
-                ?: state.activeCallSessions.firstOrNull {
-                    it.channelId == channel.id && (it.status == "RINGING" || it.status == "CONNECTED")
-                }
+            when {
+                !activeCallSessionId.isNullOrBlank() ->
+                    state.activeCallSessions.firstOrNull { it.id == activeCallSessionId }
+                else ->
+                    state.activeCallSessions.firstOrNull {
+                        it.channelId == channel.id && (it.status == "RINGING" || it.status == "CONNECTED")
+                    }
+            }
+        }
+        if (liveSession != null && activeCallSessionId.isNullOrBlank()) {
+            activeCallSessionId = liveSession.id
         }
         ChatVideoCallDialog(
             channel = channel,
             myMember = member,
             peerMembers = peerMembers,
             callSession = liveSession,
+            companyId = companyId,
+            initialCallType = pendingCallType,
             onAcceptCall = { liveSession?.let { onAcceptVideoCall(it.id) } },
-            onEndOrDeclineCall = { st -> liveSession?.let { onEndVideoCall(it.id, st) } },
-            onToggleMute = { isMuted -> liveSession?.let { onToggleCallMute(it.id, isMuted) } },
-            onToggleCamera = { isOff -> liveSession?.let { onToggleCallCamera(it.id, isOff) } },
+            onEndOrDeclineCall = { st ->
+                val targetId = liveSession?.id ?: activeCallSessionId
+                if (!targetId.isNullOrBlank()) onEndVideoCall(targetId, st)
+            },
+            onToggleMute = { isMuted ->
+                val targetId = liveSession?.id ?: activeCallSessionId
+                if (!targetId.isNullOrBlank()) onToggleCallMute(targetId, isMuted)
+            },
+            onToggleCamera = { isOff ->
+                val targetId = liveSession?.id ?: activeCallSessionId
+                if (!targetId.isNullOrBlank()) onToggleCallCamera(targetId, isOff)
+            },
             onDismiss = {
                 showVideoCallDialog = false
                 activeCallSessionId = null
@@ -1993,7 +2042,8 @@ private fun EnhancedChatThreadView(
                     val s = durationSec % 60
                     if (m > 0) "${m}m ${s}s" else "${s}s"
                 } else "Missed"
-                val callTypeLabel = if (liveSession?.callType == "AUDIO") "Voice call" else "Video call"
+                val isVoice = liveSession?.callType == "AUDIO" || (liveSession == null && pendingCallType == CallType.AUDIO)
+                val callTypeLabel = if (isVoice) "Voice call" else "Video call"
                 chatViewModel.sendRichOptions(
                     channel.id,
                     "$callTypeLabel ended • $durationLabel",

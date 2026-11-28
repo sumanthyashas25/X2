@@ -2084,3 +2084,155 @@ test("Scenario 16: Hardened invite claim and chat_channels invite-code join rule
   );
 });
 
+test("Scenario 17: Client activeProjectCount validation and Invoices Paid/Pending tracking", async () => {
+  await seedCompanyAndMembers({
+    MANAGE_CLIENTS: { allowed: true, canDelegate: false },
+    RECORD_PAYMENTS: { allowed: true, canDelegate: false },
+  });
+  const now = pastDate();
+
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID).firestore();
+  const staffDb = testEnv.authenticatedContext(STAFF_UID).firestore();
+  const superDb = testEnv.authenticatedContext(SUPER_ADMIN_UID).firestore();
+
+  // Valid client with activeProjectCount >= 0 succeeds
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("clients").doc("cli_active").set({
+      companyName: "Nova Retail",
+      contactPerson: "Ananya Roy",
+      phone: "+91 9822001122",
+      email: "ananya@nova.in",
+      address: "Bengaluru",
+      activeProjectCount: 2,
+      createdByUid: ADMIN_UID,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Negative activeProjectCount MUST FAIL isValidClient
+  await assertFails(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("clients").doc("cli_negative").set({
+      companyName: "Invalid Client",
+      contactPerson: "Bob",
+      activeProjectCount: -1,
+      createdByUid: ADMIN_UID,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Admin with RECORD_PAYMENTS creates a Pending (ISSUED) invoice
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("invoices").doc("inv_1").set({
+      invoiceNumber: "INV-2026-0001",
+      projectId: "proj_1",
+      projectTitle: "Diwali Campaign",
+      totalPaise: 5000000,
+      balanceDuePaise: 5000000,
+      advanceCreditedPaise: 0,
+      status: "ISSUED",
+      createdByUid: ADMIN_UID,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Admin marks the invoice Paid
+  await assertSucceeds(
+    adminDb.collection("companies").doc(COMPANY_ID).collection("invoices").doc("inv_1").update({
+      status: "PAID",
+      balanceDuePaise: 0,
+      advanceCreditedPaise: 5000000,
+      updatedAt: pastDate(500),
+    })
+  );
+
+  // Staff without permission CANNOT create, read, or delete invoices
+  await assertFails(staffDb.collection("companies").doc(COMPANY_ID).collection("invoices").get());
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("invoices").doc("inv_2").set({
+      invoiceNumber: "INV-2026-0002",
+      totalPaise: 100000,
+      balanceDuePaise: 100000,
+      status: "ISSUED",
+      createdByUid: STAFF_UID,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Admin cannot delete invoice; Super Admin CAN delete
+  await assertFails(adminDb.collection("companies").doc(COMPANY_ID).collection("invoices").doc("inv_1").delete());
+  await assertSucceeds(superDb.collection("companies").doc(COMPANY_ID).collection("invoices").doc("inv_1").delete());
+});
+
+test("Scenario 18: Super Admin exclusive status circle colors & chat_statuses privacyLabel updates", async () => {
+  await seedCompanyAndMembers({
+    MANAGE_COMPANY: { allowed: true, canDelegate: false },
+    ISSUE_QUOTATIONS: { allowed: true, canDelegate: false },
+  });
+  const now = pastDate();
+
+  const superDb = testEnv.authenticatedContext(SUPER_ADMIN_UID).firestore();
+  const adminDb = testEnv.authenticatedContext(ADMIN_UID).firestore();
+  const staffDb = testEnv.authenticatedContext(STAFF_UID).firestore();
+
+  // Super Admin CAN update company-wide future status circle color options
+  await assertSucceeds(
+    superDb.collection("companies").doc(COMPANY_ID).update({
+      statusCircleColorId: "future_aurora",
+      statusCircleUnviewedHex: 0xFF8B5CF6,
+      statusCircleAccentHex: 0xFF06B6D4,
+      statusCircleOwnHex: 0xFF6366F1,
+      statusCircleGradientEnabled: true,
+      updatedAt: pastDate(500),
+    })
+  );
+
+  // Admin & Staff CANNOT update company status circle color options
+  await assertFails(
+    adminDb.collection("companies").doc(COMPANY_ID).update({
+      statusCircleColorId: "future_cyber",
+      statusCircleGradientEnabled: true,
+      updatedAt: pastDate(400),
+    })
+  );
+  await assertFails(
+    staffDb.collection("companies").doc(COMPANY_ID).update({
+      statusCircleColorId: "future_sunset",
+      updatedAt: pastDate(300),
+    })
+  );
+
+  // Status owner CAN create a status and update privacyMode + privacyLabel + privacyEmoji
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_statuses").doc("st_1").set({
+      ownerUid: STAFF_UID,
+      ownerName: "Aarav Designer",
+      kind: "TEXT",
+      text: "Studio spotlight",
+      privacyMode: "ALL_APPROVED",
+      privacyLabel: "",
+      privacyEmoji: "",
+      allowedUids: [],
+      excludedUids: [],
+      ownerBlockedUids: [],
+      createdAtMillis: Date.now(),
+      expiresAtMillis: Date.now() + 86400000,
+    })
+  );
+
+  await assertSucceeds(
+    staffDb.collection("companies").doc(COMPANY_ID).collection("chat_statuses").doc("st_1").update({
+      privacyMode: "SELECTED_ONLY",
+      privacyLabel: "Close friends",
+      privacyEmoji: "💜",
+      allowedUids: [ADMIN_UID],
+      excludedUids: [],
+      ownerBlockedUids: [],
+    })
+  );
+});
+
+

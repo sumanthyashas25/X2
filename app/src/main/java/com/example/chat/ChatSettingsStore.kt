@@ -30,8 +30,114 @@ data class ChatUserPreferences(
     val blockedUserUids: Set<String> = emptySet(),
     val statusPrivacyMode: String = "ALL_APPROVED",
     val statusAllowedUids: Set<String> = emptySet(),
-    val statusExcludedUids: Set<String> = emptySet()
+    val statusExcludedUids: Set<String> = emptySet(),
+    val statusAudienceLabel: String = "Close friends",
+    val statusAudienceEmoji: String = "💜",
+    val workspaceStatusCircleColorId: String = "emerald_default",
+    val workspaceStatusUnviewedHex: Long = 0xFF10B981L,
+    val workspaceStatusAccentHex: Long = 0xFF06B6D4L,
+    val workspaceStatusOwnHex: Long = 0xFF7C3AEDL,
+    val workspaceStatusGradientEnabled: Boolean = false
 )
+
+data class StatusCircleColorPreset(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val unviewedHex: Long,
+    val accentHex: Long,
+    val ownHex: Long,
+    val gradientEnabled: Boolean,
+    val isFutureStyle: Boolean = false
+)
+
+object StatusCircleColorCatalog {
+    val presets: List<StatusCircleColorPreset> = listOf(
+        StatusCircleColorPreset(
+            id = "emerald_default",
+            name = "Emerald Pulse",
+            subtitle = "Classic crisp green unviewed ring",
+            unviewedHex = 0xFF10B981L,
+            accentHex = 0xFF34D399L,
+            ownHex = 0xFF7C3AEDL,
+            gradientEnabled = false,
+            isFutureStyle = false
+        ),
+        StatusCircleColorPreset(
+            id = "close_violet",
+            name = "Royal Violet",
+            subtitle = "Signature purple halo for team updates",
+            unviewedHex = 0xFFA855F7L,
+            accentHex = 0xFFEC4899L,
+            ownHex = 0xFF7C3AEDL,
+            gradientEnabled = false,
+            isFutureStyle = false
+        ),
+        StatusCircleColorPreset(
+            id = "electric_cobalt",
+            name = "Electric Cobalt",
+            subtitle = "Bright agency blue status border",
+            unviewedHex = 0xFF2563EBL,
+            accentHex = 0xFF38BDF8L,
+            ownHex = 0xFF0284C7L,
+            gradientEnabled = false,
+            isFutureStyle = false
+        ),
+        StatusCircleColorPreset(
+            id = "amber_gold",
+            name = "Golden Amber",
+            subtitle = "Warm gold ring for active spotlights",
+            unviewedHex = 0xFFF59E0BL,
+            accentHex = 0xFFFBBF24L,
+            ownHex = 0xFFD97706L,
+            gradientEnabled = false,
+            isFutureStyle = false
+        ),
+        StatusCircleColorPreset(
+            id = "future_aurora",
+            name = "Aurora Future",
+            subtitle = "Dual-tone violet to cyan sweep ring",
+            unviewedHex = 0xFF8B5CF6L,
+            accentHex = 0xFF06B6D4L,
+            ownHex = 0xFF6366F1L,
+            gradientEnabled = true,
+            isFutureStyle = true
+        ),
+        StatusCircleColorPreset(
+            id = "future_cyber",
+            name = "Cyber Neon",
+            subtitle = "Emerald to cobalt high-contrast sweep",
+            unviewedHex = 0xFF22C55EL,
+            accentHex = 0xFF3B82F6L,
+            ownHex = 0xFF10B981L,
+            gradientEnabled = true,
+            isFutureStyle = true
+        ),
+        StatusCircleColorPreset(
+            id = "future_sunset",
+            name = "Solar Sunset",
+            subtitle = "Coral orange to magenta glow ring",
+            unviewedHex = 0xFFF97316L,
+            accentHex = 0xFFEC4899L,
+            ownHex = 0xFFF43F5EL,
+            gradientEnabled = true,
+            isFutureStyle = true
+        ),
+        StatusCircleColorPreset(
+            id = "future_prism",
+            name = "Prism Spectrum",
+            subtitle = "Rose-violet to cyan futuristic halo",
+            unviewedHex = 0xFFEC4899L,
+            accentHex = 0xFF22D3EEL,
+            ownHex = 0xFFA855F7L,
+            gradientEnabled = true,
+            isFutureStyle = true
+        )
+    )
+
+    fun findById(id: String?): StatusCircleColorPreset =
+        presets.firstOrNull { it.id == id } ?: presets.first()
+}
 
 data class ResolvedThreadWallpaper(
     val presetId: String,
@@ -65,6 +171,13 @@ object ChatSettingsStore {
     private const val KEY_STATUS_PRIVACY_MODE = "status_privacy_mode"
     private const val KEY_STATUS_ALLOWED_UIDS = "status_allowed_uids"
     private const val KEY_STATUS_EXCLUDED_UIDS = "status_excluded_uids"
+    private const val KEY_STATUS_AUDIENCE_LABEL = "status_audience_label"
+    private const val KEY_STATUS_AUDIENCE_EMOJI = "status_audience_emoji"
+    private const val KEY_WS_STATUS_CIRCLE_ID = "ws_status_circle_id"
+    private const val KEY_WS_STATUS_UNVIEWED_HEX = "ws_status_unviewed_hex"
+    private const val KEY_WS_STATUS_ACCENT_HEX = "ws_status_accent_hex"
+    private const val KEY_WS_STATUS_OWN_HEX = "ws_status_own_hex"
+    private const val KEY_WS_STATUS_GRADIENT = "ws_status_gradient"
 
     private val _prefsFlow = MutableStateFlow(ChatUserPreferences())
     val prefsFlow: StateFlow<ChatUserPreferences> = _prefsFlow.asStateFlow()
@@ -158,7 +271,14 @@ object ChatSettingsStore {
             blockedUserUids = sp.getStringSet(KEY_BLOCKED_USERS, emptySet())?.toSet().orEmpty(),
             statusPrivacyMode = sp.getString(KEY_STATUS_PRIVACY_MODE, "ALL_APPROVED") ?: "ALL_APPROVED",
             statusAllowedUids = sp.getStringSet(KEY_STATUS_ALLOWED_UIDS, emptySet())?.toSet().orEmpty(),
-            statusExcludedUids = sp.getStringSet(KEY_STATUS_EXCLUDED_UIDS, emptySet())?.toSet().orEmpty()
+            statusExcludedUids = sp.getStringSet(KEY_STATUS_EXCLUDED_UIDS, emptySet())?.toSet().orEmpty(),
+            statusAudienceLabel = sp.getString(KEY_STATUS_AUDIENCE_LABEL, "Close friends")?.ifBlank { "Close friends" } ?: "Close friends",
+            statusAudienceEmoji = sp.getString(KEY_STATUS_AUDIENCE_EMOJI, "💜")?.ifBlank { "💜" } ?: "💜",
+            workspaceStatusCircleColorId = sp.getString(KEY_WS_STATUS_CIRCLE_ID, "emerald_default") ?: "emerald_default",
+            workspaceStatusUnviewedHex = sp.getLong(KEY_WS_STATUS_UNVIEWED_HEX, 0xFF10B981L),
+            workspaceStatusAccentHex = sp.getLong(KEY_WS_STATUS_ACCENT_HEX, 0xFF06B6D4L),
+            workspaceStatusOwnHex = sp.getLong(KEY_WS_STATUS_OWN_HEX, 0xFF7C3AEDL),
+            workspaceStatusGradientEnabled = sp.getBoolean(KEY_WS_STATUS_GRADIENT, false)
         )
     }
 
@@ -438,18 +558,60 @@ object ChatSettingsStore {
         context: Context,
         mode: String,
         allowedUids: Set<String>,
-        excludedUids: Set<String>
+        excludedUids: Set<String>,
+        audienceLabel: String = _prefsFlow.value.statusAudienceLabel,
+        audienceEmoji: String = _prefsFlow.value.statusAudienceEmoji
     ) {
         val cur = ensureLoaded(context)
+        val cleanLabel = audienceLabel.trim().take(28).ifBlank { "Close friends" }
+        val cleanEmoji = audienceEmoji.trim().take(8).ifBlank { "💜" }
         prefs(context).edit()
             .putString(KEY_STATUS_PRIVACY_MODE, mode)
             .putStringSet(KEY_STATUS_ALLOWED_UIDS, allowedUids)
             .putStringSet(KEY_STATUS_EXCLUDED_UIDS, excludedUids)
+            .putString(KEY_STATUS_AUDIENCE_LABEL, cleanLabel)
+            .putString(KEY_STATUS_AUDIENCE_EMOJI, cleanEmoji)
             .apply()
         _prefsFlow.value = cur.copy(
             statusPrivacyMode = mode,
             statusAllowedUids = allowedUids,
-            statusExcludedUids = excludedUids
+            statusExcludedUids = excludedUids,
+            statusAudienceLabel = cleanLabel,
+            statusAudienceEmoji = cleanEmoji
+        )
+    }
+
+    fun syncCompanyStatusCircleTheme(
+        context: Context,
+        colorId: String,
+        unviewedHex: Long,
+        accentHex: Long,
+        ownHex: Long,
+        gradientEnabled: Boolean
+    ) {
+        val cur = ensureLoaded(context)
+        val resolvedId = colorId.ifBlank { "emerald_default" }
+        if (cur.workspaceStatusCircleColorId == resolvedId &&
+            cur.workspaceStatusUnviewedHex == unviewedHex &&
+            cur.workspaceStatusAccentHex == accentHex &&
+            cur.workspaceStatusOwnHex == ownHex &&
+            cur.workspaceStatusGradientEnabled == gradientEnabled
+        ) {
+            return
+        }
+        prefs(context).edit()
+            .putString(KEY_WS_STATUS_CIRCLE_ID, resolvedId)
+            .putLong(KEY_WS_STATUS_UNVIEWED_HEX, unviewedHex)
+            .putLong(KEY_WS_STATUS_ACCENT_HEX, accentHex)
+            .putLong(KEY_WS_STATUS_OWN_HEX, ownHex)
+            .putBoolean(KEY_WS_STATUS_GRADIENT, gradientEnabled)
+            .apply()
+        _prefsFlow.value = cur.copy(
+            workspaceStatusCircleColorId = resolvedId,
+            workspaceStatusUnviewedHex = unviewedHex,
+            workspaceStatusAccentHex = accentHex,
+            workspaceStatusOwnHex = ownHex,
+            workspaceStatusGradientEnabled = gradientEnabled
         )
     }
 

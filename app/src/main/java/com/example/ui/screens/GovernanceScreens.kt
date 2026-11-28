@@ -39,6 +39,7 @@ import com.example.ui.components.StudioAvatar
 import com.example.ui.components.XMaxWordmarkBadge
 import com.example.ui.components.formatTitleCase
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 
 @Composable
 private fun monochromeChipColors() = FilterChipDefaults.filterChipColors(
@@ -108,17 +109,45 @@ fun TeamGovernanceScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
-                if (isSuper) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
                     Button(
-                        onClick = { showInviteDialog = true },
+                        onClick = {
+                            runCatching {
+                                val file = com.example.pdf.AppUserGuidePdfGenerator.buildGuidePdfFile(context)
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "application/pdf")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(intent, "Open User Guide PDF"))
+                            }
+                        },
                         shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("invite_member_button")
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.surfaceMuted, contentColor = palette.textPrimary),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("download_user_guide_pdf")
                     ) {
-                        Icon(Icons.Filled.MailOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("INVITE", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                        Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("GUIDE", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                    }
+
+                    if (isSuper) {
+                        Button(
+                            onClick = { showInviteDialog = true },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("invite_member_button")
+                        ) {
+                            Icon(Icons.Filled.MailOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("INVITE", style = XMaxType.buttonCompact, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }
@@ -1255,6 +1284,7 @@ fun NotificationsScreen(
     state: AgencyUiState,
     onMarkRead: (WorkspaceNotification) -> Unit = {},
     onMarkAllRead: () -> Unit = {},
+    onAutoMarkAllRead: () -> Unit = onMarkAllRead,
     onToggleSound: (Boolean) -> Unit = {},
     onTestSound: () -> Unit = {},
     onDeleteNotification: (String) -> Unit = {},
@@ -1266,6 +1296,12 @@ fun NotificationsScreen(
     val myUid = state.myMember?.uid.orEmpty()
     val relevant = state.myNotifications
     val unreadCount = relevant.count { it.isUnreadFor(myUid) }
+    LaunchedEffect(myUid, unreadCount) {
+        if (myUid.isNotBlank() && unreadCount > 0) {
+            delay(350L)
+            onAutoMarkAllRead()
+        }
+    }
     var unreadOnly by remember { mutableStateOf(false) }
     val visible = remember(relevant, unreadOnly, myUid) {
         if (unreadOnly) relevant.filter { it.isUnreadFor(myUid) } else relevant

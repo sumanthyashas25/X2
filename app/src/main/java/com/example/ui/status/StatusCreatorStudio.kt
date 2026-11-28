@@ -156,6 +156,8 @@ fun CreateStatusStudioDialog(
     }
     var allowedUids by remember(prefs.statusAllowedUids) { mutableStateOf(prefs.statusAllowedUids) }
     var excludedUids by remember(prefs.statusExcludedUids) { mutableStateOf(prefs.statusExcludedUids) }
+    var audienceLabel by remember(prefs.statusAudienceLabel) { mutableStateOf(prefs.statusAudienceLabel) }
+    var audienceEmoji by remember(prefs.statusAudienceEmoji) { mutableStateOf(prefs.statusAudienceEmoji) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showPreviewDialog by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -266,6 +268,8 @@ fun CreateStatusStudioDialog(
         val blocked = prefs.blockedUserUids.toList()
         val allowList = allowedUids.toList()
         val exclList = excludedUids.toList()
+        val pLabel = if (privacyMode == StatusPrivacyMode.SELECTED_ONLY) audienceLabel.trim().ifBlank { "Close friends" } else ""
+        val pEmoji = if (privacyMode == StatusPrivacyMode.SELECTED_ONLY) audienceEmoji.trim().ifBlank { "💜" } else ""
         when (selectedMode) {
             StatusKind.TEXT -> {
                 val clean = statusText.trim()
@@ -279,7 +283,9 @@ fun CreateStatusStudioDialog(
                         privacyMode = privacyMode,
                         allowedUids = allowList,
                         excludedUids = exclList,
-                        ownerBlockedUids = blocked
+                        ownerBlockedUids = blocked,
+                        privacyLabel = pLabel,
+                        privacyEmoji = pEmoji
                     )
                 )
             }
@@ -311,7 +317,9 @@ fun CreateStatusStudioDialog(
                         privacyMode = privacyMode,
                         allowedUids = allowList,
                         excludedUids = exclList,
-                        ownerBlockedUids = blocked
+                        ownerBlockedUids = blocked,
+                        privacyLabel = pLabel,
+                        privacyEmoji = pEmoji
                     )
                 }
             }
@@ -337,7 +345,9 @@ fun CreateStatusStudioDialog(
                         privacyMode = privacyMode,
                         allowedUids = allowList,
                         excludedUids = exclList,
-                        ownerBlockedUids = blocked
+                        ownerBlockedUids = blocked,
+                        privacyLabel = pLabel,
+                        privacyEmoji = pEmoji
                     )
                 )
             }
@@ -356,7 +366,9 @@ fun CreateStatusStudioDialog(
                         privacyMode = privacyMode,
                         allowedUids = allowList,
                         excludedUids = exclList,
-                        ownerBlockedUids = blocked
+                        ownerBlockedUids = blocked,
+                        privacyLabel = pLabel,
+                        privacyEmoji = pEmoji
                     )
                 )
             }
@@ -463,7 +475,7 @@ fun CreateStatusStudioDialog(
                                 Text("Who can view", style = XMaxType.caption1, color = palette.textSecondary)
                                 val summary = when (privacyMode) {
                                     StatusPrivacyMode.ALL_APPROVED -> "All approved company members"
-                                    StatusPrivacyMode.SELECTED_ONLY -> "Selected only (${allowedUids.size} members)"
+                                    StatusPrivacyMode.SELECTED_ONLY -> "${audienceEmoji} $audienceLabel (${allowedUids.size} members)"
                                     StatusPrivacyMode.ALL_EXCEPT -> "All except ${excludedUids.size} hidden"
                                 }
                                 Text(summary, style = XMaxType.footnoteSemibold.tabular(), color = palette.textPrimary)
@@ -1109,16 +1121,22 @@ fun CreateStatusStudioDialog(
     }
 
     if (showPrivacyDialog) {
-        StatusPrivacySelectorDialog(
+        StatusPrivacyPanelDialog(
+            myMember = myMember,
             allMembers = allMembers.filter { it.statusEnum() == MembershipStatus.APPROVED && it.active && it.uid != myMember.uid },
             initialMode = privacyMode,
             initialAllowedUids = allowedUids,
             initialExcludedUids = excludedUids,
-            onSave = { mode, allow, excl ->
+            initialAudienceLabel = audienceLabel,
+            initialAudienceEmoji = audienceEmoji,
+            prefs = prefs,
+            onSave = { mode, allow, excl, label, emoji ->
                 privacyMode = mode
                 allowedUids = allow
                 excludedUids = excl
-                ChatSettingsStore.updateStatusPrivacy(context, mode.name, allow, excl)
+                audienceLabel = label
+                audienceEmoji = emoji
+                ChatSettingsStore.updateStatusPrivacy(context, mode.name, allow, excl, label, emoji)
                 showPrivacyDialog = false
             },
             onDismiss = { showPrivacyDialog = false }
@@ -1218,117 +1236,19 @@ fun StatusPrivacySelectorDialog(
     initialMode: StatusPrivacyMode,
     initialAllowedUids: Set<String>,
     initialExcludedUids: Set<String>,
+    myMember: Member? = null,
     onSave: (StatusPrivacyMode, Set<String>, Set<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var mode by remember { mutableStateOf(initialMode) }
-    var allowed by remember { mutableStateOf(initialAllowedUids) }
-    var excluded by remember { mutableStateOf(initialExcludedUids) }
-    val palette = XMaxTheme.colors
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = palette.surface,
-            contentColor = palette.textPrimary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 560.dp)
-                .testTag("status_privacy_dialog")
-        ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Status Privacy", style = XMaxType.secondaryTitle)
-                Text("Choose which approved company members can see your statuses and ring indicator.", style = XMaxType.footnote, color = palette.textSecondary)
-
-                StatusPrivacyMode.entries.forEach { m ->
-                    Surface(
-                        onClick = { mode = m },
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (mode == m) palette.softVioletBg else palette.surfaceMuted,
-                        border = if (mode == m) BorderStroke(1.5.dp, VioletPrimary) else null,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            RadioButton(selected = mode == m, onClick = { mode = m })
-                            Column {
-                                Text(m.label, style = XMaxType.headline, color = palette.textPrimary)
-                                Text(m.subtitle, style = XMaxType.caption1, color = palette.textSecondary)
-                            }
-                        }
-                    }
-                }
-
-                if (mode != StatusPrivacyMode.ALL_APPROVED) {
-                    val activeSet = if (mode == StatusPrivacyMode.SELECTED_ONLY) allowed else excluded
-                    Text(
-                        text = if (mode == StatusPrivacyMode.SELECTED_ONLY) {
-                            "Select members who CAN view (${activeSet.size}):"
-                        } else {
-                            "Hide status from (${activeSet.size}):"
-                        },
-                        style = XMaxType.caption1Semibold.tabular(),
-                        color = palette.textPrimary
-                    )
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false)
-                            .heightIn(max = 220.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(allMembers, key = { it.uid }) { mem ->
-                            val isChecked = mem.uid in activeSet
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        if (mode == StatusPrivacyMode.SELECTED_ONLY) {
-                                            allowed = if (isChecked) allowed - mem.uid else allowed + mem.uid
-                                        } else {
-                                            excluded = if (isChecked) excluded - mem.uid else excluded + mem.uid
-                                        }
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                            ) {
-                                Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = {
-                                        if (mode == StatusPrivacyMode.SELECTED_ONLY) {
-                                            allowed = if (isChecked) allowed - mem.uid else allowed + mem.uid
-                                        } else {
-                                            excluded = if (isChecked) excluded - mem.uid else excluded + mem.uid
-                                        }
-                                    }
-                                )
-                                StudioAvatar(name = mem.fullName, size = 32.dp, photoBase64 = mem.photoBase64)
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(formatTitleCase(mem.fullName), style = XMaxType.headline, color = palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(mem.jobRoleName.ifBlank { mem.departmentName }, style = XMaxType.caption1, color = palette.textSecondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("Cancel", style = XMaxType.buttonCompact) }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = { onSave(mode, allowed, excluded) },
-                        colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
-                        modifier = Modifier.testTag("status_privacy_save_btn")
-                    ) {
-                        Text("Save Privacy", style = XMaxType.buttonCompact)
-                    }
-                }
-            }
-        }
-    }
+    StatusPrivacyPanelDialog(
+        myMember = myMember,
+        allMembers = allMembers,
+        initialMode = initialMode,
+        initialAllowedUids = initialAllowedUids,
+        initialExcludedUids = initialExcludedUids,
+        onSave = { mode, allowed, excluded, _, _ ->
+            onSave(mode, allowed, excluded)
+        },
+        onDismiss = onDismiss
+    )
 }

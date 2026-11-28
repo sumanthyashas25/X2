@@ -18,7 +18,6 @@ import com.google.firebase.database.ServerValue
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.MetadataChanges
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -168,169 +167,173 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
         if (uid.isBlank()) return
         val cid = companyId.trim().ifBlank { currentCompanyId }
         val isOnline = availability != MemberAvailability.AWAY
-        val firestore = resolveFirestore(context)
-        if (firestore != null) {
-            scope.launch {
-                runCatching {
-                    val payload = mapOf(
-                        "uid" to uid,
-                        "isOnline" to isOnline,
-                        "statusMessage" to availability.label,
-                        "lastSeenAtMillis" to System.currentTimeMillis(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                    firestore.collection("companies").document(cid)
-                        .collection("presence").document(uid).set(payload)
-                }
-            }
-        }
-        val ref = rootRef(cid, context)?.child("presence")?.child(uid)?.child(currentDeviceId) ?: return
-        runCatching {
-            ref.onDisconnect().setValue(
-                mapOf(
-                    "online" to false,
-                    "status" to MemberAvailability.AWAY.name,
-                    "lastSeen" to ServerValue.TIMESTAMP
-                )
-            )
-            ref.setValue(
-                mapOf(
-                    "online" to isOnline,
-                    "status" to availability.name,
-                    "lastSeen" to ServerValue.TIMESTAMP
-                )
-            )
-        }
-    }
-
-    private fun setOnline(context: Context?, companyId: String, uid: String, online: Boolean) {
-        if (uid.isBlank()) return
-        val firestore = resolveFirestore(context)
-        if (firestore != null) {
-            val now = System.currentTimeMillis()
-            val safeCompany = companyId.trim().ifBlank { "xmax" }
-            val writeKey = "$safeCompany|$uid|$online|${currentAvailability.name}"
-            val shouldWrite = !online ||
-                writeKey != lastFirestorePresenceKey ||
-                (now - lastFirestorePresenceAtMs) > 20_000L
-            if (shouldWrite) {
-                lastFirestorePresenceKey = writeKey
-                lastFirestorePresenceAtMs = now
-                scope.launch {
-                    runCatching {
-                        val payload = mapOf(
-                            "uid" to uid,
-                            "isOnline" to online,
-                            "statusMessage" to currentAvailability.label,
-                            "lastSeenAtMillis" to System.currentTimeMillis(),
-                            "updatedAt" to FieldValue.serverTimestamp()
-                        )
-                        firestore.collection("companies").document(safeCompany)
-                            .collection("presence").document(uid).set(payload)
-                    }
-                }
-            }
-        }
-        val ref = rootRef(companyId, context)?.child("presence")?.child(uid)?.child(currentDeviceId) ?: return
-        runCatching {
-            if (online) {
-                val offlinePayload = mapOf(
-                    "online" to false,
-                    "status" to MemberAvailability.AWAY.name,
-                    "lastSeen" to ServerValue.TIMESTAMP
-                )
-                ref.onDisconnect().setValue(offlinePayload)
-                ref.setValue(
-                    mapOf(
-                        "online" to true,
-                        "status" to currentAvailability.name,
-                        "lastSeen" to ServerValue.TIMESTAMP
-                    )
-                )
-            } else {
-                ref.setValue(
+        val ref = rootRef(cid, context)?.child("presence")?.child(uid)?.child(currentDeviceId)
+        if (ref != null) {
+            runCatching {
+                ref.onDisconnect().setValue(
                     mapOf(
                         "online" to false,
                         "status" to MemberAvailability.AWAY.name,
                         "lastSeen" to ServerValue.TIMESTAMP
                     )
                 )
+                ref.setValue(
+                    mapOf(
+                        "online" to isOnline,
+                        "status" to availability.name,
+                        "lastSeen" to ServerValue.TIMESTAMP
+                    )
+                )
+            }
+            return
+        }
+        val firestore = resolveFirestore(context) ?: return
+        scope.launch {
+            runCatching {
+                val payload = mapOf(
+                    "uid" to uid,
+                    "isOnline" to isOnline,
+                    "statusMessage" to availability.label,
+                    "lastSeenAtMillis" to System.currentTimeMillis(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                firestore.collection("companies").document(cid)
+                    .collection("presence").document(uid).set(payload)
+            }
+        }
+    }
+
+    private fun setOnline(context: Context?, companyId: String, uid: String, online: Boolean) {
+        if (uid.isBlank()) return
+        val ref = rootRef(companyId, context)?.child("presence")?.child(uid)?.child(currentDeviceId)
+        if (ref != null) {
+            runCatching {
+                if (online) {
+                    val offlinePayload = mapOf(
+                        "online" to false,
+                        "status" to MemberAvailability.AWAY.name,
+                        "lastSeen" to ServerValue.TIMESTAMP
+                    )
+                    ref.onDisconnect().setValue(offlinePayload)
+                    ref.setValue(
+                        mapOf(
+                            "online" to true,
+                            "status" to currentAvailability.name,
+                            "lastSeen" to ServerValue.TIMESTAMP
+                        )
+                    )
+                } else {
+                    ref.setValue(
+                        mapOf(
+                            "online" to false,
+                            "status" to MemberAvailability.AWAY.name,
+                            "lastSeen" to ServerValue.TIMESTAMP
+                        )
+                    )
+                }
+            }
+            return
+        }
+        val firestore = resolveFirestore(context) ?: return
+        val now = System.currentTimeMillis()
+        val safeCompany = companyId.trim().ifBlank { "xmax" }
+        val writeKey = "$safeCompany|$uid|$online|${currentAvailability.name}"
+        val shouldWrite = !online ||
+            writeKey != lastFirestorePresenceKey ||
+            (now - lastFirestorePresenceAtMs) > 20_000L
+        if (shouldWrite) {
+            lastFirestorePresenceKey = writeKey
+            lastFirestorePresenceAtMs = now
+            scope.launch {
+                runCatching {
+                    val payload = mapOf(
+                        "uid" to uid,
+                        "isOnline" to online,
+                        "statusMessage" to currentAvailability.label,
+                        "lastSeenAtMillis" to System.currentTimeMillis(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    firestore.collection("companies").document(safeCompany)
+                        .collection("presence").document(uid).set(payload)
+                }
             }
         }
     }
 
     fun setTyping(companyId: String, chatId: String, uid: String, displayName: String, isTyping: Boolean) {
         if (chatId.isBlank() || uid.isBlank()) return
-        val firestore = resolveFirestore()
-        if (firestore != null) {
-            scope.launch {
-                runCatching {
-                    val safeCompany = companyId.trim().ifBlank { "xmax" }
-                    val payload = mapOf(
-                        "isTyping" to isTyping,
-                        "isRecording" to false,
-                        "userName" to displayName.take(60),
-                        "updatedAt" to FieldValue.serverTimestamp()
+        val ref = rootRef(companyId)?.child("typing")?.child(chatId)?.child(uid)
+        if (ref != null) {
+            typingClearJob?.cancel()
+            runCatching {
+                if (isTyping) {
+                    activeTypingChatId = chatId
+                    ref.onDisconnect().removeValue()
+                    ref.setValue(
+                        mapOf(
+                            "name" to displayName.take(60),
+                            "ts" to System.currentTimeMillis()
+                        )
                     )
-                    firestore.collection("companies").document(safeCompany)
-                        .collection("chat_channels").document(chatId)
-                        .collection("ephemeral").document(uid).set(payload)
+                    typingClearJob = scope.launch {
+                        delay(TYPING_TTL_MS)
+                        runCatching { ref.removeValue() }
+                    }
+                } else {
+                    ref.removeValue()
                 }
             }
+            return
         }
-        val ref = rootRef(companyId)?.child("typing")?.child(chatId)?.child(uid) ?: return
-        typingClearJob?.cancel()
-        runCatching {
-            if (isTyping) {
-                activeTypingChatId = chatId
-                ref.onDisconnect().removeValue()
-                ref.setValue(
-                    mapOf(
-                        "name" to displayName.take(60),
-                        "ts" to System.currentTimeMillis()
-                    )
+        val firestore = resolveFirestore() ?: return
+        scope.launch {
+            runCatching {
+                val safeCompany = companyId.trim().ifBlank { "xmax" }
+                val payload = mapOf(
+                    "isTyping" to isTyping,
+                    "isRecording" to false,
+                    "userName" to displayName.take(60),
+                    "updatedAt" to FieldValue.serverTimestamp()
                 )
-                typingClearJob = scope.launch {
-                    delay(TYPING_TTL_MS)
-                    runCatching { ref.removeValue() }
-                }
-            } else {
-                ref.removeValue()
+                firestore.collection("companies").document(safeCompany)
+                    .collection("chat_channels").document(chatId)
+                    .collection("ephemeral").document(uid).set(payload)
             }
         }
     }
 
     fun setRecording(companyId: String, chatId: String, uid: String, displayName: String, isRecording: Boolean) {
         if (chatId.isBlank() || uid.isBlank()) return
-        val firestore = resolveFirestore()
-        if (firestore != null) {
-            scope.launch {
-                runCatching {
-                    val safeCompany = companyId.trim().ifBlank { "xmax" }
-                    val payload = mapOf(
-                        "isTyping" to false,
-                        "isRecording" to isRecording,
-                        "userName" to displayName.take(60),
-                        "updatedAt" to FieldValue.serverTimestamp()
+        val ref = rootRef(companyId)?.child("recording")?.child(chatId)?.child(uid)
+        if (ref != null) {
+            runCatching {
+                if (isRecording) {
+                    ref.onDisconnect().removeValue()
+                    ref.setValue(
+                        mapOf(
+                            "name" to displayName.take(60),
+                            "ts" to System.currentTimeMillis()
+                        )
                     )
-                    firestore.collection("companies").document(safeCompany)
-                        .collection("chat_channels").document(chatId)
-                        .collection("ephemeral").document(uid).set(payload)
+                } else {
+                    ref.removeValue()
                 }
             }
+            return
         }
-        val ref = rootRef(companyId)?.child("recording")?.child(chatId)?.child(uid) ?: return
-        runCatching {
-            if (isRecording) {
-                ref.onDisconnect().removeValue()
-                ref.setValue(
-                    mapOf(
-                        "name" to displayName.take(60),
-                        "ts" to System.currentTimeMillis()
-                    )
+        val firestore = resolveFirestore() ?: return
+        scope.launch {
+            runCatching {
+                val safeCompany = companyId.trim().ifBlank { "xmax" }
+                val payload = mapOf(
+                    "isTyping" to false,
+                    "isRecording" to isRecording,
+                    "userName" to displayName.take(60),
+                    "updatedAt" to FieldValue.serverTimestamp()
                 )
-            } else {
-                ref.removeValue()
+                firestore.collection("companies").document(safeCompany)
+                    .collection("chat_channels").document(chatId)
+                    .collection("ephemeral").document(uid).set(payload)
             }
         }
     }
@@ -409,174 +412,173 @@ object RtdbPresenceManager : DefaultLifecycleObserver {
 
     fun observeMemberPresence(companyId: String, targetUid: String): Flow<MemberPresenceState> {
         if (targetUid.isBlank()) return flowOf(MemberPresenceState())
-        val firestore = resolveFirestore()
-        if (firestore != null) {
-            val safeCompany = companyId.trim().ifBlank { "xmax" }
+        val ref = rootRef(companyId)?.child("presence")?.child(targetUid)
+        if (ref != null) {
             return callbackFlow {
-                val reg = firestore.collection("companies").document(safeCompany)
-                    .collection("presence").document(targetUid)
-                    .addSnapshotListener { doc, err ->
-                        if (err != null) {
-                            trySend(MemberPresenceState(uid = targetUid))
-                            return@addSnapshotListener
-                        }
-                        if (doc != null && doc.exists()) {
-                            val online = doc.getBoolean("isOnline") == true
-                            val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
-                            val statusMsg = doc.getString("statusMessage").orEmpty()
-                            val avail = if (online) {
-                                if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
-                            } else MemberAvailability.AWAY
-                            trySend(MemberPresenceState(uid = targetUid, online = online, lastSeenMillis = lastSeen, availability = avail))
-                        } else {
-                            trySend(MemberPresenceState(uid = targetUid))
-                        }
+                val listener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        trySend(parseMemberSnapshot(targetUid, snapshot))
                     }
-                awaitClose { reg.remove() }
+
+                    override fun onCancelled(error: DatabaseError) {
+                        trySend(MemberPresenceState(uid = targetUid))
+                    }
+                }
+                ref.addValueEventListener(listener)
+                awaitClose { ref.removeEventListener(listener) }
             }
         }
-        val ref = rootRef(companyId)?.child("presence")?.child(targetUid)
-            ?: return flowOf(MemberPresenceState(uid = targetUid))
+        val firestore = resolveFirestore() ?: return flowOf(MemberPresenceState(uid = targetUid))
+        val safeCompany = companyId.trim().ifBlank { "xmax" }
         return callbackFlow {
-            val listener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    trySend(parseMemberSnapshot(targetUid, snapshot))
+            val reg = firestore.collection("companies").document(safeCompany)
+                .collection("presence").document(targetUid)
+                .addSnapshotListener { doc, err ->
+                    if (err != null) {
+                        trySend(MemberPresenceState(uid = targetUid))
+                        return@addSnapshotListener
+                    }
+                    if (doc != null && doc.exists()) {
+                        val online = doc.getBoolean("isOnline") == true
+                        val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
+                        val statusMsg = doc.getString("statusMessage").orEmpty()
+                        val avail = if (online) {
+                            if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
+                        } else MemberAvailability.AWAY
+                        trySend(MemberPresenceState(uid = targetUid, online = online, lastSeenMillis = lastSeen, availability = avail))
+                    } else {
+                        trySend(MemberPresenceState(uid = targetUid))
+                    }
                 }
-
-                override fun onCancelled(error: DatabaseError) {
-                    trySend(MemberPresenceState(uid = targetUid))
-                }
-            }
-            ref.addValueEventListener(listener)
-            awaitClose { ref.removeEventListener(listener) }
+            awaitClose { reg.remove() }
         }
     }
 
     fun observeCompanyPresence(companyId: String): Flow<Map<String, MemberPresenceState>> {
-        val firestore = resolveFirestore()
-        if (firestore != null) {
-            val safeCompany = companyId.trim().ifBlank { "xmax" }
+        val ref = rootRef(companyId)?.child("presence")
+        if (ref != null) {
             return callbackFlow {
-                val reg = firestore.collection("companies").document(safeCompany)
-                    .collection("presence")
-                    .addSnapshotListener { snap, err ->
-                        if (err != null) {
-                            trySend(emptyMap())
-                            return@addSnapshotListener
-                        }
-                        val map = mutableMapOf<String, MemberPresenceState>()
-                        snap?.documents?.forEach { doc ->
-                            val uid = doc.id
-                            val online = doc.getBoolean("isOnline") == true
-                            val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
-                            val statusMsg = doc.getString("statusMessage").orEmpty()
-                            val avail = if (online) {
-                                if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
-                            } else MemberAvailability.AWAY
-                            map[uid] = MemberPresenceState(uid = uid, online = online, lastSeenMillis = lastSeen, availability = avail)
+                val listener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val map = buildMap<String, MemberPresenceState> {
+                            for (userChild in snapshot.children) {
+                                val uid = userChild.key ?: continue
+                                put(uid, parseMemberSnapshot(uid, userChild))
+                            }
                         }
                         trySend(map)
                     }
-                awaitClose { reg.remove() }
+
+                    override fun onCancelled(error: DatabaseError) {
+                        trySend(emptyMap())
+                    }
+                }
+                ref.addValueEventListener(listener)
+                awaitClose { ref.removeEventListener(listener) }
             }
         }
-        val ref = rootRef(companyId)?.child("presence") ?: return flowOf(emptyMap())
+        val firestore = resolveFirestore() ?: return flowOf(emptyMap())
+        val safeCompany = companyId.trim().ifBlank { "xmax" }
         return callbackFlow {
-            val listener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val map = buildMap<String, MemberPresenceState> {
-                        for (userChild in snapshot.children) {
-                            val uid = userChild.key ?: continue
-                            put(uid, parseMemberSnapshot(uid, userChild))
-                        }
+            val reg = firestore.collection("companies").document(safeCompany)
+                .collection("presence")
+                .addSnapshotListener { snap, err ->
+                    if (err != null) {
+                        trySend(emptyMap())
+                        return@addSnapshotListener
+                    }
+                    val map = mutableMapOf<String, MemberPresenceState>()
+                    snap?.documents?.forEach { doc ->
+                        val uid = doc.id
+                        val online = doc.getBoolean("isOnline") == true
+                        val lastSeen = doc.getLong("lastSeenAtMillis") ?: 0L
+                        val statusMsg = doc.getString("statusMessage").orEmpty()
+                        val avail = if (online) {
+                            if (statusMsg.contains("Busy", ignoreCase = true)) MemberAvailability.BUSY else MemberAvailability.ACTIVE
+                        } else MemberAvailability.AWAY
+                        map[uid] = MemberPresenceState(uid = uid, online = online, lastSeenMillis = lastSeen, availability = avail)
                     }
                     trySend(map)
                 }
-
-                override fun onCancelled(error: DatabaseError) {
-                    trySend(emptyMap())
-                }
-            }
-            ref.addValueEventListener(listener)
-            awaitClose { ref.removeEventListener(listener) }
+            awaitClose { reg.remove() }
         }
     }
 
     fun observeChatActivity(companyId: String, chatId: String, myUid: String): Flow<EphemeralChatActivity> {
         if (chatId.isBlank()) return flowOf(EphemeralChatActivity())
-        val firestore = resolveFirestore()
-        if (firestore != null) {
-            val safeCompany = companyId.trim().ifBlank { "xmax" }
+        val base = rootRef(companyId)
+        if (base != null) {
+            val typingRef = base.child("typing").child(chatId)
+            val recordingRef = base.child("recording").child(chatId)
+
             return callbackFlow {
-                val reg = firestore.collection("companies").document(safeCompany)
-                    .collection("chat_channels").document(chatId)
-                    .collection("ephemeral")
-                    .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
-                        if (err != null) {
-                            trySend(EphemeralChatActivity())
-                            return@addSnapshotListener
+                var latestTyping = emptyList<String>()
+                var latestRecording = emptyList<String>()
+
+                fun emitCombined() {
+                    trySend(EphemeralChatActivity(typingNames = latestTyping, recordingNames = latestRecording))
+                }
+
+                val typingListener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val now = System.currentTimeMillis()
+                        latestTyping = snapshot.children.mapNotNull { child ->
+                            if (child.key == myUid) return@mapNotNull null
+                            val ts = child.child("ts").getValue(Long::class.java) ?: 0L
+                            if (now - ts > TYPING_TTL_MS + 2000L) return@mapNotNull null
+                            child.child("name").getValue(String::class.java)?.takeIf { it.isNotBlank() }
                         }
-                        val typers = mutableListOf<String>()
-                        val recorders = mutableListOf<String>()
-                        snap?.documents?.forEach { doc ->
-                            if (doc.id == myUid) return@forEach
-                            val isTyping = doc.getBoolean("isTyping") == true
-                            val isRecording = doc.getBoolean("isRecording") == true
-                            val userName = doc.getString("userName")?.ifBlank { "Member" } ?: "Member"
-                            if (isTyping) typers.add(userName)
-                            if (isRecording) recorders.add(userName)
-                        }
-                        trySend(EphemeralChatActivity(typingNames = typers, recordingNames = recorders))
+                        emitCombined()
                     }
-                awaitClose { reg.remove() }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+
+                val recordingListener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val now = System.currentTimeMillis()
+                        latestRecording = snapshot.children.mapNotNull { child ->
+                            if (child.key == myUid) return@mapNotNull null
+                            val ts = child.child("ts").getValue(Long::class.java) ?: 0L
+                            if (now - ts > RECORDING_TTL_MS) return@mapNotNull null
+                            child.child("name").getValue(String::class.java)?.takeIf { it.isNotBlank() }
+                        }
+                        emitCombined()
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+
+                typingRef.addValueEventListener(typingListener)
+                recordingRef.addValueEventListener(recordingListener)
+                awaitClose {
+                    typingRef.removeEventListener(typingListener)
+                    recordingRef.removeEventListener(recordingListener)
+                }
             }
         }
-        val base = rootRef(companyId) ?: return flowOf(EphemeralChatActivity())
-        val typingRef = base.child("typing").child(chatId)
-        val recordingRef = base.child("recording").child(chatId)
-
+        val firestore = resolveFirestore() ?: return flowOf(EphemeralChatActivity())
+        val safeCompany = companyId.trim().ifBlank { "xmax" }
         return callbackFlow {
-            var latestTyping = emptyList<String>()
-            var latestRecording = emptyList<String>()
-
-            fun emitCombined() {
-                trySend(EphemeralChatActivity(typingNames = latestTyping, recordingNames = latestRecording))
-            }
-
-            val typingListener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val now = System.currentTimeMillis()
-                    latestTyping = snapshot.children.mapNotNull { child ->
-                        if (child.key == myUid) return@mapNotNull null
-                        val ts = child.child("ts").getValue(Long::class.java) ?: 0L
-                        if (now - ts > TYPING_TTL_MS + 2000L) return@mapNotNull null
-                        child.child("name").getValue(String::class.java)?.takeIf { it.isNotBlank() }
+            val reg = firestore.collection("companies").document(safeCompany)
+                .collection("chat_channels").document(chatId)
+                .collection("ephemeral")
+                .addSnapshotListener { snap, err ->
+                    if (err != null) {
+                        trySend(EphemeralChatActivity())
+                        return@addSnapshotListener
                     }
-                    emitCombined()
-                }
-                override fun onCancelled(error: DatabaseError) {}
-            }
-
-            val recordingListener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val now = System.currentTimeMillis()
-                    latestRecording = snapshot.children.mapNotNull { child ->
-                        if (child.key == myUid) return@mapNotNull null
-                        val ts = child.child("ts").getValue(Long::class.java) ?: 0L
-                        if (now - ts > RECORDING_TTL_MS) return@mapNotNull null
-                        child.child("name").getValue(String::class.java)?.takeIf { it.isNotBlank() }
+                    val typers = mutableListOf<String>()
+                    val recorders = mutableListOf<String>()
+                    snap?.documents?.forEach { doc ->
+                        if (doc.id == myUid) return@forEach
+                        val isTyping = doc.getBoolean("isTyping") == true
+                        val isRecording = doc.getBoolean("isRecording") == true
+                        val userName = doc.getString("userName")?.ifBlank { "Member" } ?: "Member"
+                        if (isTyping) typers.add(userName)
+                        if (isRecording) recorders.add(userName)
                     }
-                    emitCombined()
+                    trySend(EphemeralChatActivity(typingNames = typers, recordingNames = recorders))
                 }
-                override fun onCancelled(error: DatabaseError) {}
-            }
-
-            typingRef.addValueEventListener(typingListener)
-            recordingRef.addValueEventListener(recordingListener)
-            awaitClose {
-                typingRef.removeEventListener(typingListener)
-                recordingRef.removeEventListener(recordingListener)
-            }
+            awaitClose { reg.remove() }
         }
     }
 

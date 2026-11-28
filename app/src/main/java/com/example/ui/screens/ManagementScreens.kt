@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.chat.remote.WorkerBridgeClient
+import com.example.data.ClientRepository
 import com.example.data.NetworkConnectivityMonitor
 import com.example.domain.MoneyFormatter
 import com.example.domain.WorkDistributionEngine
@@ -103,13 +104,23 @@ fun ClientsScreen(
             item { EmptyStateCard(Icons.Filled.Contacts, "No Clients Found", "Add your first client during a meeting or from here.") }
         } else {
             items(filtered, key = { it.id }) { cli ->
+                val liveActiveCount = remember(cli.id, cli.companyName, cli.activeProjectCount, state.projects) {
+                    maxOf(
+                        cli.activeProjectCount.coerceAtLeast(0),
+                        ClientRepository.countActiveProjectsForClient(cli, state.projects)
+                    )
+                }
+                val contactSummary = listOf(cli.phone.trim(), cli.email.trim())
+                    .filter { it.isNotBlank() }
+                    .joinToString(" • ")
+                    .ifBlank { "No contact details" }
                 Surface(
                     onClick = { if (canEdit) editingClient = cli },
                     shape = RoundedCornerShape(22.dp),
                     color = palette.surface,
                     border = BorderStroke(1.dp, palette.outline),
                     shadowElevation = 2.dp,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("client_card_${cli.id}")
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -122,9 +133,34 @@ fun ClientsScreen(
                         ) {
                             Icon(Icons.Filled.Business, contentDescription = null, tint = palette.skyInk, modifier = Modifier.size(20.dp))
                         }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(formatTitleCase(cli.companyName), style = XMaxType.headline, color = palette.textPrimary)
-                            Text("${formatTitleCase(cli.contactPerson)} • ${cli.phone.ifBlank { cli.email.ifBlank { "No contact" } }}", style = XMaxType.footnote.tabular(), color = palette.textSecondary)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    formatTitleCase(cli.companyName),
+                                    style = XMaxType.headline,
+                                    color = palette.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = 6.dp)
+                                )
+                                StatusPill(
+                                    label = "$liveActiveCount Active",
+                                    containerColor = if (liveActiveCount > 0) palette.mintBg else palette.surfaceMuted,
+                                    contentColor = if (liveActiveCount > 0) palette.mintInk else palette.textSecondary
+                                )
+                            }
+                            Text(
+                                "${formatTitleCase(cli.contactPerson)} • $contactSummary",
+                                style = XMaxType.footnote.tabular(),
+                                color = palette.textSecondary
+                            )
+                            if (cli.address.isNotBlank()) {
+                                Text(cli.address, style = XMaxType.caption1, color = palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                             if (cli.meetingNotes.isNotBlank()) {
                                 Text("Notes: ${cli.meetingNotes}", style = XMaxType.caption1, color = palette.textSecondary, maxLines = 2)
                             }
@@ -531,17 +567,34 @@ fun CatalogueScreen(
                 placeholder = "Filter services, packages, or add-ons…"
             )
         }
-        itemsIndexed(filtered, key = { _, it -> it.id }) { index, item ->
-            CatalogueServiceTicketCard(
-                item = item,
-                index = index,
-                buttonLabel = if (canEdit) "Edit" else "Details",
-                expandable = true,
-                onButtonClick = {
-                    AppHapticsAndNotifier.triggerTickHaptic(context)
-                    if (canEdit) editing = item else viewingItem = item
-                }
-            )
+        if (filtered.isEmpty()) {
+            item {
+                val showSyncCta = query.isBlank() && canEdit && onSyncOfficialCatalogue != null
+                EmptyStateCard(
+                    icon = Icons.Filled.Inventory2,
+                    title = "No catalogue items found",
+                    subtitle = when {
+                        query.isNotBlank() -> "No services, packages, or add-ons matched \"$query\"."
+                        showSyncCta -> "Your X.MAX service catalogue has not synced yet. Sync the official PDF catalogue now."
+                        else -> "Catalogue items are syncing from your workspace."
+                    },
+                    actionLabel = if (showSyncCta) "Sync Official Catalogue" else null,
+                    onAction = if (showSyncCta) onSyncOfficialCatalogue else null
+                )
+            }
+        } else {
+            itemsIndexed(filtered, key = { _, it -> it.id }) { index, item ->
+                CatalogueServiceTicketCard(
+                    item = item,
+                    index = index,
+                    buttonLabel = if (canEdit) "Edit" else "Details",
+                    expandable = true,
+                    onButtonClick = {
+                        AppHapticsAndNotifier.triggerTickHaptic(context)
+                        if (canEdit) editing = item else viewingItem = item
+                    }
+                )
+            }
         }
     }
 
@@ -640,7 +693,10 @@ fun PaymentsScreen(
     onRecordPayment: (Project, Long, Long, PaymentMethod, String, String) -> Unit,
     onGenerateTaxInvoice: (Project, Quotation?) -> Unit = { _, _ -> },
     onDispatchNudge: (Project, Client?, String, String) -> Unit = { _, _, _, _ -> },
-    onCreatePortalLink: (Project, Quotation?, (ClientPortalLink) -> Unit) -> Unit = { _, _, _ -> }
+    onCreatePortalLink: (Project, Quotation?, (ClientPortalLink) -> Unit) -> Unit = { _, _, _ -> },
+    onCreateInvoice: (Project, Long, Boolean, Long, String) -> Unit = { _, _, _, _, _ -> },
+    onToggleInvoicePaid: (InvoiceRecord, Boolean) -> Unit = { _, _ -> },
+    onDeleteInvoice: (InvoiceRecord) -> Unit = {}
 ) {
     val context = LocalContext.current
     val palette = XMaxTheme.colors
@@ -653,6 +709,12 @@ fun PaymentsScreen(
             timeEntries = state.timeEntries
         )
     }
+    val revenueSummary = remember(state.projects, state.invoices) {
+        WorkDistributionEngine.computeRevenueAndInvoiceSummary(
+            projects = state.projects,
+            invoices = state.invoices
+        )
+    }
     val reminderSummary = remember(state.projects, state.deliverables, state.quotations) {
         WorkDistributionEngine.computePaymentReminders(
             projects = state.projects,
@@ -661,6 +723,7 @@ fun PaymentsScreen(
         )
     }
     var recordTarget by remember { mutableStateOf<Project?>(null) }
+    var showCreateInvoiceDialog by remember { mutableStateOf(false) }
     var prefillAmountPaise by remember { mutableStateOf<Long?>(null) }
     var prefillNote by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -682,7 +745,9 @@ fun PaymentsScreen(
     val balanceDueCount = remember(activeProjects) { activeProjects.count { it.outstandingPaise > 0L } }
     val settledCount = remember(activeProjects) { activeProjects.count { it.outstandingPaise <= 0L } }
     val canRecord = state.hasPerm(AppPermission.RECORD_PAYMENTS)
-    val canSeeCommercialDocs = canRecord || state.hasPerm(AppPermission.ISSUE_QUOTATIONS) || state.isSuperAdmin || state.isAdmin
+    val canIssueInvoices = canRecord || state.hasPerm(AppPermission.ISSUE_QUOTATIONS) || state.isSuperAdmin || state.isAdmin
+    val canSeeCommercialDocs = canIssueInvoices
+    val hasPendingOfflineWrites = state.deliverablesPendingSync || state.projectsPendingSync || state.invoicesPendingSync
 
     val filteredProjects = remember(activeProjects, statusFilter, searchQuery) {
         activeProjects.filter { p ->
@@ -707,7 +772,7 @@ fun PaymentsScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (!isOnline || state.deliverablesPendingSync) {
+        if (!isOnline || hasPendingOfflineWrites) {
             item {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -727,7 +792,7 @@ fun PaymentsScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = if (!isOnline) "Offline Ledger Mode — showing cached invoices & balances. Changes will queue for sync." else "Syncing queued financial updates with cloud…",
+                            text = if (!isOnline) "Offline Ledger Mode — showing cached projects & invoices. Edits auto-sync once back online." else "Syncing queued invoice & project updates with Firestore…",
                             style = XMaxType.footnoteSemibold,
                             color = palette.butterInk
                         )
@@ -920,6 +985,88 @@ fun PaymentsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 MetricStatCard("Collected", MoneyFormatter.formatInr(totalPaid), "of ${MoneyFormatter.formatInr(totalAgreed)}", Icons.Filled.AccountBalanceWallet, containerColor = palette.mintBg, accentColor = palette.mintInk, modifier = Modifier.weight(1f))
                 MetricStatCard("Outstanding", MoneyFormatter.formatInr(totalBalance), "$balanceDueCount open projects", Icons.Filled.Schedule, containerColor = palette.surfaceMuted, accentColor = palette.textPrimary, modifier = Modifier.weight(1f))
+            }
+        }
+
+        // Completed Projects Revenue & Paid/Pending Invoices Summary
+        item {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = palette.surface,
+                border = BorderStroke(1.dp, palette.outline),
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth().testTag("completed_revenue_invoice_summary_card")
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Completed Revenue & Invoices", style = XMaxType.headline, color = palette.textPrimary)
+                            Text(
+                                "${revenueSummary.completedProjectsCount} completed project(s) • ${revenueSummary.totalInvoicesCount} invoice(s)",
+                                style = XMaxType.footnote.tabular(),
+                                color = palette.textSecondary
+                            )
+                        }
+                        if (canIssueInvoices && activeProjects.isNotEmpty()) {
+                            Button(
+                                onClick = { showCreateInvoiceDialog = true },
+                                shape = RoundedCornerShape(999.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.height(40.dp).testTag("create_invoice_button")
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("+ Invoice", style = XMaxType.buttonCompact)
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = palette.lavenderBg,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Completed Revenue", style = XMaxType.caption1Medium, color = palette.lavenderInk)
+                                Text(MoneyFormatter.formatInr(revenueSummary.completedProjectsRevenuePaise), style = XMaxType.numericHeadline, color = palette.textPrimary)
+                                Text("${revenueSummary.completedProjectsCount} completed", style = XMaxType.caption1, color = palette.textSecondary)
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = palette.mintBg,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Paid Invoices", style = XMaxType.caption1Medium, color = palette.mintInk)
+                                Text(MoneyFormatter.formatInr(revenueSummary.paidInvoicesTotalPaise), style = XMaxType.numericHeadline, color = palette.textPrimary)
+                                Text("${revenueSummary.paidInvoicesCount} paid", style = XMaxType.caption1, color = palette.textSecondary)
+                            }
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.butterBg,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Pending Invoices (${revenueSummary.pendingInvoicesCount})", style = XMaxType.footnoteSemibold, color = palette.butterInk)
+                                Text("Awaiting client settlement in Firestore ledger", style = XMaxType.caption1, color = palette.textSecondary)
+                            }
+                            Text(MoneyFormatter.formatInr(revenueSummary.pendingInvoicesTotalPaise), style = XMaxType.numericHeadline, color = palette.textPrimary)
+                        }
+                    }
+                }
             }
         }
 
@@ -1120,6 +1267,101 @@ fun PaymentsScreen(
             }
         }
 
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Invoices (${state.invoices.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary)
+                if (state.invoicesPendingSync) {
+                    StatusPill("Sync Queued", palette.butterBg, palette.butterInk)
+                }
+            }
+        }
+        if (state.invoices.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    Icons.AutoMirrored.Filled.ReceiptLong,
+                    "No Invoices Logged Yet",
+                    "Tap + Invoice above to store Paid or Pending project invoices in Firestore."
+                )
+            }
+        } else {
+            items(state.invoices, key = { it.id }) { inv ->
+                val isPaid = inv.statusEnum() == InvoiceStatus.PAID
+                val statusLabel = if (isPaid) "Paid" else if (inv.statusEnum() == InvoiceStatus.ISSUED) "Pending" else inv.statusEnum().label
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = palette.surface,
+                    border = BorderStroke(1.dp, palette.outline),
+                    modifier = Modifier.fillMaxWidth().testTag("invoice_card_${inv.id}")
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(inv.invoiceNumber, style = XMaxType.headline.tabular(), color = palette.textPrimary)
+                                Text(
+                                    "${formatTitleCase(inv.projectTitle)} • ${formatTitleCase(inv.clientSnapshot.companyName)}",
+                                    style = XMaxType.footnote,
+                                    color = palette.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            StatusPill(
+                                label = statusLabel,
+                                containerColor = if (isPaid) palette.mintBg else palette.butterBg,
+                                contentColor = if (isPaid) palette.mintInk else palette.butterInk
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Amount: ${MoneyFormatter.formatInr(inv.totalPaise)}", style = XMaxType.numericHeadline, color = palette.textPrimary)
+                            Text(
+                                if (isPaid) "Balance: ₹0" else "Pending: ${MoneyFormatter.formatInr(if (inv.balanceDuePaise > 0L) inv.balanceDuePaise else inv.totalPaise)}",
+                                style = XMaxType.caption1Semibold.tabular(),
+                                color = if (isPaid) palette.mintInk else palette.butterInk
+                            )
+                        }
+                        if (inv.notes.isNotBlank()) {
+                            Text(inv.notes, style = XMaxType.caption1, color = palette.textSecondary, maxLines = 2)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (canIssueInvoices) {
+                                OutlinedButton(
+                                    onClick = { onToggleInvoicePaid(inv, !isPaid) },
+                                    shape = RoundedCornerShape(999.dp),
+                                    border = BorderStroke(1.dp, if (isPaid) palette.butterInk.copy(alpha = 0.45f) else EmeraldApproved.copy(alpha = 0.45f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (isPaid) palette.butterBg else palette.mintBg,
+                                        contentColor = if (isPaid) palette.butterInk else palette.mintInk
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(40.dp).testTag("toggle_invoice_status_${inv.id}")
+                                ) {
+                                    Text(if (isPaid) "Mark Pending" else "Mark Paid", style = XMaxType.caption1Semibold)
+                                }
+                            } else {
+                                Spacer(Modifier.width(1.dp))
+                            }
+                            if (state.isSuperAdmin) {
+                                IconButton(
+                                    onClick = { onDeleteInvoice(inv) },
+                                    modifier = Modifier.size(48.dp).testTag("delete_invoice_${inv.id}")
+                                ) {
+                                    Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete invoice", tint = CrimsonBlocked)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item { Text("Payment Ledger (${state.payments.size})", style = XMaxType.sectionHeading.tabular(), color = palette.textPrimary) }
         if (state.payments.isEmpty()) {
             item {
@@ -1259,6 +1501,121 @@ fun PaymentsScreen(
                 ) { Text("Save Payment", style = XMaxType.buttonCompact) }
             },
             dismissButton = { TextButton(onClick = { recordTarget = null }) { Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary) } }
+        )
+    }
+
+    if (showCreateInvoiceDialog && activeProjects.isNotEmpty()) {
+        var selectedProject by remember(activeProjects) { mutableStateOf(activeProjects.first()) }
+        var amountRupees by remember(selectedProject.id) {
+            mutableStateOf(
+                MoneyFormatter.paiseToEditableRupees(
+                    selectedProject.outstandingPaise.takeIf { it > 0L } ?: selectedProject.agreedValuePaise
+                )
+            )
+        }
+        var markAsPaid by remember { mutableStateOf(false) }
+        var invoiceNotes by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showCreateInvoiceDialog = false },
+            containerColor = palette.surface,
+            shape = RoundedCornerShape(26.dp),
+            title = { Text("Create Invoice", style = XMaxType.secondaryTitle, color = palette.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Select Project", style = XMaxType.footnoteSemibold, color = palette.textSecondary)
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        activeProjects.forEach { proj ->
+                            FilterChip(
+                                selected = selectedProject.id == proj.id,
+                                onClick = { selectedProject = proj },
+                                shape = RoundedCornerShape(999.dp),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = palette.buttonPrimaryBg,
+                                    selectedLabelColor = palette.buttonPrimaryFg,
+                                    containerColor = palette.surfaceMuted,
+                                    labelColor = palette.textPrimary
+                                ),
+                                border = null,
+                                label = { Text(formatTitleCase(proj.title), style = XMaxType.footnoteMedium) }
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = amountRupees,
+                        onValueChange = { amountRupees = it },
+                        textStyle = XMaxType.body.tabular(),
+                        label = { Text("Invoice Amount (₹) *", style = XMaxType.inputLabel) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.testTag("invoice_amount_input")
+                    )
+                    Text("Invoice Status", style = XMaxType.footnoteSemibold, color = palette.textSecondary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !markAsPaid,
+                            onClick = { markAsPaid = false },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = palette.butterBg,
+                                selectedLabelColor = palette.butterInk,
+                                containerColor = palette.surfaceMuted,
+                                labelColor = palette.textPrimary
+                            ),
+                            border = null,
+                            label = { Text("Pending", style = XMaxType.footnoteSemibold) }
+                        )
+                        FilterChip(
+                            selected = markAsPaid,
+                            onClick = { markAsPaid = true },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = palette.mintBg,
+                                selectedLabelColor = palette.mintInk,
+                                containerColor = palette.surfaceMuted,
+                                labelColor = palette.textPrimary
+                            ),
+                            border = null,
+                            label = { Text("Paid", style = XMaxType.footnoteSemibold) }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = invoiceNotes,
+                        onValueChange = { invoiceNotes = it },
+                        textStyle = XMaxType.body,
+                        label = { Text("Notes (optional)", style = XMaxType.inputLabel) },
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                val paise = MoneyFormatter.rupeesToPaise(amountRupees) ?: 0L
+                Button(
+                    onClick = {
+                        onCreateInvoice(
+                            selectedProject,
+                            paise,
+                            markAsPaid,
+                            System.currentTimeMillis() + 7L * 86_400_000L,
+                            invoiceNotes
+                        )
+                        showCreateInvoiceDialog = false
+                    },
+                    enabled = paise > 0L,
+                    shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.buttonPrimaryBg, contentColor = palette.buttonPrimaryFg),
+                    modifier = Modifier.testTag("save_invoice_button")
+                ) { Text("Save Invoice", style = XMaxType.buttonCompact) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateInvoiceDialog = false }) {
+                    Text("Cancel", style = XMaxType.buttonCompact, color = palette.textSecondary)
+                }
+            }
         )
     }
 }

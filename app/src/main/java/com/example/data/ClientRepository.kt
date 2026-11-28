@@ -3,6 +3,8 @@ package com.example.data
 import com.example.model.ActivityCategory
 import com.example.model.Client
 import com.example.model.Member
+import com.example.model.Project
+import com.example.model.ProjectStatus
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -22,6 +24,19 @@ class ClientRepository(private val core: AgencyRepository) {
     private val estimate = DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
     private fun clientsCollection() = core.sub("clients")
     private fun collectionPath() = "companies/${core.companyId}/clients"
+
+    companion object {
+        fun countActiveProjectsForClient(client: Client, projects: List<Project>): Int {
+            return projects.count { p ->
+                !p.deleted &&
+                    p.statusEnum() != ProjectStatus.COMPLETED &&
+                    (
+                        (client.id.isNotBlank() && p.clientId == client.id) ||
+                            (client.companyName.isNotBlank() && p.clientCompanyName.equals(client.companyName, ignoreCase = true))
+                        )
+            }
+        }
+    }
 
     fun observeClients(): Flow<List<Client>> = callbackFlow {
         val reg = clientsCollection().addSnapshotListener { snap, err ->
@@ -95,6 +110,7 @@ class ClientRepository(private val core: AgencyRepository) {
         val isCreate = client.id.isBlank()
         val id = client.id.ifBlank { "cli_" + UUID.randomUUID().toString().take(8) }
         val path = "${collectionPath()}/$id"
+        val safeActiveCount = client.activeProjectCount.coerceAtLeast(0)
 
         return try {
             val uid = core.requireAuthenticatedUserId()
@@ -107,14 +123,17 @@ class ClientRepository(private val core: AgencyRepository) {
                 "address" to client.address.trim(),
                 "meetingNotes" to client.meetingNotes.trim(),
                 "followUpDateMillis" to client.followUpDateMillis.coerceAtLeast(0L),
+                "activeProjectCount" to safeActiveCount,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             if (isCreate) {
                 payload["createdByUid"] = actorUid
                 payload["createdAt"] = FieldValue.serverTimestamp()
-                clientsCollection().document(id).set(payload).await()
+                val writeTask = clientsCollection().document(id).set(payload)
+                if (NetworkConnectivityMonitor.isOnline.value) writeTask.await()
             } else {
-                clientsCollection().document(id).update(payload).await()
+                val writeTask = clientsCollection().document(id).update(payload)
+                if (NetworkConnectivityMonitor.isOnline.value) writeTask.await()
             }
             core.logActivity(
                 ActivityCategory.QUOTATION,
@@ -129,6 +148,7 @@ class ClientRepository(private val core: AgencyRepository) {
                     id = id,
                     companyName = cleanCompanyName,
                     contactPerson = cleanContactPerson,
+                    activeProjectCount = safeActiveCount,
                     createdByUid = if (isCreate) actorUid else client.createdByUid
                 )
             )
@@ -139,6 +159,72 @@ class ClientRepository(private val core: AgencyRepository) {
             Result.failure(e)
         } catch (e: Exception) {
             handleFirestoreError(e, if (isCreate) OperationType.CREATE else OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateActiveProjectCount(clientId: String, activeProjectCount: Int): Result<Unit> {
+        if (clientId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Client ID cannot be blank."))
+        }
+        val path = "${collectionPath()}/$clientId"
+        return try {
+            core.requireAuthenticatedUserId()
+            val writeTask = clientsCollection().document(clientId).update(
+                mapOf(
+                    "activeProjectCount" to activeProjectCount.coerceAtLeast(0),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            if (NetworkConnectivityMonitor.isOnline.value) writeTask.await()
+            Result.success(Unit)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: FirebaseFirestoreException) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncClientActiveProjectCounts(
+        projects: List<Project>,
+        currentClients: List<Client>
+    ): Result<Int> {
+        if (currentClients.isEmpty()) return Result.success(0)
+        return try {
+            core.requireAuthenticatedUserId()
+            val updates = currentClients.mapNotNull { cli ->
+                val computed = countActiveProjectsForClient(cli, projects)
+                if (cli.id.isNotBlank() && cli.activeProjectCount != computed) {
+                    cli.id to computed
+                } else {
+                    null
+                }
+            }
+            if (updates.isEmpty()) return Result.success(0)
+            val batch = core.db.batch()
+            updates.take(50).forEach { (clientId, count) ->
+                batch.update(
+                    clientsCollection().document(clientId),
+                    mapOf(
+                        "activeProjectCount" to count,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+            val commitTask = batch.commit()
+            if (NetworkConnectivityMonitor.isOnline.value) commitTask.await()
+            Result.success(updates.size)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: FirebaseFirestoreException) {
+            handleFirestoreError(e, OperationType.UPDATE, collectionPath())
+            Result.failure(e)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, collectionPath())
             Result.failure(e)
         }
     }

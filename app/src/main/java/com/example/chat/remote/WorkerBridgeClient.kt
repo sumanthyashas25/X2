@@ -172,13 +172,20 @@ object WorkerBridgeClient {
         return url.startsWith("https://") && !url.contains("your-subdomain")
     }
 
+    fun isR2FreeTierActive(): Boolean {
+        val h = _lastHealthStatus.value
+        val sp = cachedStorageProvider.ifBlank { h?.storageProvider.orEmpty() }
+        return h?.r2Configured == true || sp == "CLOUDFLARE_R2"
+    }
+
     fun activeStorageProviderLabel(): String {
         val sp = cachedStorageProvider.ifBlank { _lastHealthStatus.value?.storageProvider.orEmpty() }
         return when {
             sp.contains("SUPABASE") && sp.contains("R2") -> "Cloudflare R2 + Supabase Storage"
+            sp.contains("CLOUDFLARE") || sp.contains("R2") || _lastHealthStatus.value?.r2Configured == true ->
+                "Cloudflare R2 (Free Tier • 10 GB)"
             sp.contains("SUPABASE") -> "Supabase Storage (Free Tier)"
-            sp.contains("CLOUDFLARE") || sp.contains("R2") -> "Cloudflare R2 (Free Tier)"
-            isConfigured() -> "Cloudflare Worker + Supabase Ready"
+            isConfigured() -> "Cloudflare R2 Worker Bridge Ready"
             else -> "Firestore Inline (Worker URL Unset)"
         }
     }
@@ -395,9 +402,10 @@ object WorkerBridgeClient {
 
     private fun shouldPreferSignedSupabase(explicitHint: String = ""): Boolean {
         if (explicitHint == "SUPABASE_STORAGE") return true
-        val sp = cachedStorageProvider
-        if (sp == "CLOUDFLARE_R2") return false
-        return sp.isBlank() || sp.contains("SUPABASE")
+        if (explicitHint == "CLOUDFLARE_R2") return false
+        val sp = cachedStorageProvider.ifBlank { _lastHealthStatus.value?.storageProvider.orEmpty() }
+        if (sp == "CLOUDFLARE_R2" || _lastHealthStatus.value?.r2Configured == true) return false
+        return sp.contains("SUPABASE")
     }
 
     private fun requestSignedUploadTicket(

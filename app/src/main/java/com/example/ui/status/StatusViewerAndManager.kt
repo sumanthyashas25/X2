@@ -54,6 +54,7 @@ import com.example.domain.CatalogueSeedData
 import com.example.model.ChatStatus
 import com.example.model.Member
 import com.example.model.StatusKind
+import com.example.model.StatusPrivacyMode
 import com.example.ui.chat.ChatVisualCatalog
 import com.example.ui.components.StudioAvatar
 import com.example.ui.components.formatTitleCase
@@ -607,6 +608,20 @@ fun EnhancedFullScreenStatusViewer(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (current.privacyMode == StatusPrivacyMode.SELECTED_ONLY.name && current.privacyLabel.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = Color(0xFF7C3AED).copy(alpha = 0.55f),
+                                    modifier = Modifier.testTag("status_viewer_audience_badge")
+                                ) {
+                                    Text(
+                                        text = "${current.privacyEmoji.ifBlank { "💜" }} ${current.privacyLabel}",
+                                        style = XMaxType.caption2Medium,
+                                        color = PureWhite,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             if (isPaused) {
                                 Surface(shape = RoundedCornerShape(999.dp), color = Color.Black.copy(alpha = 0.45f)) {
                                     Text(

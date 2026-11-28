@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.FirebaseStartup
 import com.example.data.FirestoreConnectionBanner
+import com.example.domain.CatalogueSeedData
 import com.example.model.*
 import com.example.ui.AgencyUiState
 import com.example.ui.AgencyViewModel
@@ -525,12 +526,14 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                             onCleanupOldDoneProjects = { viewModel.cleanupOldDoneProjects() },
                                             onGenerateTaxInvoice = { proj, q -> viewModel.generateAndShareTaxInvoicePdf(context, proj, q) },
                                             onCreatePortalLink = { proj, q, onDone -> viewModel.createPortalLink(proj, q?.id ?: proj.approvedQuoteId, 30, onDone) },
-                                            onRevokePortalLink = { token -> viewModel.revokePortalLink(token) }
+                                            onRevokePortalLink = { token -> viewModel.revokePortalLink(token) },
+                                            onUpdateProjectStatus = { proj, st -> viewModel.updateProjectStatus(proj, st) }
                                         )
                                         SecondaryDestination.NOTIFICATIONS -> NotificationsScreen(
                                             state = state,
                                             onMarkRead = { viewModel.markNotificationRead(it) },
                                             onMarkAllRead = { viewModel.markAllNotificationsRead() },
+                                            onAutoMarkAllRead = { viewModel.markAllNotificationsRead(silent = true) },
                                             onToggleSound = { viewModel.toggleNotificationSound(it) },
                                             onTestSound = { viewModel.testNotificationSound() },
                                             onDeleteNotification = { viewModel.deleteNotification(it) },
@@ -564,7 +567,8 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                         SecondaryDestination.CATALOGUE -> CatalogueScreen(
                                             state = state,
                                             onSaveItem = { viewModel.saveCatalogueItem(it) },
-                                            onToggleArchive = { item, arch -> viewModel.setCatalogueArchived(item, arch) }
+                                            onToggleArchive = { item, arch -> viewModel.setCatalogueArchived(item, arch) },
+                                            onSyncOfficialCatalogue = { viewModel.syncOfficialCatalogueNow() }
                                         )
                                         SecondaryDestination.PAYMENTS -> PaymentsScreen(
                                             state = state,
@@ -579,7 +583,12 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                                                     }
                                                 }
                                             },
-                                            onCreatePortalLink = { proj, q, onDone -> viewModel.createPortalLink(proj, q?.id ?: proj.approvedQuoteId, 30, onDone) }
+                                            onCreatePortalLink = { proj, q, onDone -> viewModel.createPortalLink(proj, q?.id ?: proj.approvedQuoteId, 30, onDone) },
+                                            onCreateInvoice = { proj, amt, paid, due, notes ->
+                                                viewModel.createInvoice(proj, amt, paid, due, notes)
+                                            },
+                                            onToggleInvoicePaid = { inv, paid -> viewModel.setInvoicePaidStatus(inv, paid) },
+                                            onDeleteInvoice = { inv -> viewModel.deleteInvoice(inv) }
                                         )
                                         SecondaryDestination.ADMIN_DASHBOARD -> AdminDashboardScreen(
                                             state = state,
@@ -891,13 +900,17 @@ internal fun ApprovedWorkspace(state: AgencyUiState, viewModel: AgencyViewModel)
                 participantUids = listOfNotNull(callSession?.callerUid) + (callSession?.calleeUids ?: emptyList())
             )
         val peers = state.members.filter { it.uid != member.uid && it.uid in callChannel.participantUids }
+        val companyId = state.company?.id?.ifBlank { CatalogueSeedData.DEFAULT_COMPANY_ID } ?: CatalogueSeedData.DEFAULT_COMPANY_ID
+        val initialType = if (callSession?.callType == "AUDIO" || callSession?.videoEnabled == false) CallType.AUDIO else CallType.VIDEO
         com.example.ui.chat.ChatVideoCallDialog(
             channel = callChannel,
             myMember = member,
             peerMembers = peers,
             callSession = callSession,
+            companyId = companyId,
+            initialCallType = initialType,
             onAcceptCall = { callSession?.let { viewModel.acceptVideoCall(it.id) } },
-            onEndOrDeclineCall = { st -> callSession?.let { viewModel.endOrDeclineVideoCall(it.id, st) } },
+            onEndOrDeclineCall = { st -> viewModel.endOrDeclineVideoCall(overlayId, st) },
             onToggleMute = { isMuted -> callSession?.let { viewModel.toggleCallMute(it.id, isMuted) } },
             onToggleCamera = { isOff -> callSession?.let { viewModel.toggleCallCamera(it.id, isOff) } },
             onDismiss = { activeCallOverlayId = null },

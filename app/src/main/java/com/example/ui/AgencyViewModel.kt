@@ -26,6 +26,7 @@ import com.example.data.DeletableCloudItem
 import com.example.data.formatStorageBytes
 import com.example.data.FirestoreInitState
 import com.example.data.GoogleSignInResult
+import com.example.data.InvoiceRepository
 import com.example.data.OperationType
 import com.example.data.PhoneVerificationSession
 import com.example.data.ProjectRepository
@@ -136,8 +137,11 @@ data class AgencyUiState(
     val requests: List<ProjectRequest> = emptyList(),
     val quotations: List<Quotation> = emptyList(),
     val projects: List<Project> = emptyList(),
+    val projectsPendingSync: Boolean = false,
     val deliverables: List<Deliverable> = emptyList(),
     val deliverablesPendingSync: Boolean = false,
+    val invoices: List<InvoiceRecord> = emptyList(),
+    val invoicesPendingSync: Boolean = false,
     val payments: List<PaymentRecord> = emptyList(),
     val activityLog: List<ActivityLog> = emptyList(),
     val chatChannels: List<ChatChannel> = emptyList(),
@@ -217,6 +221,7 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     private val clientRepo: ClientRepository = ClientRepository(coreRepo)
     private val projectRepo: ProjectRepository = ProjectRepository(coreRepo)
     private val quotationRepo: QuotationRepository = QuotationRepository(coreRepo)
+    private val invoiceRepo: InvoiceRepository = InvoiceRepository(coreRepo)
     private val workRepo = CommercialWorkflowRepository(coreRepo)
     private val chatRepo = ChatRepository(coreRepo)
     private val storageTracker = CloudStorageTracker(coreRepo)
@@ -525,13 +530,20 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         }
     }.distinctUntilChanged()
 
-    private val _projectsFlow = _projectGateKey.flatMapLatest { gate ->
-        if (gate == null) flowOf(emptyList())
-        else projectRepo.observeProjects()
-            .map { list -> list.sortedByDescending { it.createdAt?.seconds ?: 0L } }
+    private val _projectsSyncedFlow = _projectGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(SyncedData(emptyList(), false))
+        else projectRepo.observeProjectsSynced()
+            .map { synced ->
+                SyncedData(
+                    data = synced.data.sortedByDescending { it.createdAt?.seconds ?: 0L },
+                    hasPendingWrites = synced.hasPendingWrites
+                )
+            }
             .flowOn(Dispatchers.Default)
-            .retainLastOnError("companies/${coreRepo.companyId}/projects", emptyList())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            .retainLastOnError("companies/${coreRepo.companyId}/projects", SyncedData(emptyList(), false))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncedData(emptyList(), false))
+
+    private val _projectsFlow: Flow<List<Project>> = _projectsSyncedFlow.map { it.data }
 
     private val _paymentGateKey = combine(_approvedMember, _membersFlow) { m, all ->
         if (m == null) null
@@ -550,6 +562,12 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             .flowOn(Dispatchers.Default)
             .retainLastOnError("companies/${coreRepo.companyId}/payments", emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _invoicesSyncedFlow = _paymentGateKey.flatMapLatest { gate ->
+        if (gate == null) flowOf(SyncedData(emptyList(), false))
+        else invoiceRepo.observeInvoicesSynced()
+            .retainLastOnError("companies/${coreRepo.companyId}/invoices", SyncedData(emptyList(), false))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncedData(emptyList(), false))
 
     private val _deliverablesFlow = combine(_approvedGateKey, _projectGateKey) { approved, manager ->
         if (approved == null) null else Triple(approved.uid, approved.departmentId, manager != null)
@@ -653,7 +671,7 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _clientsFlow,
         _requestsFlow,
         _quotationsFlow,
-        _projectsFlow,
+        _projectsSyncedFlow,
         _deliverablesFlow,
         _paymentsFlow,
         _activityFlow,
@@ -671,10 +689,13 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _nudgeLogsFlow,
         _activeCallSessionsFlow,
         _verifiedRoleFlow,
-        _backendDiagnostics
+        _backendDiagnostics,
+        _invoicesSyncedFlow
     ) { values ->
         val authStatus = values[0] as AuthSessionStatus
+        val projectsSynced = values[16] as SyncedData<List<Project>>
         val delivSynced = values[17] as SyncedData<List<Deliverable>>
+        val invoicesSynced = values[35] as SyncedData<List<InvoiceRecord>>
         val compPair = values[3] as Pair<CompanyProfile?, Boolean>
         val memPair = values[4] as Pair<Member?, Boolean>
         AgencyUiState(
@@ -697,9 +718,12 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             clients = values[13] as List<Client>,
             requests = values[14] as List<ProjectRequest>,
             quotations = values[15] as List<Quotation>,
-            projects = values[16] as List<Project>,
+            projects = projectsSynced.data,
+            projectsPendingSync = projectsSynced.hasPendingWrites,
             deliverables = delivSynced.data,
             deliverablesPendingSync = delivSynced.hasPendingWrites,
+            invoices = invoicesSynced.data,
+            invoicesPendingSync = invoicesSynced.hasPendingWrites,
             payments = values[18] as List<PaymentRecord>,
             activityLog = values[19] as List<ActivityLog>,
             chatChannels = values[20] as List<ChatChannel>,
@@ -848,8 +872,8 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                     syncedCatalogueOnceForUid = me.uid
                     return@collect
                 }
-                if (catList.isEmpty()) return@collect
-                val catOutdated = !catList.any { it.id == "srv_01" && it.name == "Social media post" && it.pricePaise == 50000L } ||
+                val catOutdated = catList.isEmpty() ||
+                    !catList.any { it.id == "srv_01" && it.name == "Social media post" && it.pricePaise == 50000L } ||
                     !catList.any { it.id == "pkg_04" && it.name == "BUSINESS LAUNCH" && it.pricePaise == 5500000L } ||
                     !catList.any { it.id == "add_08" && it.name == "Additional website page" && it.pricePaise == 200000L } ||
                     catList.size < 56
@@ -912,6 +936,30 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
                         deliverables = deliverables,
                         soundEnabled = sound
                     )
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(_approvedMember, _membersFlow, _clientsFlow, _projectsFlow) { me, members, clients, projects ->
+                listOf(me, members, clients, projects)
+            }.collect { tuple ->
+                @Suppress("UNCHECKED_CAST")
+                val me = tuple[0] as? Member ?: return@collect
+                @Suppress("UNCHECKED_CAST")
+                val members = tuple[1] as List<Member>
+                @Suppress("UNCHECKED_CAST")
+                val clients = tuple[2] as List<Client>
+                @Suppress("UNCHECKED_CAST")
+                val projects = tuple[3] as List<Project>
+                if (clients.isEmpty()) return@collect
+                val membersMap = members.associateBy { it.uid }
+                val canWriteClients = me.accessLevelEnum() == AccessLevel.SUPER_ADMIN ||
+                    me.accessLevelEnum() == AccessLevel.ADMIN ||
+                    PermissionEngine.hasPermission(me, AppPermission.MANAGE_CLIENTS, membersMap) ||
+                    PermissionEngine.hasPermission(me, AppPermission.CREATE_QUOTATIONS, membersMap)
+                if (!canWriteClients) return@collect
+                runCatching {
+                    clientRepo.syncClientActiveProjectCounts(projects, clients)
                 }
             }
         }
@@ -1181,8 +1229,14 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun saveClient(client: Client, onSaved: (Client) -> Unit = {}) = runWrite("clients") {
-        val actor = uiState.value.myMember ?: error("No active member")
-        val saved = clientRepo.saveClient(client, actor).getOrThrow()
+        val state = uiState.value
+        val actor = state.myMember ?: error("No active member")
+        val computedActiveCount = if (client.id.isBlank()) {
+            client.activeProjectCount.coerceAtLeast(0)
+        } else {
+            ClientRepository.countActiveProjectsForClient(client, state.projects)
+        }
+        val saved = clientRepo.saveClient(client.copy(activeProjectCount = computedActiveCount), actor).getOrThrow()
         _statusMessage.value = "Client ${saved.companyName} saved."
         onSaved(saved)
     }
@@ -1274,6 +1328,12 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _statusMessage.value = if (deleted) "Project soft-deleted." else "Project restored."
     }
 
+    fun updateProjectStatus(project: Project, newStatus: ProjectStatus) = runWrite("projects/${project.id}/status") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        projectRepo.updateProjectStatus(project, newStatus, actor).getOrThrow()
+        _statusMessage.value = "Project marked ${newStatus.label}."
+    }
+
     fun assignDeliverable(deliverable: Deliverable, assignee: Member, dueDateMillis: Long) = runWrite("deliverables/${deliverable.id}") {
         val actor = uiState.value.myMember ?: error("No active member")
         workRepo.assignDeliverable(deliverable, assignee, dueDateMillis, actor)
@@ -1305,6 +1365,44 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         val actor = uiState.value.myMember ?: error("No active member")
         workRepo.recordPayment(project, amountPaise, dateMillis, method, ref, note, actor)
         _statusMessage.value = "Payment recorded."
+    }
+
+    fun createInvoice(
+        project: Project,
+        amountPaise: Long,
+        paid: Boolean,
+        dueDateMillis: Long,
+        notes: String,
+        onDone: () -> Unit = {}
+    ) = runWrite("invoices") {
+        val state = uiState.value
+        val actor = state.myMember ?: error("No active member")
+        val quote = state.quotations.firstOrNull { it.id == project.approvedQuoteId || it.linkedProjectId == project.id }
+        val inv = invoiceRepo.createInvoice(
+            project = project,
+            quotation = quote,
+            amountPaise = amountPaise,
+            paid = paid,
+            dueDateMillis = dueDateMillis,
+            notes = notes,
+            company = state.company,
+            actor = actor
+        ).getOrThrow()
+        _statusMessage.value = "Invoice ${inv.invoiceNumber} saved (${if (paid) "Paid" else "Pending"})."
+        onDone()
+    }
+
+    fun setInvoicePaidStatus(invoice: InvoiceRecord, paid: Boolean) = runWrite("invoices/${invoice.id}") {
+        val actor = uiState.value.myMember ?: error("No active member")
+        invoiceRepo.setInvoicePaidStatus(invoice, paid, actor).getOrThrow()
+        _statusMessage.value = "${invoice.invoiceNumber} marked ${if (paid) "Paid" else "Pending"}."
+    }
+
+    fun deleteInvoice(invoice: InvoiceRecord) = runWrite("invoices/${invoice.id}") {
+        if (!uiState.value.isSuperAdmin) error("Only Super Admin can delete invoices.")
+        val actor = uiState.value.myMember ?: error("No active member")
+        invoiceRepo.deleteInvoice(invoice.id, invoice.invoiceNumber, actor).getOrThrow()
+        _statusMessage.value = "Invoice ${invoice.invoiceNumber} deleted."
     }
 
     fun observeDeliverableUpdates(deliverableId: String): Flow<SyncedData<List<DeliverableUpdate>>> =
@@ -1511,14 +1609,16 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun markAllNotificationsRead() {
+    fun markAllNotificationsRead(silent: Boolean = false) {
         val state = uiState.value
         val uid = state.myMember?.uid ?: return
         val unread = state.myNotifications.filter { it.isUnreadFor(uid) }
         if (unread.isEmpty()) return
         runWrite("notifications/readAll") {
             coreRepo.markAllNotificationsRead(unread, uid)
-            _statusMessage.value = "All notifications marked read."
+            if (!silent) {
+                _statusMessage.value = "All notifications marked read."
+            }
         }
     }
 
@@ -1926,6 +2026,20 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
         _statusMessage.value = "Workspace default chat wallpaper updated for everyone."
     }
 
+    fun setCompanyStatusCircleTheme(preset: com.example.chat.StatusCircleColorPreset) = runWrite("company/status_circle_theme") {
+        if (!uiState.value.isSuperAdmin) error("Only Super Admin can change status circle color options.")
+        val actor = uiState.value.myMember ?: error("No active member")
+        coreRepo.setCompanyStatusCircleTheme(
+            colorId = preset.id,
+            unviewedHex = preset.unviewedHex,
+            accentHex = preset.accentHex,
+            ownHex = preset.ownHex,
+            gradientEnabled = preset.gradientEnabled,
+            actor = actor
+        )
+        _statusMessage.value = "Status circle color updated to ${preset.name}."
+    }
+
     fun startVideoCall(
         channel: ChatChannel,
         calleeUids: List<String>,
@@ -1979,7 +2093,12 @@ class AgencyViewModel(application: Application) : AndroidViewModel(application) 
             _errorMessage.value = null
             try {
                 block()
-                _syncFeedback.value = if (uiState.value.deliverablesPendingSync) SyncFeedback.PENDING_SYNC else SyncFeedback.SAVED
+                val cur = uiState.value
+                val hasPending = cur.deliverablesPendingSync ||
+                    cur.projectsPendingSync ||
+                    cur.invoicesPendingSync ||
+                    !com.example.data.NetworkConnectivityMonitor.isOnline.value
+                _syncFeedback.value = if (hasPending) SyncFeedback.PENDING_SYNC else SyncFeedback.SAVED
             } catch (e: CancellationException) {
                 throw e
             } catch (e: FirebaseFirestoreException) {

@@ -539,6 +539,11 @@ class AgencyRepository(context: Context) {
                 "defaultApprovalInstructions" to profile.defaultApprovalInstructions.trim(),
                 "defaultChatWallpaperId" to profile.defaultChatWallpaperId.ifBlank { "studio_white" },
                 "defaultChatWallpaperUrl" to profile.defaultChatWallpaperUrl.trim(),
+                "statusCircleColorId" to profile.statusCircleColorId.ifBlank { "emerald_default" },
+                "statusCircleUnviewedHex" to profile.statusCircleUnviewedHex,
+                "statusCircleAccentHex" to profile.statusCircleAccentHex,
+                "statusCircleOwnHex" to profile.statusCircleOwnHex,
+                "statusCircleGradientEnabled" to profile.statusCircleGradientEnabled,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
@@ -557,6 +562,39 @@ class AgencyRepository(context: Context) {
             ActivityCategory.COMPANY,
             "Workspace Chat Wallpaper Updated",
             "Super Admin set default chat wallpaper to ${presetId.ifBlank { "Custom" }}",
+            actor.uid,
+            actor.fullName,
+            companyId
+        )
+    }
+
+    suspend fun setCompanyStatusCircleTheme(
+        colorId: String,
+        unviewedHex: Long,
+        accentHex: Long,
+        ownHex: Long,
+        gradientEnabled: Boolean,
+        actor: Member
+    ) {
+        require(actor.accessLevelEnum() == AccessLevel.SUPER_ADMIN) {
+            "Only Super Admin can update workspace status circle colors."
+        }
+        val cleanId = colorId.trim().ifBlank { "emerald_default" }.take(40)
+        val writeTask = companyRef.update(
+            mapOf(
+                "statusCircleColorId" to cleanId,
+                "statusCircleUnviewedHex" to unviewedHex,
+                "statusCircleAccentHex" to accentHex,
+                "statusCircleOwnHex" to ownHex,
+                "statusCircleGradientEnabled" to gradientEnabled,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+        if (NetworkConnectivityMonitor.isOnline.value) writeTask.await()
+        logActivity(
+            ActivityCategory.COMPANY,
+            "Status Circle Color Updated",
+            "Super Admin updated status circle style to $cleanId",
             actor.uid,
             actor.fullName,
             companyId

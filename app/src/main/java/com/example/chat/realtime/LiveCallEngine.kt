@@ -46,6 +46,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -55,36 +57,50 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.sqrt
 
 /**
- * Enterprise-grade real-time audio and video calling engine for X.MAX.
- * Coordinates:
- * - Real hardware audio routing (MODE_IN_COMMUNICATION, speakerphone, earpiece, microphone mute)
- * - Hardware acoustic echo cancellation & noise suppression
- * - Real-time Voice Activity Detection (VAD) & audio streaming
- * - Telecom ringback tone & incoming ringtones
- * - CameraX live video capture, frame compression & peer-to-peer frame playback
- * - Ultra-low latency signaling via Firebase Realtime Database with Firestore fallback
+ * Real-time audio & video engine for X.MAX calling:
+ * - Full-duplex 8 kHz G.711 mu-law compressed PCM streaming over RTDB
+ * - Hardware AEC, NoiseSuppressor, speaker/earpiece routing & mute isolation
+ * - Guaranteed listener & hardware cleanup on hangup (zero ghost audio)
+ * - Low-latency CameraX 180p frame capture + background-thread Base64/Bitmap decode
  */
 object LiveCallEngine {
     private const val TAG = "LiveCallEngine"
-    private const val SAMPLE_RATE = 16000
-    private const val FRAME_INTERVAL_MS = 380L
+    private const val SAMPLE_RATE = 8000
+    private const val AUDIO_PACKET_SAMPLES = 800 // 100ms per packet -> 800 bytes mu-law (~8 KB/s)
+    private const val FRAME_INTERVAL_MS = 160L
+    private const val JPEG_QUALITY = 38
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // Audio states
+    // Ringtone / ringback state
     private var toneGenerator: ToneGenerator? = null
     private var incomingRingtone: Ringtone? = null
+
+    // Hardware audio state
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
-    private var audioLoopJob: Job? = null
+    private var audioCaptureJob: Job? = null
+    private var audioPlaybackJob: Job? = null
+
+    // RTDB listener tracking (always removed cleanly in endCallAudio)
+    private var peerAudioRef: DatabaseReference? = null
+    private var peerAudioListener: ValueEventListener? = null
+    private val activeAudioCallId = AtomicBoolean(false)
+    @Volatile private var currentCallId: String = ""
+    @Volatile private var isLocalMicMuted: Boolean = false
+    private val outgoingAudioSeq = AtomicLong(0L)
+    @Volatile private var lastPlayedPeerSeq: Long = -1L
+
+    private var inboundPcmChannel = Channel<ShortArray>(capacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     private val _localVoiceAmplitude = MutableStateFlow(0f)
     val localVoiceAmplitude: StateFlow<Float> = _localVoiceAmplitude.asStateFlow()
@@ -92,10 +108,16 @@ object LiveCallEngine {
     private val _remoteVoiceAmplitude = MutableStateFlow(0f)
     val remoteVoiceAmplitude: StateFlow<Float> = _remoteVoiceAmplitude.asStateFlow()
 
-    // Video states
+    private val _peerLastMediaAtMs = MutableStateFlow(0L)
+    val peerLastMediaAtMs: StateFlow<Long> = _peerLastMediaAtMs.asStateFlow()
+
+    private val _peerAudioMuted = MutableStateFlow(false)
+    val peerAudioMuted: StateFlow<Boolean> = _peerAudioMuted.asStateFlow()
+
+    // Video state
     private val frameAnalysisExecutor = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
-    private var lastFrameSendTime = 0L
+    @Volatile private var lastFrameSendTime = 0L
 
     private fun resolveDb(context: Context? = null): FirebaseDatabase? {
         FirebaseStartup.ensureInitialized(context)
@@ -113,17 +135,19 @@ object LiveCallEngine {
     }
 
     private fun callRef(companyId: String, callId: String, context: Context? = null): DatabaseReference? {
+        if (callId.isBlank()) return null
         val safeCompany = companyId.trim().ifBlank { "xmax" }
-        return resolveDb(context)?.reference?.child("companies")?.child(safeCompany)?.child("calls")?.child(callId)
+        return resolveDb(context)?.reference
+            ?.child("companies")
+            ?.child(safeCompany)
+            ?.child("calls")
+            ?.child(callId.trim())
     }
 
     // ==========================================
     // AUDIO & HARDWARE ROUTING
     // ==========================================
 
-    /**
-     * Plays telephone ringback tone (dialing sound) through the earpiece/speaker while waiting for recipient.
-     */
     fun startOutgoingRingback() {
         stopRinging()
         runCatching {
@@ -133,9 +157,6 @@ object LiveCallEngine {
         }
     }
 
-    /**
-     * Plays the default incoming phone call ringtone when receiving a call.
-     */
     fun startIncomingRingtone(context: Context) {
         stopRinging()
         runCatching {
@@ -153,9 +174,6 @@ object LiveCallEngine {
         }
     }
 
-    /**
-     * Stops any active ringtone or ringback tone immediately.
-     */
     fun stopRinging() {
         runCatching {
             toneGenerator?.stopTone()
@@ -170,7 +188,8 @@ object LiveCallEngine {
     }
 
     /**
-     * Initializes real hardware audio routing and duplex audio streaming when a call connects.
+     * Initializes real hardware audio routing and full-duplex PCM streaming over RTDB.
+     * Safe to invoke idempotently for the same callId.
      */
     fun startInCallAudio(
         context: Context,
@@ -180,18 +199,32 @@ object LiveCallEngine {
         peerUid: String,
         isVideoCall: Boolean
     ) {
+        if (callId.isBlank() || myUid.isBlank()) return
+        if (activeAudioCallId.get() && currentCallId == callId) {
+            return
+        }
+        cleanupAudioResourcesOnly()
         stopRinging()
-        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
 
+        currentCallId = callId
+        activeAudioCallId.set(true)
+        isLocalMicMuted = false
+        outgoingAudioSeq.set(0L)
+        lastPlayedPeerSeq = -1L
+        _peerLastMediaAtMs.value = System.currentTimeMillis()
+        _peerAudioMuted.value = false
+        inboundPcmChannel = Channel(capacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         runCatching {
-            am.mode = AudioManager.MODE_IN_COMMUNICATION
+            am?.mode = AudioManager.MODE_IN_COMMUNICATION
             setSpeakerphone(context, isVideoCall)
         }
 
-        // Initialize AudioTrack for real-time voice playback
+        // 1. Initialize AudioTrack for real-time peer voice playback
         val channelOut = AndroidAudioFormat.CHANNEL_OUT_MONO
         val encoding = AndroidAudioFormat.ENCODING_PCM_16BIT
-        val minTrackBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, channelOut, encoding).coerceAtLeast(2048)
+        val minTrackBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, channelOut, encoding).coerceAtLeast(AUDIO_PACKET_SAMPLES * 4)
 
         runCatching {
             val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -227,10 +260,23 @@ object LiveCallEngine {
             audioTrack = track
         }
 
-        // Initialize AudioRecord for real microphone capture with AEC
+        // Dedicated non-blocking playback worker
+        audioPlaybackJob = scope.launch(Dispatchers.IO) {
+            for (pcmSamples in inboundPcmChannel) {
+                if (!activeAudioCallId.get()) break
+                val track = audioTrack ?: continue
+                if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                    runCatching {
+                        track.write(pcmSamples, 0, pcmSamples.size)
+                    }
+                }
+            }
+        }
+
+        // 2. Initialize AudioRecord for real microphone capture with AEC + NS
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             val channelIn = AndroidAudioFormat.CHANNEL_IN_MONO
-            val minRecBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, channelIn, encoding).coerceAtLeast(2048)
+            val minRecBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, channelIn, encoding).coerceAtLeast(AUDIO_PACKET_SAMPLES * 4)
             runCatching {
                 val record = AudioRecord(
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION,
@@ -250,54 +296,83 @@ object LiveCallEngine {
                     record.startRecording()
                     audioRecord = record
 
-                    // Launch audio processing & streaming loop
-                    audioLoopJob?.cancel()
-                    audioLoopJob = scope.launch(Dispatchers.IO) {
-                        val buffer = ShortArray(minRecBuf / 2)
-                        var lastAudioPublishTime = 0L
+                    audioCaptureJob = scope.launch(Dispatchers.IO) {
+                        val packetBuffer = ShortArray(AUDIO_PACKET_SAMPLES)
+                        var filled = 0
+                        val tempRead = ShortArray(400)
+                        var lastSilenceHeartbeat = 0L
 
-                        while (isActive && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                            val readCount = audioRecord?.read(buffer, 0, buffer.size) ?: 0
-                            if (readCount > 0) {
-                                // Compute real RMS amplitude (0.0 to 1.0)
-                                var sumSquares = 0.0
-                                for (i in 0 until readCount) {
-                                    sumSquares += (buffer[i] * buffer[i])
-                                }
-                                val rms = Math.sqrt(sumSquares / readCount)
-                                val normalized = (rms / 24000.0).toFloat().coerceIn(0f, 1f)
-                                _localVoiceAmplitude.value = normalized
+                        while (isActive && activeAudioCallId.get() && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                            val readCount = audioRecord?.read(tempRead, 0, tempRead.size) ?: 0
+                            if (readCount <= 0) {
+                                delay(10L)
+                                continue
+                            }
+                            var idx = 0
+                            while (idx < readCount) {
+                                val space = packetBuffer.size - filled
+                                val take = minOf(space, readCount - idx)
+                                System.arraycopy(tempRead, idx, packetBuffer, filled, take)
+                                filled += take
+                                idx += take
 
-                                // Stream voice activity / audio packet to RTDB if speaking
-                                val now = System.currentTimeMillis()
-                                if (now - lastAudioPublishTime >= 180L) {
-                                    lastAudioPublishTime = now
-                                    publishAudioState(companyId, callId, myUid, normalized, context)
+                                if (filled == packetBuffer.size) {
+                                    filled = 0
+                                    if (isLocalMicMuted) {
+                                        _localVoiceAmplitude.value = 0f
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastSilenceHeartbeat >= 1200L) {
+                                            lastSilenceHeartbeat = now
+                                            publishAudioPacket(companyId, callId, myUid, 0f, "", muted = true, context = context)
+                                        }
+                                    } else {
+                                        var sumSq = 0.0
+                                        for (s in packetBuffer) {
+                                            sumSq += (s.toDouble() * s.toDouble())
+                                        }
+                                        val rms = sqrt(sumSq / packetBuffer.size)
+                                        val normalized = (rms / 20000.0).toFloat().coerceIn(0f, 1f)
+                                        _localVoiceAmplitude.value = normalized
+
+                                        val encodedPcm = encodeMuLawBase64(packetBuffer)
+                                        publishAudioPacket(companyId, callId, myUid, normalized, encodedPcm, muted = false, context = context)
+                                    }
                                 }
                             }
-                            delay(20L)
                         }
                     }
                 }
+            }.onFailure { err ->
+                Log.e(TAG, "Failed to start AudioRecord: ${err.message}")
             }
         }
 
-        // Listen for peer's audio stream / voice activity from RTDB
-        subscribePeerAudioState(companyId, callId, peerUid, context)
+        // 3. Subscribe to peer's live audio packets from RTDB
+        if (peerUid.isNotBlank()) {
+            subscribePeerAudioState(companyId, callId, peerUid, context)
+        }
     }
 
-    private fun publishAudioState(
+    private fun publishAudioPacket(
         companyId: String,
         callId: String,
         myUid: String,
         amplitude: Float,
+        pcmBase64: String,
+        muted: Boolean,
         context: Context?
     ) {
+        if (!activeAudioCallId.get() || currentCallId != callId) return
         val ref = callRef(companyId, callId, context)?.child("audio")?.child(myUid) ?: return
+        val seq = outgoingAudioSeq.incrementAndGet()
         runCatching {
+            ref.onDisconnect().removeValue()
             ref.setValue(
                 mapOf(
+                    "seq" to seq,
                     "amp" to amplitude,
+                    "pcm" to pcmBase64,
+                    "muted" to muted,
                     "ts" to ServerValue.TIMESTAMP
                 )
             )
@@ -310,20 +385,56 @@ object LiveCallEngine {
         peerUid: String,
         context: Context?
     ) {
+        removePeerAudioListener()
         val ref = callRef(companyId, callId, context)?.child("audio")?.child(peerUid) ?: return
-        ref.addValueEventListener(object : ValueEventListener {
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                if (!activeAudioCallId.get() || currentCallId != callId) return
+                if (!snapshot.exists()) return
+
+                _peerLastMediaAtMs.value = System.currentTimeMillis()
                 val amp = (snapshot.child("amp").value as? Number)?.toFloat() ?: 0f
-                _remoteVoiceAmplitude.value = amp
+                val muted = snapshot.child("muted").getValue(Boolean::class.java) ?: false
+                val seq = (snapshot.child("seq").value as? Number)?.toLong() ?: -1L
+                val pcmStr = snapshot.child("pcm").getValue(String::class.java).orEmpty()
+
+                _peerAudioMuted.value = muted
+                _remoteVoiceAmplitude.value = if (muted) 0f else amp
+
+                if (!muted && pcmStr.isNotEmpty() && seq != lastPlayedPeerSeq) {
+                    lastPlayedPeerSeq = seq
+                    scope.launch(Dispatchers.Default) {
+                        if (!activeAudioCallId.get() || currentCallId != callId) return@launch
+                        val decoded = decodeMuLawBase64(pcmStr)
+                        if (decoded.isNotEmpty()) {
+                            inboundPcmChannel.trySend(decoded)
+                        }
+                    }
+                }
             }
 
             override fun onCancelled(error: DatabaseError) {
                 Log.d(TAG, "Peer audio listener cancelled: ${error.message}")
             }
-        })
+        }
+        peerAudioRef = ref
+        peerAudioListener = listener
+        ref.addValueEventListener(listener)
+    }
+
+    private fun removePeerAudioListener() {
+        val listener = peerAudioListener
+        val ref = peerAudioRef
+        if (listener != null && ref != null) {
+            runCatching { ref.removeEventListener(listener) }
+        }
+        peerAudioRef = null
+        peerAudioListener = null
     }
 
     fun setMicrophoneMute(context: Context, muted: Boolean) {
+        isLocalMicMuted = muted
+        if (muted) _localVoiceAmplitude.value = 0f
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         runCatching { am.isMicrophoneMute = muted }
     }
@@ -361,13 +472,16 @@ object LiveCallEngine {
         }
     }
 
-    /**
-     * Cleanly shuts down audio hardware, releases audio tracks and restores normal audio mode.
-     */
-    fun endCallAudio(context: Context) {
-        stopRinging()
-        audioLoopJob?.cancel()
-        audioLoopJob = null
+    private fun cleanupAudioResourcesOnly() {
+        activeAudioCallId.set(false)
+        currentCallId = ""
+        removePeerAudioListener()
+
+        audioCaptureJob?.cancel()
+        audioCaptureJob = null
+        audioPlaybackJob?.cancel()
+        audioPlaybackJob = null
+        runCatching { inboundPcmChannel.close() }
 
         runCatching {
             echoCanceler?.release()
@@ -380,6 +494,8 @@ object LiveCallEngine {
         audioRecord = null
 
         runCatching {
+            audioTrack?.pause()
+            audioTrack?.flush()
             audioTrack?.stop()
             audioTrack?.release()
         }
@@ -387,6 +503,16 @@ object LiveCallEngine {
 
         _localVoiceAmplitude.value = 0f
         _remoteVoiceAmplitude.value = 0f
+        _peerAudioMuted.value = false
+    }
+
+    /**
+     * Cleanly shuts down all audio hardware, RTDB listeners, and restores normal audio mode.
+     */
+    fun endCallAudio(context: Context) {
+        val hadActive = activeAudioCallId.get()
+        stopRinging()
+        cleanupAudioResourcesOnly()
 
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         runCatching {
@@ -398,9 +524,14 @@ object LiveCallEngine {
             am?.isMicrophoneMute = false
             am?.mode = AudioManager.MODE_NORMAL
 
-            // Subtle telecom completion beep
-            val tg = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 60)
-            tg.startTone(ToneGenerator.TONE_PROP_PROMPT, 160)
+            if (hadActive) {
+                val tg = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 55)
+                tg.startTone(ToneGenerator.TONE_PROP_PROMPT, 140)
+                scope.launch {
+                    delay(220L)
+                    runCatching { tg.release() }
+                }
+            }
         }
     }
 
@@ -408,9 +539,6 @@ object LiveCallEngine {
     // VIDEO STREAMING & CAMERAX ENGINE
     // ==========================================
 
-    /**
-     * Binds CameraX with both a local viewfinder Preview and an ImageAnalysis stream for real-time video transmission.
-     */
     fun bindLocalCamera(
         context: Context,
         lifecycleOwner: LifecycleOwner,
@@ -435,9 +563,9 @@ object LiveCallEngine {
                     it.surfaceProvider = previewView.surfaceProvider
                 }
 
-                // Low-latency frame capture for peer transmission
+                // 180p low-latency stream keeps CPU & RTDB bandwidth light on low-end phones
                 val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(320, 240))
+                    .setTargetResolution(Size(240, 180))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
 
@@ -467,9 +595,6 @@ object LiveCallEngine {
         }
     }
 
-    /**
-     * Broadcasts a captured video frame to RTDB for the remote participant.
-     */
     fun publishLocalVideoFrame(
         companyId: String,
         callId: String,
@@ -480,6 +605,7 @@ object LiveCallEngine {
     ) {
         val ref = callRef(companyId, callId, context)?.child("video")?.child(myUid) ?: return
         runCatching {
+            ref.onDisconnect().removeValue()
             ref.setValue(
                 mapOf(
                     "frame" to if (isCameraOff) "" else frameBase64,
@@ -491,7 +617,8 @@ object LiveCallEngine {
     }
 
     /**
-     * Observes the remote peer's real-time video stream as Bitmaps.
+     * Observes the remote peer's real-time video stream, decoding Bitmaps on a background pool
+     * so the main UI thread never drops frames.
      */
     fun observeRemoteVideo(
         companyId: String,
@@ -500,25 +627,30 @@ object LiveCallEngine {
         context: Context?
     ): Flow<Pair<Bitmap?, Boolean>> = callbackFlow {
         val ref = callRef(companyId, callId, context)?.child("video")?.child(peerUid)
-        if (ref == null) {
+        if (ref == null || peerUid.isBlank()) {
             trySend(null to true)
             close()
             return@callbackFlow
         }
 
+        var decodeJob: Job? = null
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                _peerLastMediaAtMs.value = System.currentTimeMillis()
                 val camOff = snapshot.child("camOff").getValue(Boolean::class.java) ?: false
                 val frameStr = snapshot.child("frame").getValue(String::class.java).orEmpty()
                 if (camOff || frameStr.isBlank()) {
+                    decodeJob?.cancel()
                     trySend(null to true)
                 } else {
-                    runCatching {
-                        val bytes = Base64.decode(frameStr, Base64.DEFAULT)
-                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    decodeJob?.cancel()
+                    decodeJob = scope.launch(Dispatchers.Default) {
+                        val bmp = runCatching {
+                            val bytes = Base64.decode(frameStr, Base64.DEFAULT)
+                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        }.getOrNull()
                         trySend(bmp to false)
-                    }.onFailure {
-                        trySend(null to false)
                     }
                 }
             }
@@ -529,12 +661,12 @@ object LiveCallEngine {
         }
 
         ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
+        awaitClose {
+            decodeJob?.cancel()
+            ref.removeEventListener(listener)
+        }
     }
 
-    /**
-     * Cleans up all call signaling nodes in RTDB when call terminates.
-     */
     fun cleanupCallSession(companyId: String, callId: String, context: Context?) {
         val ref = callRef(companyId, callId, context) ?: return
         runCatching {
@@ -543,23 +675,76 @@ object LiveCallEngine {
     }
 
     // ==========================================
-    // UTILITIES
+    // G.711 MU-LAW AUDIO CODEC (2:1 COMPRESSION)
+    // ==========================================
+
+    internal fun encodeMuLawBase64(pcm: ShortArray): String {
+        val out = ByteArray(pcm.size)
+        for (i in pcm.indices) {
+            out[i] = linearToMuLaw(pcm[i])
+        }
+        return Base64.encodeToString(out, Base64.NO_WRAP)
+    }
+
+    internal fun decodeMuLawBase64(encoded: String): ShortArray {
+        val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull() ?: return ShortArray(0)
+        val pcm = ShortArray(bytes.size)
+        for (i in bytes.indices) {
+            pcm[i] = muLawToLinear(bytes[i])
+        }
+        return pcm
+    }
+
+    private fun linearToMuLaw(sample: Short): Byte {
+        var pcmVal = sample.toInt()
+        val mask: Int
+        if (pcmVal < 0) {
+            pcmVal = -pcmVal
+            mask = 0x7F
+        } else {
+            mask = 0xFF
+        }
+        if (pcmVal > 32635) pcmVal = 32635
+        pcmVal += 132
+
+        var exponent = 7
+        var expMask = 0x4000
+        while ((pcmVal and expMask) == 0 && exponent > 0) {
+            exponent--
+            expMask = expMask shr 1
+        }
+        val mantissa = (pcmVal shr (exponent + 3)) and 0x0F
+        val muLaw = (exponent shl 4) or mantissa
+        return (muLaw xor mask).toByte()
+    }
+
+    private fun muLawToLinear(muLawByte: Byte): Short {
+        val mu = (muLawByte.toInt() and 0xFF).inv()
+        val sign = mu and 0x80
+        val exponent = (mu shr 4) and 0x07
+        val mantissa = mu and 0x0F
+        var sample = ((mantissa shl 3) + 132) shl exponent
+        sample -= 132
+        return (if (sign != 0) -sample else sample).toShort()
+    }
+
+    // ==========================================
+    // VIDEO FRAME CONVERSION
     // ==========================================
 
     private fun imageProxyToBase64Jpeg(image: ImageProxy, isFront: Boolean): String {
         return runCatching {
-            val yBuffer = image.planes[0].buffer // Y
-            val uBuffer = image.planes[1].buffer // U
-            val vBuffer = image.planes[2].buffer // V
+            val yBuffer = image.planes[0].buffer
+            val uBuffer = image.planes[1].buffer
+            val vBuffer = image.planes[2].buffer
 
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
             val vSize = vBuffer.remaining()
 
             val nv21 = ByteArray(ySize + uSize + vSize)
-
             yBuffer.get(nv21, 0, ySize)
-            // U and V are swapped in NV21
+
             val uvPixelStride = image.planes[1].pixelStride
             if (uvPixelStride == 1) {
                 vBuffer.get(nv21, ySize, vSize)
@@ -570,7 +755,6 @@ object LiveCallEngine {
                 val vRowStride = image.planes[2].rowStride
                 val width = image.width
                 val height = image.height
-
                 for (row in 0 until height / 2) {
                     for (col in 0 until width / 2) {
                         val vIndex = row * vRowStride + col * uvPixelStride
@@ -583,16 +767,15 @@ object LiveCallEngine {
 
             val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
             val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 42, out)
+            yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), JPEG_QUALITY, out)
             val jpegBytes = out.toByteArray()
 
-            // Rotate based on camera orientation
             val rotationDegrees = image.imageInfo.rotationDegrees
             val finalBytes = if (rotationDegrees != 0 || isFront) {
                 val originalBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                 val matrix = Matrix().apply {
                     postRotate(rotationDegrees.toFloat())
-                    if (isFront) postScale(-1f, 1f) // Mirror front camera preview
+                    if (isFront) postScale(-1f, 1f)
                 }
                 val rotatedBitmap = Bitmap.createBitmap(
                     originalBitmap,
@@ -604,7 +787,7 @@ object LiveCallEngine {
                     true
                 )
                 val rotatedOut = ByteArrayOutputStream()
-                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 42, rotatedOut)
+                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, rotatedOut)
                 rotatedBitmap.recycle()
                 originalBitmap.recycle()
                 rotatedOut.toByteArray()

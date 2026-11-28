@@ -58,6 +58,8 @@ data class NewStatusSubmission(
     val trimEndMs: Long = 0L,
     val audioWaveform: List<Int> = emptyList(),
     val privacyMode: StatusPrivacyMode = StatusPrivacyMode.ALL_APPROVED,
+    val privacyLabel: String = "",
+    val privacyEmoji: String = "",
     val allowedUids: List<String> = emptyList(),
     val excludedUids: List<String> = emptyList(),
     val ownerBlockedUids: List<String> = emptyList()
@@ -363,6 +365,8 @@ class ChatRepository(private val core: AgencyRepository) {
             "reactions" to emptyMap<String, String>(),
             "replyCount" to 0L,
             "privacyMode" to submission.privacyMode.name,
+            "privacyLabel" to submission.privacyLabel.trim().take(28),
+            "privacyEmoji" to submission.privacyEmoji.trim().take(8),
             "allowedUids" to submission.allowedUids.distinct().take(150),
             "excludedUids" to submission.excludedUids.distinct().take(150),
             "ownerBlockedUids" to submission.ownerBlockedUids.distinct().take(150),
@@ -400,6 +404,8 @@ class ChatRepository(private val core: AgencyRepository) {
             trimEndMs = submission.trimEndMs,
             audioWaveform = submission.audioWaveform,
             privacyMode = submission.privacyMode.name,
+            privacyLabel = submission.privacyLabel.trim().take(28),
+            privacyEmoji = submission.privacyEmoji.trim().take(8),
             allowedUids = submission.allowedUids,
             excludedUids = submission.excludedUids,
             ownerBlockedUids = submission.ownerBlockedUids,
@@ -440,7 +446,9 @@ class ChatRepository(private val core: AgencyRepository) {
         privacyMode: StatusPrivacyMode,
         allowedUids: List<String>,
         excludedUids: List<String>,
-        blockedUids: List<String>
+        blockedUids: List<String>,
+        privacyLabel: String = "",
+        privacyEmoji: String = ""
     ) {
         if (activeMyStatuses.isEmpty()) return
         val batch = db.batch()
@@ -449,6 +457,8 @@ class ChatRepository(private val core: AgencyRepository) {
                 sub("chat_statuses").document(st.id),
                 mapOf(
                     "privacyMode" to privacyMode.name,
+                    "privacyLabel" to privacyLabel.trim().take(28),
+                    "privacyEmoji" to privacyEmoji.trim().take(8),
                     "allowedUids" to allowedUids.distinct().take(150),
                     "excludedUids" to excludedUids.distinct().take(150),
                     "ownerBlockedUids" to blockedUids.distinct().take(150)
@@ -456,6 +466,24 @@ class ChatRepository(private val core: AgencyRepository) {
             )
         }
         batch.commit().await()
+    }
+
+    suspend fun setCompanyStatusCircleTheme(
+        colorId: String,
+        unviewedHex: Long,
+        accentHex: Long,
+        ownHex: Long,
+        gradientEnabled: Boolean,
+        actor: Member
+    ) {
+        core.setCompanyStatusCircleTheme(
+            colorId = colorId,
+            unviewedHex = unviewedHex,
+            accentHex = accentHex,
+            ownHex = ownHex,
+            gradientEnabled = gradientEnabled,
+            actor = actor
+        )
     }
 
     suspend fun sendStatusInteractionToDm(

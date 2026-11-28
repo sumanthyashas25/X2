@@ -79,6 +79,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -380,16 +381,26 @@ fun SegmentedStatusAvatar(
     showAvailabilityBadge: Boolean = false,
     dotSize: Dp = 12.dp,
     badgeTestTag: String? = null,
+    unviewedRingColorOverride: Color? = null,
+    accentRingColorOverride: Color? = null,
+    ownRingColorOverride: Color? = null,
+    gradientRingOverride: Boolean? = null,
     onAvatarClick: (() -> Unit)? = null,
     onClick: (() -> Unit)? = onAvatarClick,
     modifier: Modifier = Modifier
 ) {
+    val prefs by com.example.chat.ChatSettingsStore.prefsFlow.collectAsState()
     val effectiveStatuses = if (statuses.isNotEmpty()) statuses else activeStatuses
     val effectiveViewerUid = if (myUid.isNotBlank()) myUid else viewerUid
     val effectiveOnClick = onClick ?: onAvatarClick
     val hasActiveRing = effectiveStatuses.isNotEmpty()
     val ringDiameter = if (hasActiveRing) size + 8.dp else size
     val clickEnabled = hasActiveRing && effectiveOnClick != null
+
+    val resolvedUnviewedColor = unviewedRingColorOverride ?: Color(prefs.workspaceStatusUnviewedHex)
+    val resolvedAccentColor = accentRingColorOverride ?: Color(prefs.workspaceStatusAccentHex)
+    val resolvedOwnColor = ownRingColorOverride ?: Color(prefs.workspaceStatusOwnHex)
+    val resolvedGradient = gradientRingOverride ?: prefs.workspaceStatusGradientEnabled
 
     Box(
         modifier = modifier
@@ -411,26 +422,47 @@ fun SegmentedStatusAvatar(
             val gapDegrees = if (count == 1) 0f else (14f).coerceAtMost(200f / count)
             val sweepPerSegment = (360f - gapDegrees * count) / count
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val strokePx = 2.4.dp.toPx()
+                val strokePx = 2.6.dp.toPx()
                 val inset = strokePx / 2f
                 val arcSize = Size(this.size.width - strokePx, this.size.height - strokePx)
+                val gradientBrush = Brush.sweepGradient(
+                    listOf(resolvedUnviewedColor, resolvedAccentColor, resolvedUnviewedColor)
+                )
+                val ownGradientBrush = Brush.sweepGradient(
+                    listOf(resolvedOwnColor, resolvedAccentColor, resolvedOwnColor)
+                )
                 segments.forEachIndexed { idx, st ->
                     val startAngle = -90f + idx * (sweepPerSegment + gapDegrees)
                     val isViewed = !isOwnAvatar && st.isViewedBy(effectiveViewerUid)
-                    val segColor = when {
-                        isOwnAvatar -> VioletPrimary
-                        isViewed -> Color(0xFFCBD5E1)
-                        else -> EmeraldApproved
+                    when {
+                        isViewed -> drawArc(
+                            color = Color(0xFFCBD5E1),
+                            startAngle = startAngle,
+                            sweepAngle = sweepPerSegment,
+                            useCenter = false,
+                            topLeft = Offset(inset, inset),
+                            size = arcSize,
+                            style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                        )
+                        resolvedGradient -> drawArc(
+                            brush = if (isOwnAvatar) ownGradientBrush else gradientBrush,
+                            startAngle = startAngle,
+                            sweepAngle = sweepPerSegment,
+                            useCenter = false,
+                            topLeft = Offset(inset, inset),
+                            size = arcSize,
+                            style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                        )
+                        else -> drawArc(
+                            color = if (isOwnAvatar) resolvedOwnColor else resolvedUnviewedColor,
+                            startAngle = startAngle,
+                            sweepAngle = sweepPerSegment,
+                            useCenter = false,
+                            topLeft = Offset(inset, inset),
+                            size = arcSize,
+                            style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                        )
                     }
-                    drawArc(
-                        color = segColor,
-                        startAngle = startAngle,
-                        sweepAngle = sweepPerSegment,
-                        useCenter = false,
-                        topLeft = Offset(inset, inset),
-                        size = arcSize,
-                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
-                    )
                 }
             }
         }

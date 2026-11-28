@@ -197,6 +197,11 @@ service cloud.firestore {
              data.defaultRevisionRounds is int && data.defaultRevisionRounds >= 0 && data.defaultRevisionRounds <= 20 &&
              data.nextQuoteSeq is int && data.nextQuoteSeq >= 1 &&
              data.seededCatalogue is bool &&
+             (!('statusCircleColorId' in data) || (data.statusCircleColorId is string && data.statusCircleColorId.size() <= 40)) &&
+             (!('statusCircleUnviewedHex' in data) || data.statusCircleUnviewedHex is int) &&
+             (!('statusCircleAccentHex' in data) || data.statusCircleAccentHex is int) &&
+             (!('statusCircleOwnHex' in data) || data.statusCircleOwnHex is int) &&
+             (!('statusCircleGradientEnabled' in data) || data.statusCircleGradientEnabled is bool) &&
              data.createdByUid is string && data.createdByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
@@ -291,6 +296,7 @@ service cloud.firestore {
     function isValidClient(data) {
       return data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 150 &&
              data.contactPerson is string && data.contactPerson.size() >= 1 && data.contactPerson.size() <= 120 &&
+             (!('activeProjectCount' in data) || (data.activeProjectCount is int && data.activeProjectCount >= 0)) &&
              data.createdByUid is string && data.createdByUid.size() <= 128 &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
@@ -956,7 +962,7 @@ service cloud.firestore {
                            ) || (
                              existing().ownerUid == request.auth.uid &&
                              incoming().ownerUid == existing().ownerUid &&
-                             incoming().diff(existing()).affectedKeys().hasOnly(['privacyMode', 'allowedUids', 'excludedUids', 'ownerBlockedUids']) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['privacyMode', 'privacyLabel', 'privacyEmoji', 'allowedUids', 'excludedUids', 'ownerBlockedUids']) &&
                              incoming().get('privacyMode', 'ALL_APPROVED') in ['ALL_APPROVED', 'SELECTED_ONLY', 'ALL_EXCEPT']
                            )
                          );
